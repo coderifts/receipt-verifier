@@ -8,11 +8,13 @@
  * service. The reference format is frozen in ./RECEIPT_FORMAT.md.
  *
  * Usage:
- *   node verify.js <receipt> [--key pub.pem] [--kid <kid>] [--fetch <url>]
- *   node verify.js --chain receipts.txt [--key pub.pem] [--kid <kid>] [--fetch <url>]
+ *   node verify.js <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
+ *   node verify.js --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
  *
- * Key discovery: with no --key, the public key is fetched from
+ * Key discovery: with no --key/--keys, the public key is fetched from
  *   https://app.coderifts.com/api/v1/attestation/public-key  (override with --fetch <url>).
+ * --keys resolves each receipt's key by kid from a registry
+ *   ({ keys: [{ kid, public_key_pem, status, valid_from }] }); accepts a URL or file.
  *
  * Output: JSON { valid, reason?, payload?, chain? } to stdout.
  * Exit codes: 0 valid, 1 invalid, 2 usage error.
@@ -34,18 +36,43 @@ function sha256hex(str) {
 
 /**
  * Reconstruct the exact signed bytes from a parsed receipt body.
- * v2 (body.v === 2) appends '|' + reg; v1 (v absent or 1) uses the base string.
+ *   v1 (v absent or 1): the base string.
+ *   v2 (v === 2):       base + '|' + reg.
+ *   v3 (v === 3):       base + '|' + reg + '|' + ir.
+ * Field order matches the CodeRifts issuer exactly (chain-attestation.js signingInputV3).
  * This string must be byte-identical to the Python implementation.
  */
 function reconstructSignedInput(payload) {
   const base = `${SIGNING_PREFIX}|${payload.kid}|${payload.fp}|${payload.prev}|${payload.caller}|${payload.ts}`;
-  return payload.v === 2 ? `${base}|${payload.reg}` : base;
+  if (payload.v === 3) return `${base}|${payload.reg}|${payload.ir}`;
+  if (payload.v === 2) return `${base}|${payload.reg}`;
+  return base;
 }
 
 /**
- * Verify a single receipt token against a public key + expected kid.
+ * Resolve the verification key for a parsed payload.
+ * Two modes:
+ *   - keyring (from --keys): pick the entry whose kid matches payload.kid; an
+ *     unlisted kid resolves to null (=> unknown_kid). A retired key still verifies
+ *     so receipts issued before a rotation stay checkable.
+ *   - single key (default): the one loaded key, gated by expectedKid when known.
+ * Returns a KeyObject, or null when the kid is not accepted.
+ */
+function resolveKey(ctx, payload) {
+  if (ctx.keyring) {
+    const entry = ctx.keyring.get(payload.kid);
+    if (!entry) return null;
+    if (ctx.expectedKid !== null && payload.kid !== ctx.expectedKid) return null;
+    return entry.publicKey;
+  }
+  if (ctx.expectedKid !== null && payload.kid !== ctx.expectedKid) return null;
+  return ctx.publicKey;
+}
+
+/**
+ * Verify a single receipt token against a public key (or keyring) + expected kid.
  * @param {string} token
- * @param {{ publicKey: import('crypto').KeyObject, expectedKid: (string|null) }} ctx
+ * @param {{ publicKey?: import('crypto').KeyObject, keyring?: Map<string,{publicKey:import('crypto').KeyObject}>, expectedKid: (string|null) }} ctx
  * @returns {{ valid: boolean, reason?: string, payload?: object }}
  */
 function verifyReceipt(token, ctx) {
@@ -69,8 +96,9 @@ function verifyReceipt(token, ctx) {
     return { valid: false, reason: 'bad_json' };
   }
 
-  // 3. kid -- enforced only when an expected kid is known (from --kid or discovery).
-  if (ctx.expectedKid !== null && payload.kid !== ctx.expectedKid) {
+  // 3. kid -- resolve the key by kid (keyring) or gate the single key by expectedKid.
+  const publicKey = resolveKey(ctx, payload);
+  if (!publicKey) {
     return { valid: false, reason: 'unknown_kid', payload };
   }
 
@@ -78,7 +106,7 @@ function verifyReceipt(token, ctx) {
   const sig = Buffer.from(segments[1], 'base64url');
   let ok = false;
   try {
-    ok = crypto.verify(null, Buffer.from(reconstructSignedInput(payload), 'utf8'), ctx.publicKey, sig);
+    ok = crypto.verify(null, Buffer.from(reconstructSignedInput(payload), 'utf8'), publicKey, sig);
   } catch (_) {
     return { valid: false, reason: 'signature_error', payload };
   }
@@ -139,16 +167,42 @@ async function fetchKeyInfo(url) {
   return { publicKey: keyFromPem(info.public_key_pem), kid: info.kid || null };
 }
 
+/**
+ * Build a kid -> key map from a CodeRifts key registry
+ * ({ keys: [{ kid, public_key_pem, status, valid_from }] }). A --keys source may be
+ * an http(s) URL or a local file path. Both active and retired keys are loaded.
+ */
+async function loadKeyring(source) {
+  let text;
+  if (/^https?:\/\//i.test(source)) {
+    const res = await fetch(source, { headers: { Accept: 'application/json' } });
+    if (!res.ok) throw new Error(`fetch ${source} -> HTTP ${res.status}`);
+    text = await res.text();
+  } else {
+    text = fs.readFileSync(source, 'utf8');
+  }
+  const doc = JSON.parse(text);
+  const keys = doc && Array.isArray(doc.keys) ? doc.keys : null;
+  if (!keys || keys.length === 0) throw new Error(`no keys[] in registry ${source}`);
+  const keyring = new Map();
+  for (const k of keys) {
+    if (!k || !k.kid || !k.public_key_pem) throw new Error(`registry entry missing kid/public_key_pem in ${source}`);
+    keyring.set(k.kid, { publicKey: keyFromPem(k.public_key_pem), status: k.status || null });
+  }
+  return keyring;
+}
+
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
 
 function parseArgs(argv) {
-  const opts = { receipt: null, chainFile: null, keyFile: null, kid: null, fetchUrl: null };
+  const opts = { receipt: null, chainFile: null, keyFile: null, keysSource: null, kid: null, fetchUrl: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--chain') opts.chainFile = argv[++i];
     else if (a === '--key') opts.keyFile = argv[++i];
+    else if (a === '--keys') opts.keysSource = argv[++i];
     else if (a === '--kid') opts.kid = argv[++i];
     else if (a === '--fetch') opts.fetchUrl = argv[++i];
     else if (a === '-h' || a === '--help') opts.help = true;
@@ -156,12 +210,13 @@ function parseArgs(argv) {
     else if (opts.receipt === null) opts.receipt = a;
     else throw new Error(`unexpected argument: ${a}`);
   }
+  if (opts.keyFile && opts.keysSource) throw new Error('--key and --keys are mutually exclusive');
   return opts;
 }
 
 const USAGE =
-  'usage: node verify.js <receipt> [--key pub.pem] [--kid <kid>] [--fetch <url>]\n' +
-  '       node verify.js --chain receipts.txt [--key pub.pem] [--kid <kid>] [--fetch <url>]\n';
+  'usage: node verify.js <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]\n' +
+  '       node verify.js --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]\n';
 
 function fail(msg) {
   process.stderr.write(`${msg}\n${USAGE}`);
@@ -181,10 +236,15 @@ async function main() {
   }
   if (!opts.chainFile && !opts.receipt) return fail('no receipt provided');
 
-  // Resolve the verification key + expected kid.
+  // Resolve the verification key(s) + expected kid.
   let ctx;
   try {
-    if (opts.keyFile) {
+    if (opts.keysSource) {
+      // Registry mode: resolve each receipt's key by its kid. --kid stays an
+      // optional additional guard (null => accept any kid present in the registry).
+      const keyring = await loadKeyring(opts.keysSource);
+      ctx = { keyring, expectedKid: opts.kid };
+    } else if (opts.keyFile) {
       const pem = fs.readFileSync(opts.keyFile, 'utf8');
       ctx = { publicKey: keyFromPem(pem), expectedKid: opts.kid };
     } else {

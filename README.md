@@ -17,7 +17,7 @@ The exact byte format is frozen in [RECEIPT_FORMAT.md](RECEIPT_FORMAT.md).
 - The receipt is a well-formed `base64url(body).base64url(signature)` token.
 - The `body.kid` matches the active published key id.
 - The raw Ed25519 signature verifies over the exact signed bytes
-  (`crchain.v1|kid|fp|prev|caller|ts` and, for v2 receipts, `|reg`).
+  (`crchain.v1|kid|fp|prev|caller|ts`; v2 appends `|reg`; v3 appends `|reg|ir`).
 - For a chain: every receipt's signature is valid AND each non-genesis link's
   `prev` equals `sha256:` + SHA-256 of the previous token string.
 
@@ -42,11 +42,15 @@ RECEIPT=$(curl -s -X POST https://app.coderifts.com/api/v1/action-verdict \
 node verify.js "$RECEIPT"
 ```
 
-Output (exit code 0 = valid, 1 = invalid, 2 = usage error):
+Output (exit code 0 = valid, 1 = invalid, 2 = usage error). The `action-verdict`
+endpoint issues `v:2` receipts (they carry `reg`):
 
 ```
 {"valid":true,"payload":{"v":2,"kid":"2026-07-k1","fp":"sha256:...","prev":"null","caller":"anon","ts":"...","reg":"..."}}
 ```
+
+Receipts from the `/diff` endpoint and the GitHub PR-check webhook are `v:3` — they
+additionally carry `ir` (the Change-IR hash), e.g. the demo receipt below.
 
 ## Quickstart (Python)
 
@@ -85,31 +89,68 @@ The first receipt is reported as `genesis` (its `prev` is the literal `null`) or
 `continuation` (it links to a token you did not supply). Every later link is
 checked against the SHA-256 of the token before it.
 
+## Verify the live demo receipt
+
+The demo pull request (`coderifts/demo` PR #4) carries a live `v:3` receipt in its
+CodeRifts check comment. Copy that token and verify it — the public key is fetched
+from the attestation endpoint automatically, so this is the one command a reader
+runs to confirm the demo verdict is genuine:
+
+```
+node verify.js "<paste the receipt token from the PR comment>"
+# or, fully offline against the key registry:
+node verify.js "<token>" --keys https://app.coderifts.com/.well-known/coderifts-keys.json
+```
+
+Both print `{"valid":true,...}` and exit `0` for a genuine receipt.
+
+## Key registry (verify across rotation)
+
+Instead of a single pinned key, resolve the signing key by the receipt's `kid`
+from the published append-only registry. This keeps receipts issued under a
+now-retired key verifiable:
+
+```
+node verify.js "$RECEIPT" --keys https://app.coderifts.com/.well-known/coderifts-keys.json
+python3 verify.py "$RECEIPT" --keys https://app.coderifts.com/.well-known/coderifts-keys.json
+
+# or against a local copy of the registry:
+node verify.js "$RECEIPT" --keys coderifts-keys.json
+```
+
+The registry is `{ "keys": [ { "kid", "public_key_pem", "status", "valid_from" } ] }`.
+`--key` and `--keys` are mutually exclusive.
+
 ## CLI reference
 
 ```
-verify.js <receipt> [--key pub.pem] [--kid <kid>] [--fetch <url>]
-verify.js --chain receipts.txt [--key pub.pem] [--kid <kid>] [--fetch <url>]
+verify.js <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
+verify.js --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
 
-verify.py <receipt> [--key pub.pem] [--kid <kid>] [--fetch <url>]
-verify.py --chain receipts.txt [--key pub.pem] [--kid <kid>] [--fetch <url>]
+verify.py <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
+verify.py --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
 ```
 
-- `--key <pem>`   verify against a local SPKI PEM public key (offline).
-- `--kid <kid>`   expected key id; mismatch yields `unknown_kid`.
-- `--fetch <url>` key-discovery URL (default:
+- `--key <pem>`    verify against a local SPKI PEM public key (offline).
+- `--keys <src>`   resolve the key by `kid` from a registry (URL or file); accepts
+  active and retired keys. Mutually exclusive with `--key`.
+- `--kid <kid>`    expected key id; mismatch yields `unknown_kid`.
+- `--fetch <url>`  key-discovery URL (default:
   `https://app.coderifts.com/api/v1/attestation/public-key`), used only when
-  `--key` is absent.
+  `--key`/`--keys` are absent.
 
 Error reasons: `malformed_structure`, `bad_json`, `unknown_kid`,
 `signature_error`, `signature_mismatch` (see RECEIPT_FORMAT.md section 6).
 
-## Key rotation limitation
+## Key rotation
 
-There is a single active signing kid. When CodeRifts rotates the key, receipts
-signed under the previous kid fail as `unknown_kid`. If you need to verify old
-receipts, pin the `public_key_pem` that was active at issuance, or verify
-promptly.
+There is a single *active* signing kid at any time. When CodeRifts rotates the
+key, the previous kid is marked `retired` (never removed) in the append-only
+registry at `/.well-known/coderifts-keys.json`. To verify receipts across a
+rotation, pass `--keys <registry-url|file>` so the verifier resolves each
+receipt's key by its `kid`. Without the registry (a single pinned `--key` or the
+discovery endpoint), receipts signed under a previous kid fail as `unknown_kid` —
+pin the `public_key_pem` active at issuance, or verify promptly.
 
 ## Tests
 
@@ -119,8 +160,13 @@ bash test/run.sh           # run every vector through BOTH verify.js and verify.
 ```
 
 `test/run.sh` fails if the two implementations ever disagree, if any vector does
-not match its expected `{valid, reason}`, or if exit codes diverge. The generated
-`test/vectors.json` uses an ephemeral key -- never the production key.
+not match its expected `{valid, reason}`, or if exit codes diverge. It covers v1,
+v2, and v3 vectors (including v3 tamper cases: flipped `ir`, flipped `reg`, wrong
+field order), the `--keys` registry-resolution path, and one **real production
+v3 receipt** captured from `coderifts/demo` PR #4 (the `live` block in
+`vectors.json`, verified against the live prod PUBLIC key). The regenerated
+ephemeral-key vectors never use the production key; the `live` block is a frozen
+captured artifact and is not regenerated.
 
 ## License
 

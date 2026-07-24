@@ -5,11 +5,13 @@ Verifies an Ed25519-signed CodeRifts chain_receipt WITHOUT trusting the CodeRift
 service. The reference format is frozen in ./RECEIPT_FORMAT.md.
 
 Usage:
-  python3 verify.py <receipt> [--key pub.pem] [--kid <kid>] [--fetch <url>]
-  python3 verify.py --chain receipts.txt [--key pub.pem] [--kid <kid>] [--fetch <url>]
+  python3 verify.py <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
+  python3 verify.py --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
 
-Key discovery: with no --key, the public key is fetched from
+Key discovery: with no --key/--keys, the public key is fetched from
   https://app.coderifts.com/api/v1/attestation/public-key  (override with --fetch <url>).
+--keys resolves each receipt's key by kid from a registry
+  ({keys: [{kid, public_key_pem, status, valid_from}]}); accepts a URL or file.
 
 Output: JSON { valid, reason?, payload?, chain? } to stdout.
 Exit codes: 0 valid, 1 invalid, 2 usage error.
@@ -32,8 +34,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 DEFAULT_FETCH_URL = "https://app.coderifts.com/api/v1/attestation/public-key"
 SIGNING_PREFIX = "crchain.v1"
 USAGE = (
-    "usage: python3 verify.py <receipt> [--key pub.pem] [--kid <kid>] [--fetch <url>]\n"
-    "       python3 verify.py --chain receipts.txt [--key pub.pem] [--kid <kid>] [--fetch <url>]\n"
+    "usage: python3 verify.py <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]\n"
+    "       python3 verify.py --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]\n"
 )
 
 
@@ -47,7 +49,11 @@ def sha256hex(text):
 
 
 def reconstruct_signed_input(payload):
-    """Byte-identical to verify.js reconstructSignedInput."""
+    """Byte-identical to verify.js reconstructSignedInput.
+
+    v1: base ; v2: base|reg ; v3: base|reg|ir
+    (field order matches the CodeRifts issuer, chain-attestation.js signingInputV3).
+    """
     base = "{p}|{kid}|{fp}|{prev}|{caller}|{ts}".format(
         p=SIGNING_PREFIX,
         kid=payload["kid"],
@@ -56,13 +62,38 @@ def reconstruct_signed_input(payload):
         caller=payload["caller"],
         ts=payload["ts"],
     )
+    if payload.get("v") == 3:
+        return base + "|" + str(payload["reg"]) + "|" + str(payload["ir"])
     if payload.get("v") == 2:
         return base + "|" + str(payload["reg"])
     return base
 
 
-def verify_receipt(token, public_key, expected_kid):
-    """Return an ordered dict {valid, reason?, payload?} matching verify.js."""
+def resolve_key(ctx, payload):
+    """Resolve the verification key for a payload; None => unknown_kid.
+
+    keyring mode (from --keys): pick the entry whose kid matches payload.kid (both
+    active and retired keys verify, so pre-rotation receipts stay checkable).
+    single-key mode (default): the one key, gated by expected_kid when known.
+    """
+    kid = payload.get("kid")
+    if ctx.get("keyring") is not None:
+        entry = ctx["keyring"].get(kid)
+        if entry is None:
+            return None
+        if ctx.get("expected_kid") is not None and kid != ctx["expected_kid"]:
+            return None
+        return entry["public_key"]
+    if ctx.get("expected_kid") is not None and kid != ctx["expected_kid"]:
+        return None
+    return ctx["public_key"]
+
+
+def verify_receipt(token, ctx):
+    """Return an ordered dict {valid, reason?, payload?} matching verify.js.
+
+    ctx is {public_key, expected_kid} (single-key) or {keyring, expected_kid}.
+    """
     # 1. structure
     if not isinstance(token, str) or len(token) == 0:
         return {"valid": False, "reason": "malformed_structure"}
@@ -78,8 +109,9 @@ def verify_receipt(token, public_key, expected_kid):
     if not isinstance(payload, dict):
         return {"valid": False, "reason": "bad_json"}
 
-    # 3. kid -- enforced only when an expected kid is known (from --kid or discovery).
-    if expected_kid is not None and payload.get("kid") != expected_kid:
+    # 3. kid -- resolve the key by kid (keyring) or gate the single key by expected_kid.
+    public_key = resolve_key(ctx, payload)
+    if public_key is None:
         return {"valid": False, "reason": "unknown_kid", "payload": payload}
 
     # 4. signature (raw Ed25519 over the reconstructed UTF-8 bytes)
@@ -98,13 +130,13 @@ def verify_receipt(token, public_key, expected_kid):
     return {"valid": True, "payload": payload}
 
 
-def verify_chain(tokens, public_key, expected_kid):
+def verify_chain(tokens, ctx):
     links = []
     all_valid = True
     first = None
 
     for i, token in enumerate(tokens):
-        res = verify_receipt(token, public_key, expected_kid)
+        res = verify_receipt(token, ctx)
         link = {"index": i, "signature_valid": res["valid"]}
         if not res["valid"]:
             link["reason"] = res["reason"]
@@ -146,13 +178,37 @@ def fetch_key_info(url):
     return key_from_pem(info["public_key_pem"]), info.get("kid")
 
 
+def load_keyring(source):
+    """Build a {kid: {public_key, status}} map from a CodeRifts key registry
+    ({keys: [{kid, public_key_pem, status, valid_from}]}). source may be an
+    http(s) URL or a local file path. Active and retired keys are both loaded."""
+    if source.lower().startswith(("http://", "https://")):
+        req = urllib.request.Request(source, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310 (explicit --keys only)
+            text = resp.read().decode("utf-8")
+    else:
+        with open(source, "r", encoding="utf-8") as fh:
+            text = fh.read()
+    doc = json.loads(text)
+    keys = doc.get("keys") if isinstance(doc, dict) else None
+    if not keys:
+        raise ValueError("no keys[] in registry " + source)
+    keyring = {}
+    for k in keys:
+        if not k or not k.get("kid") or not k.get("public_key_pem"):
+            raise ValueError("registry entry missing kid/public_key_pem in " + source)
+        keyring[k["kid"]] = {"public_key": key_from_pem(k["public_key_pem"]), "status": k.get("status")}
+    return keyring
+
+
 def fail(msg):
     sys.stderr.write(msg + "\n" + USAGE)
     sys.exit(2)
 
 
 def parse_args(argv):
-    opts = {"receipt": None, "chain_file": None, "key_file": None, "kid": None, "fetch_url": None, "help": False}
+    opts = {"receipt": None, "chain_file": None, "key_file": None, "keys_source": None,
+            "kid": None, "fetch_url": None, "help": False}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -162,6 +218,9 @@ def parse_args(argv):
         elif a == "--key":
             i += 1
             opts["key_file"] = argv[i] if i < len(argv) else None
+        elif a == "--keys":
+            i += 1
+            opts["keys_source"] = argv[i] if i < len(argv) else None
         elif a == "--kid":
             i += 1
             opts["kid"] = argv[i] if i < len(argv) else None
@@ -177,6 +236,8 @@ def parse_args(argv):
         else:
             raise ValueError("unexpected argument: " + a)
         i += 1
+    if opts["key_file"] and opts["keys_source"]:
+        raise ValueError("--key and --keys are mutually exclusive")
     return opts
 
 
@@ -191,15 +252,19 @@ def main():
     if not opts["chain_file"] and not opts["receipt"]:
         fail("no receipt provided")
 
-    # Resolve the verification key + expected kid.
+    # Resolve the verification key(s) + expected kid.
     try:
-        if opts["key_file"]:
+        if opts["keys_source"]:
+            # Registry mode: resolve each receipt's key by its kid; --kid is an
+            # optional additional guard.
+            ctx = {"keyring": load_keyring(opts["keys_source"]), "expected_kid": opts["kid"]}
+        elif opts["key_file"]:
             with open(opts["key_file"], "r", encoding="utf-8") as fh:
                 public_key = key_from_pem(fh.read())
-            expected_kid = opts["kid"]
+            ctx = {"public_key": public_key, "expected_kid": opts["kid"]}
         else:
             public_key, discovered_kid = fetch_key_info(opts["fetch_url"] or DEFAULT_FETCH_URL)
-            expected_kid = opts["kid"] or discovered_kid
+            ctx = {"public_key": public_key, "expected_kid": opts["kid"] or discovered_kid}
     except Exception as e:
         fail("could not load public key: " + str(e))
 
@@ -208,9 +273,9 @@ def main():
             tokens = [ln.strip() for ln in fh.read().split("\n") if ln.strip()]
         if not tokens:
             fail("chain file is empty")
-        result = verify_chain(tokens, public_key, expected_kid)
+        result = verify_chain(tokens, ctx)
     else:
-        result = verify_receipt(opts["receipt"], public_key, expected_kid)
+        result = verify_receipt(opts["receipt"], ctx)
 
     sys.stdout.write(json.dumps(result, separators=(",", ":")) + "\n")
     sys.exit(0 if result["valid"] else 1)

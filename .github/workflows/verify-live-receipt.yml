@@ -1,0 +1,47 @@
+name: verify-live-receipt
+
+# Tripwire: prove the in-repo verifier still accepts the CURRENT live CodeRifts
+# receipt. Runs on every push/PR (catches a verifier regression) and daily
+# (catches a live receipt-format bump shipping before the verifier learns it).
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  schedule:
+    # 07:17 UTC daily (odd minute avoids the top-of-hour scheduler surge).
+    - cron: '17 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vectors:
+    # Offline correctness: both verifiers agree on every committed vector.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install cryptography
+      - name: Cross-verify vectors (JS == PY)
+        run: bash test/run.sh
+
+  live-receipt:
+    # Online tripwire against the real demo receipt.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Verify the live demo receipt
+        # GITHUB_TOKEN is the automatic Actions token; it needs only public read
+        # (raises the API rate limit). No extra/secret credential is required.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node test/check-live-receipt.js
