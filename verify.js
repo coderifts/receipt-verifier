@@ -373,4 +373,26 @@ async function main() {
   process.exit(result.valid ? 0 : 1);
 }
 
-main().catch((e) => fail(e.message));
+// Reusable API — require('./verify') imports the pure verify logic WITHOUT running the CLI. The
+// GitHub Action + other embedders use these directly (verifyReceipt/verifyChain/deriveStatus/…);
+// the receipt format + taxonomy are frozen in RECEIPT_FORMAT.md.
+module.exports = {
+  verifyReceipt,
+  verifyChain,
+  deriveStatus,
+  resolveEntry,
+  reconstructSignedInput,
+  canonicalJson,
+  loadKeyring,
+  keyFromPem,
+  fetchKeyInfo,
+  sha256hex,
+  SIGNING_PREFIX,
+  MAX_SUPPORTED_V,
+  SIGNED_FIELDS,
+};
+
+// CLI entry — runs ONLY when invoked as a script (node verify.js …), never on require().
+if (require.main === module) {
+  main().catch((e) => fail(e.message));
+}
