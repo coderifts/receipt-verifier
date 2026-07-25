@@ -30,15 +30,41 @@ function b64url(buf) {
 function sha256hex(str) {
   return crypto.createHash('sha256').update(String(str), 'utf8').digest('hex');
 }
-function signingInput({ kid, fp, prev, caller, ts, reg, ir, v }) {
+function signingInput({ kid, fp, prev, caller, ts, reg, ir, expires_at, bh, v }) {
   const base = `${SIGNING_PREFIX}|${kid}|${fp}|${prev}|${caller}|${ts}`;
+  if (v === 4) return `${base}|${reg}|${ir}|${expires_at}|${bh}`;
   if (v === 3) return `${base}|${reg}|${ir}`;
   return v === 2 ? `${base}|${reg}` : base;
+}
+
+// Minimal canonical JSON (must match verify.js canonicalJson) for envelope-binding vectors.
+function canonicalJson(value) {
+  if (value === null) return 'null';
+  const t = typeof value;
+  if (t === 'boolean' || t === 'string') return JSON.stringify(value);
+  if (t === 'number') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  const keys = Object.keys(value).sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJson(value[k])}`).join(',')}}`;
 }
 
 // Ephemeral keypair -- generated fresh every run, never persisted as a private key.
 const { privateKey, publicKey } = crypto.generateKeyPairSync('ed25519');
 const publicPem = publicKey.export({ type: 'spki', format: 'pem' });
+
+// A second ephemeral key that plays the RETIRED key in the registry vectors.
+const retired = crypto.generateKeyPairSync('ed25519');
+const retiredPem = retired.publicKey.export({ type: 'spki', format: 'pem' });
+const RETIRED_KID = 'test-retired-k0';
+const RETIRED_AT = '2026-07-10T00:00:00.000Z'; // ts before this = valid-at-issue; at/after = invalid
+
+// v4 issuer: body carries reg + ir ('' when absent) + expires_at + bh.
+function issueV4({ fp, prev, caller, ts, reg, ir, expires_at, bh }, signer = privateKey, kid = KID) {
+  const body = { v: 4, kid, fp, prev, caller, ts, reg, ir, expires_at, bh };
+  const input = signingInput({ kid, fp, prev, caller, ts, reg, ir, expires_at, bh, v: 4 });
+  const sig = crypto.sign(null, Buffer.from(input, 'utf8'), signer);
+  return `${b64url(Buffer.from(JSON.stringify(body), 'utf8'))}.${b64url(sig)}`;
+}
 
 function issue({ fp, prev, caller, ts, reg }) {
   const v = typeof reg === 'string' && reg.length > 0 ? 2 : 1;
@@ -118,6 +144,47 @@ const truncated = validV1.split('.')[0];
 // garbage base64: body segment decodes to non-JSON -> bad_json.
 const garbageBase64 = `${b64url(Buffer.from('this is not json', 'utf8'))}.${b64url(crypto.randomBytes(64))}`;
 
+// --- v4 vectors (expires_at + bh in the signed bytes) ---
+const BH = 'sha256:' + 'c'.repeat(64);
+const EXP_FUTURE = '2099-01-01T00:00:00.000Z';
+const EXP_PAST = '2000-01-01T00:00:00.000Z';
+const validV4 = issueV4({ fp: FP1, prev: 'null', caller: 'bundle', ts: TS, reg: '', ir: '', expires_at: EXP_FUTURE, bh: BH });
+const expiredV4 = issueV4({ fp: FP1, prev: 'null', caller: 'bundle', ts: TS, reg: '', ir: '', expires_at: EXP_PAST, bh: BH });
+
+// v4 downgraded to v3 by folding |expires_at|bh into ir. The reconstructed v3 bytes collide with the
+// original v4 bytes (signature verifies) but ir now contains '|' -> the delimiter guard rejects it.
+const downgradeV4asV3 = (() => {
+  const [bodyB64, sigB64] = validV4.split('.');
+  const b = JSON.parse(Buffer.from(bodyB64, 'base64url').toString('utf8'));
+  const folded = { v: 3, kid: b.kid, fp: b.fp, prev: b.prev, caller: b.caller, ts: b.ts, reg: b.reg, ir: `${b.ir}|${b.expires_at}|${b.bh}` };
+  return `${b64url(Buffer.from(JSON.stringify(folded), 'utf8'))}.${sigB64}`;
+})();
+
+// unsupported v5: a body with v:5 signed over the v1-layout base (the verifier's fallthrough), so the
+// signature is VALID but the version exceeds MAX_SUPPORTED_V -> UNSUPPORTED_VERSION.
+const unsupportedV5 = (() => {
+  const fp = FP1; const prev = 'null'; const caller = 'api'; const ts = TS;
+  const body = { v: 5, kid: KID, fp, prev, caller, ts };
+  const input = `${SIGNING_PREFIX}|${KID}|${fp}|${prev}|${caller}|${ts}`;
+  const sig = crypto.sign(null, Buffer.from(input, 'utf8'), privateKey);
+  return `${b64url(Buffer.from(JSON.stringify(body), 'utf8'))}.${b64url(sig)}`;
+})();
+
+// --- v4 envelope-binding block: a token whose bh == body_hash of the envelope below ---
+const bindEnvelope = {
+  spec_version: 'decision-result.v1.1', decision: 'BLOCK', operation: 'merge', environment: 'production',
+  receipt: null, decision_body_hash: null,
+};
+const bindBh = (() => {
+  const rest = { ...bindEnvelope }; delete rest.receipt; delete rest.decision_body_hash;
+  return 'sha256:' + sha256hex(canonicalJson(rest));
+})();
+const bindToken = issueV4({ fp: FP1, prev: 'null', caller: 'bundle', ts: TS, reg: '', ir: '', expires_at: EXP_FUTURE, bh: bindBh });
+
+// --- retired-key block: tokens signed by a RETIRED key, before / after its retired_at ---
+const retiredValidAtIssue = issueV4({ fp: FP1, prev: 'null', caller: 'bundle', ts: '2026-07-05T00:00:00.000Z', reg: '', ir: '', expires_at: EXP_FUTURE, bh: BH }, retired.privateKey, RETIRED_KID);
+const retiredAfterRetire = issueV4({ fp: FP1, prev: 'null', caller: 'bundle', ts: '2026-07-20T00:00:00.000Z', reg: '', ir: '', expires_at: EXP_FUTURE, bh: BH }, retired.privateKey, RETIRED_KID);
+
 // --- 3-link chain (oldest first) ---
 const c1 = issue({ fp: FP1, prev: 'null', caller: 'api', ts: TS });
 const c2 = issue({ fp: FP2, prev: `sha256:${sha256hex(c1)}`, caller: 'api', ts: TS });
@@ -157,10 +224,36 @@ const vectors = {
     { name: 'wrong_kid', token: wrongKid, expected: { valid: false, reason: 'unknown_kid' } },
     { name: 'truncated', token: truncated, expected: { valid: false, reason: 'malformed_structure' } },
     { name: 'garbage_base64', token: garbageBase64, expected: { valid: false, reason: 'bad_json' } },
+    { name: 'valid_v4', token: validV4, expected: { valid: true, status: 'VERIFIED_CURRENT' } },
+    { name: 'expired_v4', token: expiredV4, expected: { valid: false, status: 'VERIFIED_EXPIRED' } },
+    { name: 'downgrade_v4_as_v3', token: downgradeV4asV3, expected: { valid: false, status: 'INVALID_SIGNATURE', reason: 'delimiter_in_field' } },
+    { name: 'unsupported_v5', token: unsupportedV5, expected: { valid: false, status: 'UNSUPPORTED_VERSION' } },
   ],
   chain: {
     tokens: [c1, c2, c3],
     expected: { valid: true, first: 'genesis' },
+  },
+  // v4 envelope-binding: verify with --envelope <bind.envelope> -> VERIFIED_CURRENT; a tampered
+  // envelope -> body_hash_mismatch. run.sh writes these to temp files.
+  bind: {
+    token: bindToken,
+    envelope: bindEnvelope,
+    expected_ok: { valid: true, status: 'VERIFIED_CURRENT' },
+    expected_tampered: { valid: false, status: 'INVALID_SIGNATURE', reason: 'body_hash_mismatch' },
+  },
+  // retired-key rule: signed by a retired key. ts before retired_at -> RETIRED_KEY_VALID_AT_ISSUE;
+  // ts at/after -> INVALID_SIGNATURE. run.sh builds a registry with active + retired entries.
+  retired: {
+    registry: {
+      keys: [
+        { kid: KID, public_key_pem: publicPem, status: 'active', valid_from: null, retired_at: null },
+        { kid: RETIRED_KID, public_key_pem: retiredPem, status: 'retired', valid_from: null, retired_at: RETIRED_AT },
+      ],
+    },
+    token_valid_at_issue: retiredValidAtIssue,
+    token_after_retire: retiredAfterRetire,
+    expected_valid_at_issue: { valid: true, status: 'RETIRED_KEY_VALID_AT_ISSUE' },
+    expected_after_retire: { valid: false, status: 'INVALID_SIGNATURE' },
   },
   live: LIVE,
 };

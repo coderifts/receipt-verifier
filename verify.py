@@ -6,19 +6,21 @@ service. The reference format is frozen in ./RECEIPT_FORMAT.md.
 
 Usage:
   python3 verify.py <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
+                    [--envelope <file>] [--audience <a>] [--environment <e>]
   python3 verify.py --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
 
 Key discovery: with no --key/--keys, the public key is fetched from
   https://app.coderifts.com/api/v1/attestation/public-key  (override with --fetch <url>).
 --keys resolves each receipt's key by kid from a registry
-  ({keys: [{kid, public_key_pem, status, valid_from}]}); accepts a URL or file.
+  ({keys: [{kid, public_key_pem, status, valid_from, retired_at}]}); accepts a URL or file.
 
-Output: JSON { valid, reason?, payload?, chain? } to stdout.
+Output: JSON { valid, status, reason?, payload?, chain? } to stdout — byte-identical to verify.js.
 Exit codes: 0 valid, 1 invalid, 2 usage error.
 
-Verification order (matches the reference taxonomy exactly):
-  structure -> json -> kid -> signature
-Reasons: malformed_structure | bad_json | unknown_kid | signature_error | signature_mismatch
+Verification order: structure -> json -> kid -> signature -> delimiter guard -> envelope binding
+-> taxonomy status. Statuses (12): VERIFIED_CURRENT, VERIFIED_EXPIRED, VERIFIED_WRONG_AUDIENCE,
+VERIFIED_WRONG_ENVIRONMENT, VERIFIED_SUPERSEDED, VERIFIED_SCOPE_MISMATCH, UNKNOWN_KEY,
+RETIRED_KEY_VALID_AT_ISSUE, INVALID_SIGNATURE, MALFORMED, UNSUPPORTED_VERSION, REGISTRY_UNREACHABLE.
 """
 
 import base64
@@ -26,6 +28,7 @@ import hashlib
 import json
 import sys
 import urllib.request
+from datetime import datetime, timezone
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
@@ -33,8 +36,11 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 DEFAULT_FETCH_URL = "https://app.coderifts.com/api/v1/attestation/public-key"
 SIGNING_PREFIX = "crchain.v1"
+MAX_SUPPORTED_V = 4
+SIGNED_FIELDS = ["kid", "fp", "prev", "caller", "ts", "reg", "ir", "expires_at", "bh"]
 USAGE = (
     "usage: python3 verify.py <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]\n"
+    "                  [--envelope <file>] [--audience <a>] [--environment <e>]\n"
     "       python3 verify.py --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]\n"
 )
 
@@ -48,11 +54,32 @@ def sha256hex(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def canonical_json(value):
+    """RFC 8785 (JCS) canonical JSON for our data domain — byte-identical to verify.js canonicalJson
+    and the issuer's src/canonical-json.js (ASCII keys, JSON scalars, sorted keys, no whitespace)."""
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, (int, float)):
+        if isinstance(value, float) and (value != value or value in (float("inf"), float("-inf"))):
+            raise ValueError("canonical_json: non-finite number")
+        return json.dumps(value)
+    if isinstance(value, list):
+        return "[" + ",".join(canonical_json(v) for v in value) + "]"
+    if isinstance(value, dict):
+        keys = sorted(value.keys())
+        return "{" + ",".join(json.dumps(k, ensure_ascii=False) + ":" + canonical_json(value[k]) for k in keys) + "}"
+    raise TypeError("canonical_json: unsupported type")
+
+
 def reconstruct_signed_input(payload):
     """Byte-identical to verify.js reconstructSignedInput.
 
-    v1: base ; v2: base|reg ; v3: base|reg|ir
-    (field order matches the CodeRifts issuer, chain-attestation.js signingInputV3).
+    v1: base ; v2: base|reg ; v3: base|reg|ir ; v4: base|reg|ir|expires_at|bh
+    (field order matches the CodeRifts issuer, chain-attestation.js signingInputV4).
     """
     base = "{p}|{kid}|{fp}|{prev}|{caller}|{ts}".format(
         p=SIGNING_PREFIX,
@@ -62,6 +89,8 @@ def reconstruct_signed_input(payload):
         caller=payload["caller"],
         ts=payload["ts"],
     )
+    if payload.get("v") == 4:
+        return base + "|" + str(payload["reg"]) + "|" + str(payload["ir"]) + "|" + str(payload["expires_at"]) + "|" + str(payload["bh"])
     if payload.get("v") == 3:
         return base + "|" + str(payload["reg"]) + "|" + str(payload["ir"])
     if payload.get("v") == 2:
@@ -69,13 +98,8 @@ def reconstruct_signed_input(payload):
     return base
 
 
-def resolve_key(ctx, payload):
-    """Resolve the verification key for a payload; None => unknown_kid.
-
-    keyring mode (from --keys): pick the entry whose kid matches payload.kid (both
-    active and retired keys verify, so pre-rotation receipts stay checkable).
-    single-key mode (default): the one key, gated by expected_kid when known.
-    """
+def resolve_entry(ctx, payload):
+    """Resolve the key entry for a payload; None => unknown_kid. Returns {public_key, status, retired_at}."""
     kid = payload.get("kid")
     if ctx.get("keyring") is not None:
         entry = ctx["keyring"].get(kid)
@@ -83,62 +107,111 @@ def resolve_key(ctx, payload):
             return None
         if ctx.get("expected_kid") is not None and kid != ctx["expected_kid"]:
             return None
-        return entry["public_key"]
+        return entry
     if ctx.get("expected_kid") is not None and kid != ctx["expected_kid"]:
         return None
-    return ctx["public_key"]
+    return {"public_key": ctx["public_key"], "status": None, "retired_at": None}
 
 
-def verify_receipt(token, ctx):
-    """Return an ordered dict {valid, reason?, payload?} matching verify.js.
+def _parse_iso(ts):
+    try:
+        return datetime.fromisoformat(str(ts).replace("Z", "+00:00")).timestamp() * 1000
+    except Exception:
+        return None
 
-    ctx is {public_key, expected_kid} (single-key) or {keyring, expected_kid}.
-    """
+
+def derive_status(payload, entry, opts):
+    """The 12-status taxonomy verdict for a signature-valid receipt (mirrors verify.js deriveStatus)."""
+    v = payload.get("v")
+    if isinstance(v, int) and v > MAX_SUPPORTED_V:
+        return "UNSUPPORTED_VERSION"
+    if entry.get("status") == "retired":
+        issued = _parse_iso(payload.get("ts"))
+        retired = _parse_iso(entry.get("retired_at"))
+        if retired is not None and issued is not None and issued < retired:
+            return "RETIRED_KEY_VALID_AT_ISSUE"
+        return "INVALID_SIGNATURE"
+    now = opts["now"] if opts.get("now") is not None else (datetime.now(timezone.utc).timestamp() * 1000)
+    if v == 4 and isinstance(payload.get("expires_at"), str):
+        exp = _parse_iso(payload["expires_at"])
+        if exp is not None and exp < now:
+            return "VERIFIED_EXPIRED"
+    env = opts.get("envelope")
+    if env:
+        if opts.get("expected_audience") is not None and env.get("audience") is not None and env["audience"] != opts["expected_audience"]:
+            return "VERIFIED_WRONG_AUDIENCE"
+        if opts.get("expected_environment") is not None and env.get("environment") is not None and env["environment"] != opts["expected_environment"]:
+            return "VERIFIED_WRONG_ENVIRONMENT"
+    return "VERIFIED_CURRENT"
+
+
+def verify_receipt(token, ctx, opts=None):
+    """Return an ordered dict {valid, status, reason?, payload?} matching verify.js key-for-key."""
+    opts = opts or {}
     # 1. structure
     if not isinstance(token, str) or len(token) == 0:
-        return {"valid": False, "reason": "malformed_structure"}
+        return {"valid": False, "status": "MALFORMED", "reason": "malformed_structure"}
     segments = token.split(".")
     if len(segments) != 2 or any(len(s) == 0 for s in segments):
-        return {"valid": False, "reason": "malformed_structure"}
+        return {"valid": False, "status": "MALFORMED", "reason": "malformed_structure"}
 
     # 2. json
     try:
         payload = json.loads(b64url_decode(segments[0]).decode("utf-8"))
     except Exception:
-        return {"valid": False, "reason": "bad_json"}
+        return {"valid": False, "status": "MALFORMED", "reason": "bad_json"}
     if not isinstance(payload, dict):
-        return {"valid": False, "reason": "bad_json"}
+        return {"valid": False, "status": "MALFORMED", "reason": "bad_json"}
 
-    # 3. kid -- resolve the key by kid (keyring) or gate the single key by expected_kid.
-    public_key = resolve_key(ctx, payload)
-    if public_key is None:
-        return {"valid": False, "reason": "unknown_kid", "payload": payload}
+    # 3. kid
+    entry = resolve_entry(ctx, payload)
+    if entry is None:
+        return {"valid": False, "status": "UNKNOWN_KEY", "reason": "unknown_kid", "payload": payload}
 
     # 4. signature (raw Ed25519 over the reconstructed UTF-8 bytes)
     message = reconstruct_signed_input(payload).encode("utf-8")
     try:
         sig = b64url_decode(segments[1])
     except Exception:
-        return {"valid": False, "reason": "signature_error", "payload": payload}
+        return {"valid": False, "status": "INVALID_SIGNATURE", "reason": "signature_error", "payload": payload}
     try:
-        public_key.verify(sig, message)
+        entry["public_key"].verify(sig, message)
     except InvalidSignature:
-        return {"valid": False, "reason": "signature_mismatch", "payload": payload}
+        return {"valid": False, "status": "INVALID_SIGNATURE", "reason": "signature_mismatch", "payload": payload}
     except Exception:
-        return {"valid": False, "reason": "signature_error", "payload": payload}
+        return {"valid": False, "status": "INVALID_SIGNATURE", "reason": "signature_error", "payload": payload}
 
-    return {"valid": True, "payload": payload}
+    # 5. anti-downgrade delimiter guard
+    for k in SIGNED_FIELDS:
+        if isinstance(payload.get(k), str) and "|" in payload[k]:
+            return {"valid": False, "status": "INVALID_SIGNATURE", "reason": "delimiter_in_field", "payload": payload}
+
+    # 6. envelope binding (v4)
+    if opts.get("envelope") and payload.get("v") == 4:
+        rest = dict(opts["envelope"])
+        rest.pop("receipt", None)
+        rest.pop("decision_body_hash", None)
+        recomputed = "sha256:" + sha256hex(canonical_json(rest))
+        if recomputed != payload.get("bh"):
+            return {"valid": False, "status": "INVALID_SIGNATURE", "reason": "body_hash_mismatch", "payload": payload}
+
+    # 7. taxonomy status
+    status = derive_status(payload, entry, opts)
+    if status == "INVALID_SIGNATURE":
+        return {"valid": False, "status": status, "reason": "retired_key_after_issue", "payload": payload}
+    valid = status in ("VERIFIED_CURRENT", "RETIRED_KEY_VALID_AT_ISSUE")
+    return {"valid": valid, "status": status, "payload": payload}
 
 
-def verify_chain(tokens, ctx):
+def verify_chain(tokens, ctx, opts=None):
     links = []
     all_valid = True
     first = None
 
     for i, token in enumerate(tokens):
-        res = verify_receipt(token, ctx)
+        res = verify_receipt(token, ctx, opts)
         link = {"index": i, "signature_valid": res["valid"]}
-        if not res["valid"]:
+        if not res["valid"] and "reason" in res:
             link["reason"] = res["reason"]
         prev = res.get("payload", {}).get("prev") if res.get("payload") else None
         if res.get("payload"):
@@ -179,9 +252,8 @@ def fetch_key_info(url):
 
 
 def load_keyring(source):
-    """Build a {kid: {public_key, status}} map from a CodeRifts key registry
-    ({keys: [{kid, public_key_pem, status, valid_from}]}). source may be an
-    http(s) URL or a local file path. Active and retired keys are both loaded."""
+    """Build a {kid: {public_key, status, retired_at}} map from a CodeRifts key registry
+    ({keys: [{kid, public_key_pem, status, valid_from, retired_at}]}). Active + retired both load."""
     if source.lower().startswith(("http://", "https://")):
         req = urllib.request.Request(source, headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310 (explicit --keys only)
@@ -197,7 +269,11 @@ def load_keyring(source):
     for k in keys:
         if not k or not k.get("kid") or not k.get("public_key_pem"):
             raise ValueError("registry entry missing kid/public_key_pem in " + source)
-        keyring[k["kid"]] = {"public_key": key_from_pem(k["public_key_pem"]), "status": k.get("status")}
+        keyring[k["kid"]] = {
+            "public_key": key_from_pem(k["public_key_pem"]),
+            "status": k.get("status"),
+            "retired_at": k.get("retired_at"),
+        }
     return keyring
 
 
@@ -208,7 +284,8 @@ def fail(msg):
 
 def parse_args(argv):
     opts = {"receipt": None, "chain_file": None, "key_file": None, "keys_source": None,
-            "kid": None, "fetch_url": None, "help": False}
+            "kid": None, "fetch_url": None, "envelope_file": None, "audience": None,
+            "environment": None, "help": False}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -227,6 +304,15 @@ def parse_args(argv):
         elif a == "--fetch":
             i += 1
             opts["fetch_url"] = argv[i] if i < len(argv) else None
+        elif a == "--envelope":
+            i += 1
+            opts["envelope_file"] = argv[i] if i < len(argv) else None
+        elif a == "--audience":
+            i += 1
+            opts["audience"] = argv[i] if i < len(argv) else None
+        elif a == "--environment":
+            i += 1
+            opts["environment"] = argv[i] if i < len(argv) else None
         elif a in ("-h", "--help"):
             opts["help"] = True
         elif a.startswith("--"):
@@ -255,8 +341,6 @@ def main():
     # Resolve the verification key(s) + expected kid.
     try:
         if opts["keys_source"]:
-            # Registry mode: resolve each receipt's key by its kid; --kid is an
-            # optional additional guard.
             ctx = {"keyring": load_keyring(opts["keys_source"]), "expected_kid": opts["kid"]}
         elif opts["key_file"]:
             with open(opts["key_file"], "r", encoding="utf-8") as fh:
@@ -268,14 +352,23 @@ def main():
     except Exception as e:
         fail("could not load public key: " + str(e))
 
+    envelope = None
+    if opts["envelope_file"]:
+        try:
+            with open(opts["envelope_file"], "r", encoding="utf-8") as fh:
+                envelope = json.loads(fh.read())
+        except Exception as e:
+            fail("could not read --envelope: " + str(e))
+    verify_opts = {"envelope": envelope, "expected_audience": opts["audience"], "expected_environment": opts["environment"]}
+
     if opts["chain_file"]:
         with open(opts["chain_file"], "r", encoding="utf-8") as fh:
             tokens = [ln.strip() for ln in fh.read().split("\n") if ln.strip()]
         if not tokens:
             fail("chain file is empty")
-        result = verify_chain(tokens, ctx)
+        result = verify_chain(tokens, ctx, verify_opts)
     else:
-        result = verify_receipt(opts["receipt"], ctx)
+        result = verify_receipt(opts["receipt"], ctx, verify_opts)
 
     sys.stdout.write(json.dumps(result, separators=(",", ":")) + "\n")
     sys.exit(0 if result["valid"] else 1)

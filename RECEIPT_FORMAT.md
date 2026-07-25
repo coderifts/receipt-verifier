@@ -1,4 +1,4 @@
-# CodeRifts chain-receipt format -- public freeze spec (crchain.v1 prefix; envelopes v1/v2/v3)
+# CodeRifts chain-receipt format -- public freeze spec (crchain.v1 prefix; envelopes v1/v2/v3/v4)
 
 This document is the public contract for the CodeRifts Ed25519 chain-receipt
 (the `chain_receipt` field on verdict responses). It is FROZEN: for a given
@@ -32,14 +32,16 @@ the JSON text), but issuers emit these keys in this order:
 
 | field    | type              | value                                                                 |
 |----------|-------------------|-----------------------------------------------------------------------|
-| `v`      | number            | `1`, `2`, or `3` (envelope version)                                    |
+| `v`      | number            | `1`, `2`, `3`, or `4` (envelope version)                              |
 | `kid`    | string            | key id; must match the active published key                           |
 | `fp`     | string            | verdict fingerprint, format `sha256:<64 lowercase hex>`               |
 | `prev`   | string            | `sha256:<64 lowercase hex>` of the previous token, or the literal `null` at genesis |
-| `caller` | string            | caller id recorded at issuance (e.g. `api`, `anon`, `v:<hash>`, `webhook`) |
+| `caller` | string            | caller id recorded at issuance (e.g. `api`, `anon`, `v:<hash>`, `webhook`, `bundle`, `mcp`) |
 | `ts`     | string            | issuance time, ISO 8601 (e.g. `2026-07-15T00:00:00.000Z`)             |
-| `reg`    | string (v2, v3)   | evidence-trust-registry hash, bare `<64 lowercase hex>` (NO `sha256:` prefix) |
-| `ir`     | string (v3 only)  | Change-IR (`CRIR.v1`) hash, format `sha256:<64 lowercase hex>`        |
+| `reg`    | string (v2, v3, v4) | evidence-trust-registry hash, bare `<64 lowercase hex>` (NO `sha256:` prefix) |
+| `ir`     | string (v3, v4)   | Change-IR (`CRIR.v1`) hash, format `sha256:<64 lowercase hex>`        |
+| `expires_at` | string (v4 only) | decision expiry, ISO 8601. Re-checkable: a verifier compares it to now (freshness). |
+| `bh`     | string (v4 only)  | `decision_body_hash`: `sha256:<64 hex>` of the RFC 8785-canonical decision envelope MINUS `receipt` MINUS `decision_body_hash`. Re-checkable via `--envelope`. |
 
 Notes:
 - `reg` is present when `v === 2` or `v === 3`. It is signed-but-INFORMATIONAL: a
@@ -63,22 +65,33 @@ The bytes covered by the signature are a UTF-8 pipe-delimited string:
 v1:  crchain.v1|<kid>|<fp>|<prev>|<caller>|<ts>
 v2:  crchain.v1|<kid>|<fp>|<prev>|<caller>|<ts>|<reg>
 v3:  crchain.v1|<kid>|<fp>|<prev>|<caller>|<ts>|<reg>|<ir>
+v4:  crchain.v1|<kid>|<fp>|<prev>|<caller>|<ts>|<reg>|<ir>|<expires_at>|<bh>
 ```
 
-- The prefix tag is the literal `crchain.v1` for `v:1`, `v:2`, and `v:3` bodies. It
-  is the signed-format tag, not the envelope version number.
+- The prefix tag is the literal `crchain.v1` for `v:1`..`v:4` bodies. It is the
+  signed-format tag, not the envelope version number, and does NOT change for v4 —
+  decision-envelope consumers fail closed on an unknown `format_version`, so the
+  prefix must stay `crchain.v1`.
 - The separator is a single pipe `|`.
-- Field order is exactly: prefix, `kid`, `fp`, `prev`, `caller`, `ts`, then (v2/v3)
-  `reg`, then (v3 only) `ir`.
-- The trailing segments are what keep the versions' signed bytes distinct: a v1
-  verifier can never accidentally accept a v2/v3 body, and a v2 verifier can never
-  accept a v3 body, and vice versa.
+- Field order is exactly: prefix, `kid`, `fp`, `prev`, `caller`, `ts`, then (v2+)
+  `reg`, then (v3+) `ir`, then (v4) `expires_at`, `bh`.
+- The trailing segments keep the versions' signed bytes distinct (nesting
+  v1 ⊂ v2 ⊂ v3 ⊂ v4): a lower-version verifier can never accept a higher-version
+  body, and vice versa. A signed field MUST NOT contain `|`; verifiers reject any
+  that does (`delimiter_in_field`), closing the cross-version re-split attack.
 
 Verifiers MUST reconstruct this string from the receipt's own body fields,
 dispatching on `body.v`:
+- `4` => append `|<reg>|<ir>|<expires_at>|<bh>`
 - `3` => append `|<reg>|<ir>`
 - `2` => append `|<reg>`
 - otherwise => the v1 string.
+
+A v4 receipt is issued only on envelope-bearing paths (bundle + MCP single-spec);
+HTTP-only verdict paths keep issuing v1/v2/v3. `bh` binds the entire decision
+envelope: given the envelope, a verifier recomputes `sha256:` + sha256 of its
+RFC 8785 (JCS) canonical form with `receipt` and `decision_body_hash` removed, and
+requires it to equal `bh` (`--envelope`; mismatch => `body_hash_mismatch`).
 
 ## 4. Signature
 
@@ -104,21 +117,40 @@ prev(receipt[i])  ==  "sha256:" + sha256hex( entire token string of receipt[i-1]
   continuation of a chain the verifier does not hold; this verifier reports it as
   `continuation` and cannot check that first link's predecessor.
 
-## 6. Error taxonomy (FROZEN order)
+## 6. Error taxonomy (FROZEN order) + status taxonomy
 
-Verification proceeds in this order and returns the first applicable reason:
+`reason` (FROZEN order) — the first applicable failure of the signature/structure check:
 
 1. `malformed_structure` -- not a string, empty, or not exactly two non-empty
    `.`-joined segments.
-2. `bad_json` -- the body segment does not base64url/UTF-8/JSON-decode to an
-   object.
-3. `unknown_kid` -- `body.kid` does not match the expected (published) kid.
-4. `signature_error` -- the signature could not be evaluated (e.g. malformed
-   signature bytes).
-5. `signature_mismatch` -- the signature did not verify against the reconstructed
-   bytes.
+2. `bad_json` -- the body segment does not base64url/UTF-8/JSON-decode to an object.
+3. `unknown_kid` -- `body.kid` does not match a known key.
+4. `signature_error` -- the signature could not be evaluated (e.g. malformed sig bytes).
+5. `signature_mismatch` -- the signature did not verify against the reconstructed bytes.
+6. `delimiter_in_field` -- a signed field contains `|` (cross-version re-split guard).
+7. `body_hash_mismatch` -- (`--envelope`, v4) the envelope's recomputed body hash != `bh`.
+8. `retired_key_after_issue` -- signed by a key already retired at the receipt's `ts`.
 
-A valid receipt returns `{ valid: true, payload }`.
+`status` (12-status taxonomy) — the verdict a caller branches on. `valid === (status is
+VERIFIED_CURRENT or RETIRED_KEY_VALID_AT_ISSUE)`. **8 live, 4 dormant** (fire only when the
+envelope carries the field AND a `--audience`/`--environment`/… check input is supplied):
+
+| status | live? | fires when |
+|--------|-------|------------|
+| `VERIFIED_CURRENT` | live | signature authentic; not expired; all supplied checks pass |
+| `VERIFIED_EXPIRED` | live | v4 signature authentic but `expires_at` < now |
+| `UNKNOWN_KEY` | live | `body.kid` not in the key set |
+| `RETIRED_KEY_VALID_AT_ISSUE` | live | signed by a retired key, `ts` < that key's `retired_at` |
+| `INVALID_SIGNATURE` | live | signature/delimiter/body-hash failure, or retired-at-issue |
+| `MALFORMED` | live | structure / JSON failure |
+| `UNSUPPORTED_VERSION` | live | `body.v` > the verifier's max supported version |
+| `REGISTRY_UNREACHABLE` | live | the key registry / attestation endpoint could not be reached |
+| `VERIFIED_WRONG_AUDIENCE` | dormant | `--audience` supplied and envelope `audience` differs |
+| `VERIFIED_WRONG_ENVIRONMENT` | dormant | `--environment` supplied and envelope `environment` differs |
+| `VERIFIED_SUPERSEDED` | dormant | a later decision supersedes this one (no check input defined yet) |
+| `VERIFIED_SCOPE_MISMATCH` | dormant | authorization scope differs (no check input defined yet) |
+
+An authentic, fresh receipt returns `{ valid: true, status: "VERIFIED_CURRENT", payload }`.
 
 ## 7. Key discovery
 
@@ -139,8 +171,14 @@ Key registry (all keys, active and retired):
 ```
 GET https://app.coderifts.com/.well-known/coderifts-keys.json
 -> { "keys": [ { "kid": "...", "public_key_pem": "-----BEGIN PUBLIC KEY-----\n...\n",
-                 "status": "active" | "retired", "valid_from": "<ISO 8601>" } ] }
+                 "status": "active" | "retired", "valid_from": "<ISO 8601>",
+                 "retired_at": "<ISO 8601>" | null } ] }
 ```
+
+- `retired_at` is `null` for an active key. For a retired key it is the instant the key
+  stopped signing: a receipt whose `ts` predates `retired_at` is `RETIRED_KEY_VALID_AT_ISSUE`
+  (still trustworthy — it was signed while the key was live); a receipt at/after `retired_at`
+  is rejected (`INVALID_SIGNATURE`). Verifiers pass the registry with `--keys`.
 
 - The registry is append-only: a rotated key is marked `retired` and a new `active`
   key is added; entries are never removed. This lets a verifier resolve the right

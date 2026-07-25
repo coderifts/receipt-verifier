@@ -14,7 +14,10 @@ PEM="$(mktemp -t rv_pub.XXXXXX)"
 CHAIN_FILE="$(mktemp -t rv_chain.XXXXXX)"
 LIVE_PEM="$(mktemp -t rv_livepub.XXXXXX)"
 KEYS_FILE="$(mktemp -t rv_keys.XXXXXX)"
-trap 'rm -f "$PEM" "$CHAIN_FILE" "$LIVE_PEM" "$KEYS_FILE"' EXIT
+ENV_FILE="$(mktemp -t rv_env.XXXXXX)"
+ENV_TAMPERED="$(mktemp -t rv_envt.XXXXXX)"
+RETIRED_KEYS="$(mktemp -t rv_retired.XXXXXX)"
+trap 'rm -f "$PEM" "$CHAIN_FILE" "$LIVE_PEM" "$KEYS_FILE" "$ENV_FILE" "$ENV_TAMPERED" "$RETIRED_KEYS"' EXIT
 
 node -e "process.stdout.write(require('./$VECTORS').public_key_pem)" > "$PEM"
 KID="$(node -e "process.stdout.write(require('./$VECTORS').kid)")"
@@ -30,7 +33,7 @@ jsonfield() {
 
 run_case() {
   local name="$1" token="$2" exp_valid="$3" exp_reason="$4"
-  local pem="${5:-$PEM}" kid="${6:-$KID}"
+  local pem="${5:-$PEM}" kid="${6:-$KID}" exp_status="${7:-}"
   checks=$((checks + 1))
 
   out_js="$(node verify.js "$token" --key "$pem" --kid "$kid" 2>/dev/null)"; code_js=$?
@@ -58,6 +61,13 @@ run_case() {
     echo "FAIL  $name: reason expected=$exp_reason got=$got_reason"
     ok=0
   fi
+  if [ -n "$exp_status" ]; then
+    local got_status; got_status="$(jsonfield "$out_js" status)"
+    if [ "$got_status" != "$exp_status" ]; then
+      echo "FAIL  $name: status expected=$exp_status got=$got_status"
+      ok=0
+    fi
+  fi
   # exit-code sanity vs valid
   local want_code=1; [ "$exp_valid" = "true" ] && want_code=0
   if [ "$code_js" != "$want_code" ]; then
@@ -79,7 +89,8 @@ for i in $(seq 0 $((n - 1))); do
   token="$(node -e "process.stdout.write(require('./$VECTORS').vectors[$i].token)")"
   ev="$(node -e "process.stdout.write(String(require('./$VECTORS').vectors[$i].expected.valid))")"
   er="$(node -e "const r=require('./$VECTORS').vectors[$i].expected.reason; process.stdout.write(r||'')")"
-  run_case "$name" "$token" "$ev" "$er"
+  es="$(node -e "const s=require('./$VECTORS').vectors[$i].expected.status; process.stdout.write(s||'')")"
+  run_case "$name" "$token" "$ev" "$er" "$PEM" "$KID" "$es"
 done
 
 echo
@@ -156,6 +167,45 @@ out_py2="$("$PYTHON" verify.py "$live_token" --keys "$KEYS_FILE" --kid absent-k9
 gr="$(jsonfield "$out_js2" reason)"
 [ "$gr" = "unknown_kid" ] || { echo "FAIL  keys-guard: expected unknown_kid got=$gr"; keys_ok=0; }
 if [ "$keys_ok" = "1" ]; then echo "ok    keys  (js==py; live receipt resolved by kid; --kid guard rejects)"; else fails=$((fails + 1)); fi
+
+echo
+echo "== v4 envelope binding (--envelope) =="
+bind_token="$(node -e "process.stdout.write(require('./$VECTORS').bind.token)")"
+node -e "process.stdout.write(JSON.stringify(require('./$VECTORS').bind.envelope))" > "$ENV_FILE"
+node -e "const e={...require('./$VECTORS').bind.envelope, decision:'ALLOW'}; process.stdout.write(JSON.stringify(e))" > "$ENV_TAMPERED"
+bind_ok=1
+checks=$((checks + 1))
+oj="$(node verify.js "$bind_token" --key "$PEM" --kid "$KID" --envelope "$ENV_FILE" 2>/dev/null)"; cj=$?
+op="$("$PYTHON" verify.py "$bind_token" --key "$PEM" --kid "$KID" --envelope "$ENV_FILE" 2>/dev/null)"; cp=$?
+[ "$oj" = "$op" ] || { echo "FAIL  bind-ok: JS/PY DIFFER"; echo " js:$oj"; echo " py:$op"; bind_ok=0; }
+[ "$(jsonfield "$oj" status)" = "VERIFIED_CURRENT" ] || { echo "FAIL  bind-ok: status=$(jsonfield "$oj" status)"; bind_ok=0; }
+[ "$cj" = "0" ] && [ "$cp" = "0" ] || { echo "FAIL  bind-ok: exit (js=$cj py=$cp)"; bind_ok=0; }
+checks=$((checks + 1))
+oj="$(node verify.js "$bind_token" --key "$PEM" --kid "$KID" --envelope "$ENV_TAMPERED" 2>/dev/null)"
+op="$("$PYTHON" verify.py "$bind_token" --key "$PEM" --kid "$KID" --envelope "$ENV_TAMPERED" 2>/dev/null)"
+[ "$oj" = "$op" ] || { echo "FAIL  bind-tampered: JS/PY DIFFER"; echo " js:$oj"; echo " py:$op"; bind_ok=0; }
+[ "$(jsonfield "$oj" reason)" = "body_hash_mismatch" ] || { echo "FAIL  bind-tampered: reason=$(jsonfield "$oj" reason)"; bind_ok=0; }
+if [ "$bind_ok" = "1" ]; then echo "ok    bind  (js==py; envelope binds; tampered envelope -> body_hash_mismatch)"; else fails=$((fails + 1)); fi
+
+echo
+echo "== retired-key rule (--keys with retired_at) =="
+node -e "process.stdout.write(JSON.stringify(require('./$VECTORS').retired.registry))" > "$RETIRED_KEYS"
+tok_valid="$(node -e "process.stdout.write(require('./$VECTORS').retired.token_valid_at_issue)")"
+tok_after="$(node -e "process.stdout.write(require('./$VECTORS').retired.token_after_retire)")"
+retired_ok=1
+checks=$((checks + 1))
+oj="$(node verify.js "$tok_valid" --keys "$RETIRED_KEYS" 2>/dev/null)"; cj=$?
+op="$("$PYTHON" verify.py "$tok_valid" --keys "$RETIRED_KEYS" 2>/dev/null)"; cp=$?
+[ "$oj" = "$op" ] || { echo "FAIL  retired-valid: JS/PY DIFFER"; echo " js:$oj"; echo " py:$op"; retired_ok=0; }
+[ "$(jsonfield "$oj" status)" = "RETIRED_KEY_VALID_AT_ISSUE" ] || { echo "FAIL  retired-valid: status=$(jsonfield "$oj" status)"; retired_ok=0; }
+[ "$cj" = "0" ] && [ "$cp" = "0" ] || { echo "FAIL  retired-valid: exit (js=$cj py=$cp)"; retired_ok=0; }
+checks=$((checks + 1))
+oj="$(node verify.js "$tok_after" --keys "$RETIRED_KEYS" 2>/dev/null)"; cj=$?
+op="$("$PYTHON" verify.py "$tok_after" --keys "$RETIRED_KEYS" 2>/dev/null)"; cp=$?
+[ "$oj" = "$op" ] || { echo "FAIL  retired-after: JS/PY DIFFER"; echo " js:$oj"; echo " py:$op"; retired_ok=0; }
+[ "$(jsonfield "$oj" status)" = "INVALID_SIGNATURE" ] || { echo "FAIL  retired-after: status=$(jsonfield "$oj" status)"; retired_ok=0; }
+[ "$cj" = "1" ] && [ "$cp" = "1" ] || { echo "FAIL  retired-after: exit (js=$cj py=$cp)"; retired_ok=0; }
+if [ "$retired_ok" = "1" ]; then echo "ok    retired  (js==py; valid-at-issue accepted; after-retire rejected)"; else fails=$((fails + 1)); fi
 
 echo
 echo "checks=$checks fails=$fails"

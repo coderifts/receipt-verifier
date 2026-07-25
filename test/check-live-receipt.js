@@ -32,7 +32,7 @@ const path = require('node:path');
 
 // The newest envelope version verify.js understands. Bump this in lockstep with
 // reconstructSignedInput() whenever a new crchain envelope version is supported.
-const MAX_SUPPORTED_V = 3;
+const MAX_SUPPORTED_V = 4;
 
 const REPO = process.env.DEMO_REPO || 'coderifts/demo';
 const PR = process.env.DEMO_PR || '4';
