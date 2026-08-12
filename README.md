@@ -17,9 +17,20 @@ The exact byte format is frozen in [RECEIPT_FORMAT.md](RECEIPT_FORMAT.md).
 - The receipt is a well-formed `base64url(body).base64url(signature)` token.
 - The `body.kid` matches the active published key id.
 - The raw Ed25519 signature verifies over the exact signed bytes
-  (`crchain.v1|kid|fp|prev|caller|ts`; v2 appends `|reg`; v3 appends `|reg|ir`).
+  (`crchain.v1|kid|fp|prev|caller|ts`; v2 appends `|reg`; v3 appends `|reg|ir`;
+  v4 appends `|reg|ir|expires_at|bh`). The `crchain.v1` prefix is the signed-format
+  tag (not the envelope version) and does not change for v4 — see
+  RECEIPT_FORMAT.md section 3. Version nesting is v1 ⊂ v2 ⊂ v3 ⊂ v4: a
+  lower-version verifier never accepts a higher-version receipt.
 - For a chain: every receipt's signature is valid AND each non-genesis link's
   `prev` equals `sha256:` + SHA-256 of the previous token string.
+- **v4 envelope binding** (optional `--envelope <file>`): the verifier recomputes
+  `sha256:` + SHA-256 of the RFC 8785 (JCS) canonical decision envelope with
+  `receipt` and `decision_body_hash` removed, and requires it to equal `bh`.
+  Mismatch ⇒ reason `body_hash_mismatch`. Independently, when `expires_at` is
+  present and in the past, `status` is `VERIFIED_EXPIRED` (signature may still
+  be authentic; `valid` is false for that status). v4 is issued only on
+  envelope-bearing paths (bundle + MCP single-spec); see RECEIPT_FORMAT.md.
 
 It does NOT recompute the verdict fingerprint `fp` from a verdict payload; `fp`
 is verified as an opaque, signed binding (see RECEIPT_FORMAT.md section 2).
@@ -124,23 +135,42 @@ The registry is `{ "keys": [ { "kid", "public_key_pem", "status", "valid_from" }
 ## CLI reference
 
 ```
-verify.js <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
+verify.js <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--envelope <file>]
 verify.js --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
 
-verify.py <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
+verify.py <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--envelope <file>]
 verify.py --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
 ```
 
-- `--key <pem>`    verify against a local SPKI PEM public key (offline).
-- `--keys <src>`   resolve the key by `kid` from a registry (URL or file); accepts
+- `--key <pem>`         verify against a local SPKI PEM public key (offline).
+- `--keys <src>`        resolve the key by `kid` from a registry (URL or file); accepts
   active and retired keys. Mutually exclusive with `--key`.
-- `--kid <kid>`    expected key id; mismatch yields `unknown_kid`.
-- `--fetch <url>`  key-discovery URL (default:
+- `--kid <kid>`         expected key id; mismatch yields `unknown_kid`.
+- `--fetch <url>`       key-discovery URL (default:
   `https://app.coderifts.com/api/v1/attestation/public-key`), used only when
   `--key`/`--keys` are absent.
+- `--envelope <file>`   (v4) path to a JSON decision-envelope file. The verifier
+  recomputes the RFC 8785 (JCS) canonical body hash (with `receipt` and
+  `decision_body_hash` stripped) and requires it to equal the receipt's `bh`.
+  Mismatch ⇒ `body_hash_mismatch`. Both `verify.js` and `verify.py` read a
+  **file path** (not an inline JSON string).
 
-Error reasons: `malformed_structure`, `bad_json`, `unknown_kid`,
-`signature_error`, `signature_mismatch` (see RECEIPT_FORMAT.md section 6).
+Example (v4 body-hash binding — use a real envelope file from an authorize /
+bundle path; do not invent a receipt token):
+
+```
+node verify.js "$RECEIPT" --envelope decision.json
+python3 verify.py "$RECEIPT" --envelope decision.json
+```
+
+Error reasons (signature/structure failures; see RECEIPT_FORMAT.md section 6):
+`malformed_structure`, `bad_json`, `unknown_kid`, `signature_error`,
+`signature_mismatch`, `delimiter_in_field`, `body_hash_mismatch`,
+`retired_key_after_issue`.
+
+Live `status` values include `VERIFIED_CURRENT` and, for v4 when `expires_at` is
+in the past, `VERIFIED_EXPIRED` (signature authentic but expired — `valid` is
+false). Full 12-status taxonomy: RECEIPT_FORMAT.md section 6.
 
 ## Key rotation
 
@@ -166,7 +196,9 @@ field order), the `--keys` registry-resolution path, and one **real production
 v3 receipt** captured from `coderifts/demo` PR #4 (the `live` block in
 `vectors.json`, verified against the live prod PUBLIC key). The regenerated
 ephemeral-key vectors never use the production key; the `live` block is a frozen
-captured artifact and is not regenerated.
+captured artifact and is not regenerated. Implementations also support v4
+(`expires_at`, `bh`, `--envelope`); see RECEIPT_FORMAT.md for the frozen byte
+layout and status taxonomy.
 
 ## License
 
