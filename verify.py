@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """CodeRifts chain-receipt verifier -- Python 3.10+, depends only on `cryptography`.
 
-Verifies an Ed25519-signed CodeRifts chain_receipt WITHOUT trusting the CodeRifts
-service. The reference format is frozen in ./RECEIPT_FORMAT.md.
+Verify the receipt yourself — offline, no live CodeRifts API call needed.
+The reference format is frozen in ./RECEIPT_FORMAT.md.
 
 Usage:
   python3 verify.py <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]

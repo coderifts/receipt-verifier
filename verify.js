@@ -4,8 +4,8 @@
 /*
  * CodeRifts chain-receipt verifier -- Node >= 20, zero dependencies (node:crypto only).
  *
- * Verifies an Ed25519-signed CodeRifts chain_receipt WITHOUT trusting the CodeRifts
- * service. The reference format is frozen in ./RECEIPT_FORMAT.md.
+ * Verify the receipt yourself — offline, no live CodeRifts API call needed.
+ * The reference format is frozen in ./RECEIPT_FORMAT.md.
  *
  * Usage:
  *   node verify.js <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]

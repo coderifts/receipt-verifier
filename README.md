@@ -1,6 +1,6 @@
 # CodeRifts receipt-verifier
 
-Verify CodeRifts Ed25519 chain-receipts **without trusting CodeRifts**.
+**Verify the receipt yourself — offline, no live CodeRifts API call needed.**
 
 Every CodeRifts verdict response can carry a signed `chain_receipt`. This repo is
 a tiny, independent verifier -- one file in Node, one in Python -- that checks a
