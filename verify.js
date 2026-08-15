@@ -326,7 +326,14 @@ async function main() {
     process.stdout.write(USAGE);
     process.exit(2);
   }
-  if (!opts.chainFile && !opts.receipt) return fail('no receipt provided');
+  // Empty string from `$(curl -s … | grep …)` on GitHub 403/rate-limit is a common silent path
+  // when the homepage one-liner is used without HTTP status checks — fail honestly.
+  if (!opts.chainFile && (!opts.receipt || !String(opts.receipt).trim())) {
+    return fail(
+      'no receipt provided — if you fetched via unauthenticated GitHub comments, a 403 rate limit '
+      + 'yields an empty capture; try again in a minute, or paste the receipt token directly',
+    );
+  }
 
   // Resolve the verification key(s) + expected kid.
   let ctx;
