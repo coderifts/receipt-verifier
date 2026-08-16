@@ -40,7 +40,7 @@ the JSON text), but issuers emit these keys in this order:
 | `ts`     | string            | issuance time, ISO 8601 (e.g. `2026-07-15T00:00:00.000Z`)             |
 | `reg`    | string (v2, v3, v4) | evidence-trust-registry hash, bare `<64 lowercase hex>` (NO `sha256:` prefix) |
 | `ir`     | string (v3, v4)   | Change-IR (`CRIR.v1`) hash, format `sha256:<64 lowercase hex>`        |
-| `expires_at` | string (v4 only) | decision expiry, ISO 8601. Re-checkable: a verifier compares it to now (freshness). |
+| `expires_at` | string (v4 only) | authorization TTL bound, ISO 8601. Producer sets `evaluated_at + per-operation TTL` then **signs** it (v4). Re-checkable: a verifier compares it to now (time-window only — see §2.1). |
 | `bh`     | string (v4 only)  | `decision_body_hash`: `sha256:<64 hex>` of the RFC 8785-canonical decision envelope MINUS `receipt` MINUS `decision_body_hash`. Re-checkable via `--envelope`. |
 
 Notes:
@@ -56,6 +56,27 @@ Notes:
   bytes containing `fp` were signed by the key; it does NOT recompute `fp` from a
   verdict payload. Recomputing `fp` requires the verdict-core canonical encoder
   and is out of scope for a receipt verifier.
+
+### 2.1 Per-operation `expires_at` TTL (authorization window)
+
+Producer computes `expires_at = evaluated_at + TTL(operation)` from a **closed** map,
+then signs the value on v4 receipts (`signingInputV4` appends `|expires_at|bh`). The
+operation is the existing envelope field (`context.operation` on authorize →
+`decision_result.operation`); issuers do not invent operations.
+
+| operation | TTL | rationale |
+|-----------|-----|-----------|
+| `tool_call` | **15 minutes** | Fast agent mutate; short window is correct. |
+| `merge` | **4 hours** | Human/CI PR review sits longer than 15m; flat 15m caused gate death by friction. |
+| `deploy` | **4 hours** | Deploy pipelines outlast a tool call; same class as merge. |
+| `publish` | **4 hours** | Publish pipelines outlast a tool call; same class as merge. |
+| unknown / null / missing | **15 minutes** | Shortest, fail-safe — never the longest window on an unrecognized operation. |
+
+**TTL is not freshness.** The `expires_at` TTL is the *authorization time-window*
+(how long the permission is valid). Content-identity (is the spec you authorized the
+same one you are shipping) is a **separate axis**: the `fp` fingerprint. A longer TTL
+does NOT loosen the fingerprint check — a `merge` receipt valid for hours still fails
+closed if the content drifted (`fingerprint_mismatch`).
 
 ## 3. Signed bytes (FROZEN)
 
