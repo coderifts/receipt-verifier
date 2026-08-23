@@ -108,8 +108,8 @@ checked against the SHA-256 of the token before it.
 ## Verify the live demo receipt
 
 The demo pull request (`coderifts/demo` PR #4) carries a live `v:3` receipt in its
-CodeRifts check comment. Copy that token and verify it — the public key is fetched
-from the attestation endpoint automatically, so this is the one command a reader
+CodeRifts check comment. Copy that token and verify it — keys are fetched from
+the published registry automatically, so this is the one command a reader
 runs to confirm the demo verdict is genuine:
 
 ```
@@ -192,8 +192,9 @@ verify.py --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>]
   active and retired keys. Mutually exclusive with `--key`.
 - `--kid <kid>`         expected key id; mismatch yields `unknown_kid`.
 - `--fetch <url>`       key-discovery URL (default:
-  `https://app.coderifts.com/api/v1/attestation/public-key`), used only when
-  `--key`/`--keys` are absent.
+  `https://app.coderifts.com/.well-known/coderifts-keys.json`), used only when
+  `--key`/`--keys` are absent. Accepts the registry array (active + retired)
+  and the legacy single-key body from `/api/v1/attestation/public-key`.
 - `--envelope <file>`   (v4) path to a JSON decision-envelope file. The verifier
   recomputes the RFC 8785 (JCS) canonical body hash (with `receipt` and
   `decision_body_hash` stripped) and requires it to equal the receipt's `bh`.
@@ -224,11 +225,13 @@ taxonomy: RECEIPT_FORMAT.md section 6.
 
 There is a single *active* signing kid at any time. When CodeRifts rotates the
 key, the previous kid is marked `retired` (never removed) in the append-only
-registry at `/.well-known/coderifts-keys.json`. To verify receipts across a
-rotation, pass `--keys <registry-url|file>` so the verifier resolves each
-receipt's key by its `kid`. Without the registry (a single pinned `--key` or the
-discovery endpoint), receipts signed under a previous kid fail as `unknown_kid` —
-pin the `public_key_pem` active at issuance, or verify promptly.
+registry at `/.well-known/coderifts-keys.json`. Default key discovery (no
+`--key`/`--keys`) fetches that registry, so a receipt signed under a retired
+kid resolves as `RETIRED_KEY_VALID_AT_ISSUE` when `ts` predates `retired_at`.
+A single pinned `--key`, or `--fetch` of the legacy
+`/api/v1/attestation/public-key` body, still sees only the active kid —
+receipts signed under a previous kid then fail as `unknown_kid`. `--keys`
+remains the explicit registry pin (URL or file).
 
 ## Tests
 

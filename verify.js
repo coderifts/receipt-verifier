@@ -11,10 +11,12 @@
  *   node verify.js <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
  *   node verify.js --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
  *
- * Key discovery: with no --key/--keys, the public key is fetched from
- *   https://app.coderifts.com/api/v1/attestation/public-key  (override with --fetch <url>).
+ * Key discovery: with no --key/--keys, keys are fetched from
+ *   https://app.coderifts.com/.well-known/coderifts-keys.json  (override with --fetch <url>).
+ * The fetch-and-resolve path accepts BOTH the registry array (active + retired)
+ * and the legacy single-key body from /api/v1/attestation/public-key.
  * --keys resolves each receipt's key by kid from a registry
- *   ({ keys: [{ kid, public_key_pem, status, valid_from }] }); accepts a URL or file.
+ *   ({ keys: [{ kid, public_key_pem, status, valid_from, retired_at }] }); accepts a URL or file.
  *
  * Output: JSON { valid, reason?, payload?, chain? } to stdout.
  * Exit codes: 0 valid, 1 invalid, 2 usage error.
@@ -27,7 +29,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 
-const DEFAULT_FETCH_URL = 'https://app.coderifts.com/api/v1/attestation/public-key';
+const DEFAULT_FETCH_URL = 'https://app.coderifts.com/.well-known/coderifts-keys.json';
 const SIGNING_PREFIX = 'crchain.v1';
 const MAX_SUPPORTED_V = 4;
 /** ID104 — verification expiry leeway (ms). `exp + leeway < now` → VERIFIED_EXPIRED. */
@@ -265,17 +267,56 @@ function keyFromPem(pem) {
   return crypto.createPublicKey(pem);
 }
 
+/**
+ * Build a kid -> key map from a registry document
+ * ({ keys: [{ kid, public_key_pem, status, valid_from, retired_at }] }).
+ * Returns null when `keys` is missing/empty so the caller can try the legacy
+ * single-key body. --keys still requires a non-empty keys[] (throws).
+ */
+function keyringFromDocument(doc, source) {
+  const keys = doc && Array.isArray(doc.keys) ? doc.keys : null;
+  if (!keys || keys.length === 0) return null;
+  const keyring = new Map();
+  for (const k of keys) {
+    if (!k || !k.kid || !k.public_key_pem) throw new Error(`registry entry missing kid/public_key_pem in ${source}`);
+    keyring.set(k.kid, { publicKey: keyFromPem(k.public_key_pem), status: k.status || null, retired_at: k.retired_at || null });
+  }
+  return keyring;
+}
+
+function pickActiveFromKeyring(keyring) {
+  for (const [kid, entry] of keyring) {
+    if (entry.status === 'active') return { kid, entry };
+  }
+  const first = keyring.entries().next().value;
+  return first ? { kid: first[0], entry: first[1] } : null;
+}
+
+/**
+ * Fetch a key document. Accepts BOTH shapes:
+ *   - registry: { keys: [{ kid, public_key_pem, status, retired_at, ...}] }
+ *   - legacy single-key: { kid, public_key_pem }  (/api/v1/attestation/public-key)
+ * Registry returns { publicKey, kid, keyring } (keyring carries retired keys).
+ * Legacy returns { publicKey, kid } — same as before, so --keys users + grant
+ * verifiers that read publicKey/kid stay byte-compatible.
+ */
 async function fetchKeyInfo(url) {
   const res = await fetch(url, { headers: { Accept: 'application/json' } });
   if (!res.ok) throw new Error(`fetch ${url} -> HTTP ${res.status}`);
   const info = await res.json();
+  const keyring = keyringFromDocument(info, url);
+  if (keyring) {
+    const picked = pickActiveFromKeyring(keyring);
+    if (!picked) throw new Error(`no usable keys at ${url}`);
+    return { publicKey: picked.entry.publicKey, kid: picked.kid, keyring };
+  }
   if (!info || !info.public_key_pem) throw new Error(`no public_key_pem at ${url}`);
   return { publicKey: keyFromPem(info.public_key_pem), kid: info.kid || null };
 }
 
 /**
  * Build a kid -> key map from a CodeRifts key registry
- * ({ keys: [{ kid, public_key_pem, status, valid_from }] }). A --keys source may be
+ * ({ keys: [{ kid, public_key_pem, status, valid_from, retired_at }] }). A --keys source may be
  * an http(s) URL or a local file path. Both active and retired keys are loaded.
  */
 async function loadKeyring(source) {
@@ -288,13 +329,8 @@ async function loadKeyring(source) {
     text = fs.readFileSync(source, 'utf8');
   }
   const doc = JSON.parse(text);
-  const keys = doc && Array.isArray(doc.keys) ? doc.keys : null;
-  if (!keys || keys.length === 0) throw new Error(`no keys[] in registry ${source}`);
-  const keyring = new Map();
-  for (const k of keys) {
-    if (!k || !k.kid || !k.public_key_pem) throw new Error(`registry entry missing kid/public_key_pem in ${source}`);
-    keyring.set(k.kid, { publicKey: keyFromPem(k.public_key_pem), status: k.status || null, retired_at: k.retired_at || null });
-  }
+  const keyring = keyringFromDocument(doc, source);
+  if (!keyring) throw new Error(`no keys[] in registry ${source}`);
   return keyring;
 }
 
@@ -365,8 +401,13 @@ async function main() {
       ctx = { publicKey: keyFromPem(pem), expectedKid: opts.kid };
     } else {
       const info = await fetchKeyInfo(opts.fetchUrl || DEFAULT_FETCH_URL);
-      // An explicit --kid overrides the discovered kid.
-      ctx = { publicKey: info.publicKey, expectedKid: opts.kid || info.kid };
+      if (info.keyring) {
+        // Registry shape: resolve each receipt by kid (retired window included).
+        ctx = { keyring: info.keyring, expectedKid: opts.kid };
+      } else {
+        // Legacy single-key body. An explicit --kid overrides the discovered kid.
+        ctx = { publicKey: info.publicKey, expectedKid: opts.kid || info.kid };
+      }
     }
   } catch (e) {
     return fail(`could not load public key: ${e.message}`);
@@ -409,8 +450,10 @@ module.exports = {
   canonicalJson,
   loadKeyring,
   keyFromPem,
+  keyringFromDocument,
   fetchKeyInfo,
   sha256hex,
+  DEFAULT_FETCH_URL,
   SIGNING_PREFIX,
   MAX_SUPPORTED_V,
   SIGNED_FIELDS,

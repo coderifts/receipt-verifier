@@ -208,7 +208,8 @@ GET https://app.coderifts.com/.well-known/coderifts-keys.json
 - Both verifiers accept `--keys <url|file>` to resolve by kid from this registry.
   A retired key still verifies (that is the point); an unlisted kid yields
   `unknown_kid`.
-- Rotation caveat when you do NOT use the registry: with a single pinned `--key` /
-  the discovery endpoint, receipts signed under a previous kid fail as
-  `unknown_kid`. Pin the `public_key_pem` active at issuance, use `--keys`, or
-  verify promptly.
+- Default discovery (no `--key`/`--keys`) fetches this registry, so a retired
+  kid resolves as `RETIRED_KEY_VALID_AT_ISSUE` when `ts` predates `retired_at`.
+  A single pinned `--key`, or `--fetch` of the legacy single-key body, still
+  sees only the active kid — receipts signed under a previous kid then fail as
+  `unknown_kid`. Pin the `public_key_pem` active at issuance, or pass `--keys`.

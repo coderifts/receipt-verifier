@@ -9,8 +9,10 @@ Usage:
                     [--envelope <file>] [--audience <a>] [--environment <e>]
   python3 verify.py --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
 
-Key discovery: with no --key/--keys, the public key is fetched from
-  https://app.coderifts.com/api/v1/attestation/public-key  (override with --fetch <url>).
+Key discovery: with no --key/--keys, keys are fetched from
+  https://app.coderifts.com/.well-known/coderifts-keys.json  (override with --fetch <url>).
+The fetch-and-resolve path accepts BOTH the registry array (active + retired)
+and the legacy single-key body from /api/v1/attestation/public-key.
 --keys resolves each receipt's key by kid from a registry
   ({keys: [{kid, public_key_pem, status, valid_from, retired_at}]}); accepts a URL or file.
 
@@ -35,7 +37,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-DEFAULT_FETCH_URL = "https://app.coderifts.com/api/v1/attestation/public-key"
+DEFAULT_FETCH_URL = "https://app.coderifts.com/.well-known/coderifts-keys.json"
 SIGNING_PREFIX = "crchain.v1"
 MAX_SUPPORTED_V = 4
 SIGNED_FIELDS = ["kid", "fp", "prev", "caller", "ts", "reg", "ir", "expires_at", "bh"]
@@ -268,13 +270,51 @@ def key_from_pem(pem_text):
     return key
 
 
-def fetch_key_info(url):
+def keyring_from_document(doc, source):
+    """Build a kid -> entry map from a registry document. None when keys[] is missing/empty
+    so the caller can try the legacy single-key body."""
+    keys = doc.get("keys") if isinstance(doc, dict) else None
+    if not keys:
+        return None
+    keyring = {}
+    for k in keys:
+        if not k or not k.get("kid") or not k.get("public_key_pem"):
+            raise ValueError("registry entry missing kid/public_key_pem in " + source)
+        keyring[k["kid"]] = {
+            "public_key": key_from_pem(k["public_key_pem"]),
+            "status": k.get("status"),
+            "retired_at": k.get("retired_at"),
+        }
+    return keyring
+
+
+def fetch_key_document(url):
+    """Fetch a key document. Accepts BOTH shapes: registry {keys:[...]} and
+    legacy {kid, public_key_pem}. Registry includes a keyring so retired kids resolve."""
     req = urllib.request.Request(url, headers={"Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310 (explicit --fetch/default only)
         info = json.loads(resp.read().decode("utf-8"))
+    keyring = keyring_from_document(info, url)
+    if keyring:
+        active_kid = None
+        active_entry = None
+        for kid, entry in keyring.items():
+            if entry.get("status") == "active":
+                active_kid, active_entry = kid, entry
+                break
+        if active_entry is None:
+            active_kid = next(iter(keyring))
+            active_entry = keyring[active_kid]
+        return {"public_key": active_entry["public_key"], "kid": active_kid, "keyring": keyring}
     if not info or not info.get("public_key_pem"):
         raise ValueError("no public_key_pem at " + url)
-    return key_from_pem(info["public_key_pem"]), info.get("kid")
+    return {"public_key": key_from_pem(info["public_key_pem"]), "kid": info.get("kid")}
+
+
+def fetch_key_info(url):
+    """Legacy tuple (public_key, kid) of the active/single key — grant verifier unpacks this."""
+    info = fetch_key_document(url)
+    return info["public_key"], info.get("kid")
 
 
 def load_keyring(source):
@@ -288,18 +328,9 @@ def load_keyring(source):
         with open(source, "r", encoding="utf-8") as fh:
             text = fh.read()
     doc = json.loads(text)
-    keys = doc.get("keys") if isinstance(doc, dict) else None
-    if not keys:
+    keyring = keyring_from_document(doc, source)
+    if not keyring:
         raise ValueError("no keys[] in registry " + source)
-    keyring = {}
-    for k in keys:
-        if not k or not k.get("kid") or not k.get("public_key_pem"):
-            raise ValueError("registry entry missing kid/public_key_pem in " + source)
-        keyring[k["kid"]] = {
-            "public_key": key_from_pem(k["public_key_pem"]),
-            "status": k.get("status"),
-            "retired_at": k.get("retired_at"),
-        }
     return keyring
 
 
@@ -373,8 +404,11 @@ def main():
                 public_key = key_from_pem(fh.read())
             ctx = {"public_key": public_key, "expected_kid": opts["kid"]}
         else:
-            public_key, discovered_kid = fetch_key_info(opts["fetch_url"] or DEFAULT_FETCH_URL)
-            ctx = {"public_key": public_key, "expected_kid": opts["kid"] or discovered_kid}
+            info = fetch_key_document(opts["fetch_url"] or DEFAULT_FETCH_URL)
+            if info.get("keyring"):
+                ctx = {"keyring": info["keyring"], "expected_kid": opts["kid"]}
+            else:
+                ctx = {"public_key": info["public_key"], "expected_kid": opts["kid"] or info.get("kid")}
     except Exception as e:
         fail("could not load public key: " + str(e))
 

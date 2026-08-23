@@ -218,12 +218,32 @@ else
 fi
 
 echo
+echo "== ID131 default-fetch dual-shape (js) =="
+checks=$((checks + 1))
+if node test/fetch-shapes.js; then
+  echo "ok    fetch-shapes.js"
+else
+  echo "FAIL  fetch-shapes.js"
+  fails=$((fails + 1))
+fi
+
+echo
 echo "== ID104 leeway (py) =="
 checks=$((checks + 1))
 if "$PYTHON" test/test_leeway.py; then
   echo "ok    test_leeway.py"
 else
   echo "FAIL  test_leeway.py"
+  fails=$((fails + 1))
+fi
+
+echo
+echo "== ID131 default-fetch dual-shape (py) =="
+checks=$((checks + 1))
+if "$PYTHON" test/test_fetch_shapes.py; then
+  echo "ok    test_fetch_shapes.py"
+else
+  echo "FAIL  test_fetch_shapes.py"
   fails=$((fails + 1))
 fi
 
