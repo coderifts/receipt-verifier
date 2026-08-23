@@ -159,7 +159,7 @@ envelope carries the field AND a `--audience`/`--environment`/… check input is
 | status | live? | fires when |
 |--------|-------|------------|
 | `VERIFIED_CURRENT` | live | signature authentic; not expired; all supplied checks pass |
-| `VERIFIED_EXPIRED` | live | v4 signature authentic but `expires_at` < now |
+| `VERIFIED_EXPIRED` | live | v4 signature authentic but `expires_at + 30s` (`CLOCK_SKEW_LEEWAY_MS`) < now. 0s leeway for destructive operations in production when the intended context declares them; this verifier has `environment` but no destructive / operation_class field, so the 30s default always applies. |
 | `UNKNOWN_KEY` | live | `body.kid` not in the key set |
 | `RETIRED_KEY_VALID_AT_ISSUE` | live | signed by a retired key, `ts` < that key's `retired_at` |
 | `INVALID_SIGNATURE` | live | signature/delimiter/body-hash failure, or retired-at-issue |
