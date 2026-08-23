@@ -208,5 +208,131 @@ op="$("$PYTHON" verify.py "$tok_after" --keys "$RETIRED_KEYS" 2>/dev/null)"; cp=
 if [ "$retired_ok" = "1" ]; then echo "ok    retired  (js==py; valid-at-issue accepted; after-retire rejected)"; else fails=$((fails + 1)); fi
 
 echo
+echo "== require-smoke + ID104 leeway (js) =="
+checks=$((checks + 1))
+if node test/require-smoke.js; then
+  echo "ok    require-smoke"
+else
+  echo "FAIL  require-smoke"
+  fails=$((fails + 1))
+fi
+
+echo
+echo "== ID104 leeway (py) =="
+checks=$((checks + 1))
+if "$PYTHON" test/test_leeway.py; then
+  echo "ok    test_leeway.py"
+else
+  echo "FAIL  test_leeway.py"
+  fails=$((fails + 1))
+fi
+
+GRANT_VECTORS="test/grant-vectors.json"
+GRANT_PEM="$(mktemp -t rv_gpub.XXXXXX)"
+GRANT_KEYS="$(mktemp -t rv_gkeys.XXXXXX)"
+GRANT_AFTER="$(mktemp -t rv_gafter.XXXXXX)"
+trap 'rm -f "$PEM" "$CHAIN_FILE" "$LIVE_PEM" "$KEYS_FILE" "$ENV_FILE" "$ENV_TAMPERED" "$RETIRED_KEYS" "$GRANT_PEM" "$GRANT_KEYS" "$GRANT_AFTER"' EXIT
+
+echo
+echo "== cr.exec.v1 grant vectors (verify-grant.js == verify_grant.py) =="
+if [ ! -f "$GRANT_VECTORS" ]; then
+  echo "FAIL  $GRANT_VECTORS missing — run: node test/gen-grant-vectors.js"
+  fails=$((fails + 1))
+else
+  node -e "process.stdout.write(require('./$GRANT_VECTORS').public_key_pem)" > "$GRANT_PEM"
+  GRANT_KID="$(node -e "process.stdout.write(require('./$GRANT_VECTORS').kid)")"
+  node -e "process.stdout.write(JSON.stringify(require('./$GRANT_VECTORS').registry))" > "$GRANT_KEYS"
+  gn="$(node -e "process.stdout.write(String(require('./$GRANT_VECTORS').vectors.length))")"
+  for i in $(seq 0 $((gn - 1))); do
+    name="$(node -e "process.stdout.write(require('./$GRANT_VECTORS').vectors[$i].name)")"
+    token="$(node -e "process.stdout.write(require('./$GRANT_VECTORS').vectors[$i].token)")"
+    ev="$(node -e "process.stdout.write(String(require('./$GRANT_VECTORS').vectors[$i].expected.valid))")"
+    er="$(node -e "const r=require('./$GRANT_VECTORS').vectors[$i].expected.reason; process.stdout.write(r||'')")"
+    es="$(node -e "process.stdout.write(require('./$GRANT_VECTORS').vectors[$i].expected.status||'')")"
+    keys_mode="$(node -e "process.stdout.write(require('./$GRANT_VECTORS').vectors[$i].keys||'')")"
+    checks=$((checks + 1))
+
+    extra=()
+    if [ "$keys_mode" = "retired_registry" ]; then
+      node -e "process.stdout.write(JSON.stringify(require('./$GRANT_VECTORS').retired_registry))" > "$GRANT_KEYS"
+      extra=(--keys "$GRANT_KEYS")
+    else
+      node -e "process.stdout.write(JSON.stringify(require('./$GRANT_VECTORS').registry))" > "$GRANT_KEYS"
+      extra=(--key "$GRANT_PEM" --kid "$GRANT_KID")
+    fi
+    op="$(node -e "const f=require('./$GRANT_VECTORS').vectors[$i].flags||{}; process.stdout.write(f['intended-operation']||'')")"
+    tgt="$(node -e "const f=require('./$GRANT_VECTORS').vectors[$i].flags||{}; process.stdout.write(f['intended-target']||'')")"
+    aud="$(node -e "const f=require('./$GRANT_VECTORS').vectors[$i].flags||{}; process.stdout.write(f['intended-audience']||'')")"
+    rec="$(node -e "const f=require('./$GRANT_VECTORS').vectors[$i].flags||{}; process.stdout.write(f.receipt||'')")"
+    after="$(node -e "const f=require('./$GRANT_VECTORS').vectors[$i].flags||{}; process.stdout.write(f.after_payload==null?'':String(f.after_payload))")"
+    [ -n "$op" ] && extra+=(--intended-operation "$op")
+    [ -n "$tgt" ] && extra+=(--intended-target "$tgt")
+    [ -n "$aud" ] && extra+=(--intended-audience "$aud")
+    [ -n "$rec" ] && extra+=(--receipt "$rec")
+    if [ -n "$after" ]; then
+      printf '%s' "$after" > "$GRANT_AFTER"
+      extra+=(--intended-after-file "$GRANT_AFTER")
+    fi
+
+    out_js="$(node verify-grant.js "$token" "${extra[@]}" 2>/dev/null)"; code_js=$?
+    out_py="$("$PYTHON" verify_grant.py "$token" "${extra[@]}" 2>/dev/null)"; code_py=$?
+    gok=1
+    if [ "$out_js" != "$out_py" ]; then
+      echo "FAIL  $name: JS/PY OUTPUT DIFFER"
+      echo "  js: $out_js"
+      echo "  py: $out_py"
+      gok=0
+    fi
+    if [ "$code_js" != "$code_py" ]; then
+      echo "FAIL  $name: exit codes differ (js=$code_js py=$code_py)"
+      gok=0
+    fi
+    got_valid="$(jsonfield "$out_js" valid)"
+    got_reason="$(jsonfield "$out_js" reason)"
+    got_status="$(jsonfield "$out_js" status)"
+    [ "$got_valid" = "$ev" ] || { echo "FAIL  $name: valid expected=$ev got=$got_valid"; gok=0; }
+    [ "$got_status" = "$es" ] || { echo "FAIL  $name: status expected=$es got=$got_status"; gok=0; }
+    if [ -n "$er" ] && [ "$got_reason" != "$er" ]; then
+      echo "FAIL  $name: reason expected=$er got=$got_reason"
+      gok=0
+    fi
+    want_code=1; [ "$ev" = "true" ] && want_code=0
+    if [ "$code_js" != "$want_code" ]; then
+      echo "FAIL  $name: exit code expected=$want_code got=$code_js"
+      gok=0
+    fi
+    if [ "$gok" = "1" ]; then
+      echo "ok    $name  (js==py; status=$got_status)"
+    else
+      fails=$((fails + 1))
+    fi
+  done
+fi
+
+echo
+echo "== require-grant-smoke + test_grant.py + app-kernel cross-check =="
+checks=$((checks + 1))
+if node test/require-grant-smoke.js; then
+  echo "ok    require-grant-smoke"
+else
+  echo "FAIL  require-grant-smoke"
+  fails=$((fails + 1))
+fi
+checks=$((checks + 1))
+if "$PYTHON" test/test_grant.py; then
+  echo "ok    test_grant.py"
+else
+  echo "FAIL  test_grant.py"
+  fails=$((fails + 1))
+fi
+checks=$((checks + 1))
+if node test/cross-check-grant.js; then
+  echo "ok    cross-check-grant (js == app kernel on EG-*)"
+else
+  echo "FAIL  cross-check-grant"
+  fails=$((fails + 1))
+fi
+
+echo
 echo "checks=$checks fails=$fails"
 [ "$fails" = "0" ] && { echo "ALL PASS"; exit 0; } || { echo "FAILURES: $fails"; exit 1; }

@@ -26,6 +26,7 @@ RETIRED_KEY_VALID_AT_ISSUE, INVALID_SIGNATURE, MALFORMED, UNSUPPORTED_VERSION, R
 import base64
 import hashlib
 import json
+import math
 import sys
 import urllib.request
 from datetime import datetime, timezone
@@ -38,6 +39,30 @@ DEFAULT_FETCH_URL = "https://app.coderifts.com/api/v1/attestation/public-key"
 SIGNING_PREFIX = "crchain.v1"
 MAX_SUPPORTED_V = 4
 SIGNED_FIELDS = ["kid", "fp", "prev", "caller", "ts", "reg", "ir", "expires_at", "bh"]
+# ID104 — verification expiry leeway (ms). exp + leeway < now → VERIFIED_EXPIRED.
+CLOCK_SKEW_LEEWAY_MS = 30_000
+
+
+def expiry_leeway_ms(context=None):
+    """0s grace only when context DECLARES destructive AND production.
+
+    This surface has envelope.environment / --environment; no destructive /
+    operation_class field — never guess from operation labels.
+    """
+    return CLOCK_SKEW_LEEWAY_MS
+
+
+def _is_finite_number(value):
+    """Match JS Number.isFinite: real int/float only, not bool, not coerced strings."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return math.isfinite(value)
+
+
+def is_expired_at(expires_at_ms, now_ms, context=None):
+    if not _is_finite_number(expires_at_ms) or not _is_finite_number(now_ms):
+        return False
+    return (float(expires_at_ms) + expiry_leeway_ms(context)) < float(now_ms)
 USAGE = (
     "usage: python3 verify.py <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]\n"
     "                  [--envelope <file>] [--audience <a>] [--environment <e>]\n"
@@ -134,7 +159,8 @@ def derive_status(payload, entry, opts):
     now = opts["now"] if opts.get("now") is not None else (datetime.now(timezone.utc).timestamp() * 1000)
     if v == 4 and isinstance(payload.get("expires_at"), str):
         exp = _parse_iso(payload["expires_at"])
-        if exp is not None and exp < now:
+        context = opts.get("envelope") or {"environment": opts.get("expected_environment")}
+        if exp is not None and is_expired_at(exp, now, context):
             return "VERIFIED_EXPIRED"
     env = opts.get("envelope")
     if env:

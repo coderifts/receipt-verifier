@@ -28,8 +28,13 @@ The exact byte format is frozen in [RECEIPT_FORMAT.md](RECEIPT_FORMAT.md).
   `sha256:` + SHA-256 of the RFC 8785 (JCS) canonical decision envelope with
   `receipt` and `decision_body_hash` removed, and requires it to equal `bh`.
   Mismatch ⇒ reason `body_hash_mismatch`. Independently, when `expires_at` is
-  present and in the past, `status` is `VERIFIED_EXPIRED` (signature may still
-  be authentic; `valid` is false for that status). v4 is issued only on
+  present and `expires_at + 30s` (clock-skew leeway; `CLOCK_SKEW_LEEWAY_MS`) is
+  in the past, `status` is `VERIFIED_EXPIRED` (signature may still be authentic;
+  `valid` is false for that status). 0s leeway for destructive operations in
+  production when the intended context declares them — this offline verifier has
+  `environment` (envelope / `--environment`) but no destructive / operation_class
+  field, so it always uses the 30s default (never guessed from operation labels).
+  v4 is issued only on
   envelope-bearing paths (bundle + MCP single-spec); see RECEIPT_FORMAT.md.
 
 It does NOT recompute the verdict fingerprint `fp` from a verdict payload; `fp`
@@ -132,6 +137,46 @@ node verify.js "$RECEIPT" --keys coderifts-keys.json
 The registry is `{ "keys": [ { "kid", "public_key_pem", "status", "valid_from" } ] }`.
 `--key` and `--keys` are mutually exclusive.
 
+## Verifying an execution grant
+
+A `cr.exec.v1` grant is the short-lived, mutation-bound sibling of a chain
+receipt. This repo ships `verify-grant.js` / `verify_grant.py` as the public,
+dependency-light verifiers (same CLI feel as `verify.js` / `verify.py`).
+
+**What `GRANT_CURRENT` proves / does not prove** (from
+`coderifts-app/docs/cr-exec-v1.md`):
+
+- Proves: an Ed25519 signature under a published `kid` covers the grant body;
+  the grant names a `receipt_digest` (sha256 of a receipt token) — it is
+  *derived from* a receipt, not a replacement; `exp` has not passed (30s
+  clock-skew leeway); if you supplied intended audience / operation /
+  target_id / after-payload (or `scope_hash`), those match.
+- Does **not** prove: that any gateway, agent host, or CI check *enforced* the
+  grant; that the underlying receipt is currently authorized (re-check the
+  receipt with `verify.js`); one-use / atomic consumption; proof-of-possession
+  (`cnf` is reserved, unimplemented).
+- **Bearer / replay / TTL.** Within TTL, a stolen grant authorizes the same
+  operation/target/after-shape for any presenter. Replay against the same
+  target is possible for bearer grants; deploy one-use profiles where atomicity
+  is required. Default TTL is 300s.
+- Retired `kid` → `UNKNOWN_KEY`. Grants are live execution permission;
+  receipts may forensically verify a retired key, grants must not.
+
+```
+# Node (zero deps). --keys is the registry; --key pins a PEM like verify.js.
+node verify-grant.js "$GRANT" --keys https://app.coderifts.com/.well-known/coderifts-keys.json \
+  --intended-operation merge --intended-target "$TARGET" --intended-audience "$AUD" \
+  --intended-after-file after.txt --receipt "$RECEIPT"
+
+# Python (cryptography, same as verify.py).
+python3 verify_grant.py "$GRANT" --keys https://app.coderifts.com/.well-known/coderifts-keys.json \
+  --intended-operation merge --intended-target "$TARGET" --intended-audience "$AUD" \
+  --intended-after-file after.txt --receipt "$RECEIPT"
+```
+
+Exit `0` iff `status` is `GRANT_CURRENT`. JSON on stdout matches across JS and
+Python (`valid`, `status`, `reason?`, decoded `payload`).
+
 ## CLI reference
 
 ```
@@ -168,9 +213,12 @@ Error reasons (signature/structure failures; see RECEIPT_FORMAT.md section 6):
 `signature_mismatch`, `delimiter_in_field`, `body_hash_mismatch`,
 `retired_key_after_issue`.
 
-Live `status` values include `VERIFIED_CURRENT` and, for v4 when `expires_at` is
-in the past, `VERIFIED_EXPIRED` (signature authentic but expired — `valid` is
-false). Full 12-status taxonomy: RECEIPT_FORMAT.md section 6.
+Live `status` values include `VERIFIED_CURRENT` and, for v4 when
+`expires_at + 30s` is in the past, `VERIFIED_EXPIRED` (signature authentic but
+expired — `valid` is false). 30s clock-skew leeway on expiry; 0s for destructive
+operations in production when the intended context declares them (this surface
+has no destructive field, so the 30s default always applies). Full 12-status
+taxonomy: RECEIPT_FORMAT.md section 6.
 
 ## Key rotation
 
@@ -185,8 +233,9 @@ pin the `public_key_pem` active at issuance, or verify promptly.
 ## Tests
 
 ```
-node test/gen-vectors.js   # regenerate vectors with a fresh EPHEMERAL key
-bash test/run.sh           # run every vector through BOTH verify.js and verify.py
+node test/gen-vectors.js         # regenerate receipt vectors with a fresh EPHEMERAL key
+node test/gen-grant-vectors.js   # regenerate cr.exec.v1 grant vectors (ephemeral key)
+bash test/run.sh                 # every vector through JS and Python (receipts + grants)
 ```
 
 `test/run.sh` fails if the two implementations ever disagree, if any vector does
