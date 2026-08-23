@@ -353,6 +353,98 @@ else
   fails=$((fails + 1))
 fi
 
+ATTEST_VECTORS="test/attest-vectors.json"
+ATTEST_KEYS="$(mktemp -t rv_akeys.XXXXXX)"
+trap 'rm -f "$PEM" "$CHAIN_FILE" "$LIVE_PEM" "$KEYS_FILE" "$ENV_FILE" "$ENV_TAMPERED" "$RETIRED_KEYS" "$GRANT_PEM" "$GRANT_KEYS" "$GRANT_AFTER" "$ATTEST_KEYS"' EXIT
+
+echo
+echo "== cr.exec.attest.v1 vectors (verify-attest.js == verify_attest.py) =="
+if [ ! -f "$ATTEST_VECTORS" ]; then
+  echo "FAIL  $ATTEST_VECTORS missing — run: node test/gen-attest-vectors.js"
+  fails=$((fails + 1))
+else
+  an="$(node -e "process.stdout.write(String(require('./$ATTEST_VECTORS').vectors.length))")"
+  for i in $(seq 0 $((an - 1))); do
+    name="$(node -e "process.stdout.write(require('./$ATTEST_VECTORS').vectors[$i].name)")"
+    token="$(node -e "process.stdout.write(require('./$ATTEST_VECTORS').vectors[$i].token)")"
+    ev="$(node -e "process.stdout.write(String(require('./$ATTEST_VECTORS').vectors[$i].expected.valid))")"
+    er="$(node -e "const r=require('./$ATTEST_VECTORS').vectors[$i].expected.reason; process.stdout.write(r||'')")"
+    es="$(node -e "process.stdout.write(require('./$ATTEST_VECTORS').vectors[$i].expected.status||'')")"
+    keys_mode="$(node -e "process.stdout.write(require('./$ATTEST_VECTORS').vectors[$i].keys||'')")"
+    checks=$((checks + 1))
+
+    if [ "$keys_mode" = "retired_registry" ]; then
+      node -e "process.stdout.write(JSON.stringify(require('./$ATTEST_VECTORS').retired_registry))" > "$ATTEST_KEYS"
+    elif [ "$keys_mode" = "empty" ]; then
+      node -e "process.stdout.write(JSON.stringify(require('./$ATTEST_VECTORS').empty_registry))" > "$ATTEST_KEYS"
+    else
+      node -e "process.stdout.write(JSON.stringify(require('./$ATTEST_VECTORS').registry))" > "$ATTEST_KEYS"
+    fi
+    extra=(--keys "$ATTEST_KEYS")
+    grant="$(node -e "const f=require('./$ATTEST_VECTORS').vectors[$i].flags||{}; process.stdout.write(f.grant||'')")"
+    rdigest="$(node -e "const f=require('./$ATTEST_VECTORS').vectors[$i].flags||{}; process.stdout.write(f.receipt_digest||'')")"
+    [ -n "$grant" ] && extra+=(--grant "$grant")
+    [ -n "$rdigest" ] && extra+=(--receipt-digest "$rdigest")
+
+    out_js="$(node verify-attest.js "$token" "${extra[@]}" 2>/dev/null)"; code_js=$?
+    out_py="$("$PYTHON" verify_attest.py "$token" "${extra[@]}" 2>/dev/null)"; code_py=$?
+    aok=1
+    if [ "$out_js" != "$out_py" ]; then
+      echo "FAIL  $name: JS/PY OUTPUT DIFFER"
+      echo "  js: $out_js"
+      echo "  py: $out_py"
+      aok=0
+    fi
+    if [ "$code_js" != "$code_py" ]; then
+      echo "FAIL  $name: exit codes differ (js=$code_js py=$code_py)"
+      aok=0
+    fi
+    got_valid="$(jsonfield "$out_js" valid)"
+    got_reason="$(jsonfield "$out_js" reason)"
+    got_status="$(jsonfield "$out_js" status)"
+    [ "$got_valid" = "$ev" ] || { echo "FAIL  $name: valid expected=$ev got=$got_valid"; aok=0; }
+    [ "$got_status" = "$es" ] || { echo "FAIL  $name: status expected=$es got=$got_status"; aok=0; }
+    if [ -n "$er" ] && [ "$got_reason" != "$er" ]; then
+      echo "FAIL  $name: reason expected=$er got=$got_reason"
+      aok=0
+    fi
+    want_code=1; [ "$ev" = "true" ] && want_code=0
+    if [ "$code_js" != "$want_code" ]; then
+      echo "FAIL  $name: exit code expected=$want_code got=$code_js"
+      aok=0
+    fi
+    if [ "$aok" = "1" ]; then
+      echo "ok    $name  (js==py; status=$got_status)"
+    else
+      fails=$((fails + 1))
+    fi
+  done
+fi
+
+echo
+echo "== require-attest-smoke + test_attest.py + app-kernel cross-check =="
+checks=$((checks + 1))
+if node test/require-attest-smoke.js; then
+  echo "ok    require-attest-smoke"
+else
+  echo "FAIL  require-attest-smoke"
+  fails=$((fails + 1))
+fi
+checks=$((checks + 1))
+if "$PYTHON" test/test_attest.py; then
+  echo "ok    test_attest.py"
+else
+  echo "FAIL  test_attest.py"
+  fails=$((fails + 1))
+fi
+checks=$((checks + 1))
+if node test/cross-check-attest.js; then
+  echo "ok    cross-check-attest (js == app kernel on EG-A-*)"
+else
+  echo "FAIL  cross-check-attest"
+  fails=$((fails + 1))
+fi
+
 echo
 echo "checks=$checks fails=$fails"
 [ "$fails" = "0" ] && { echo "ALL PASS"; exit 0; } || { echo "FAILURES: $fails"; exit 1; }

@@ -177,6 +177,52 @@ python3 verify_grant.py "$GRANT" --keys https://app.coderifts.com/.well-known/co
 Exit `0` iff `status` is `GRANT_CURRENT`. JSON on stdout matches across JS and
 Python (`valid`, `status`, `reason?`, decoded `payload`).
 
+## Verifying an execution attestation
+
+A `cr.exec.attest.v1` token is the executor's signed commit statement — the
+fourth chain artifact. Public verifiers: `verify-attest.js` / `verify_attest.py`.
+Format freeze: [RECEIPT_FORMAT.md](RECEIPT_FORMAT.md) (attestation section) and
+`coderifts-app/docs/cr-exec-attest-v1.md`.
+
+Executor keys are **CUSTOMER-HELD**. `--keys` is **REQUIRED** (a registry file
+or URL). There is no default fetch — CodeRifts does not hold these keys.
+
+**Honesty (verbatim class from the spec):**
+
+The attestation proves:
+
+> a holder of the executor key asserts this commit
+
+It does **NOT** prove:
+
+- that the executor's code is unmodified (**deploy attestation is out of
+  scope**, named as such — a later artifact, not this one);
+- that a human saw anything;
+- that the underlying grant is currently `GRANT_CURRENT` (re-check the grant
+  if live permission is required; this statement is historical);
+- that `result_digest` is a CodeRifts fingerprint, a receipt digest, or an
+  after-payload hash — `result_digest` is the executor's choice of bytes.
+
+Retired `kid` uses the **receipt-class historical rule**:
+`ATTEST_RETIRED_KEY_VALID_AT_ISSUE` when `committed_at` is inside
+`[valid_from, retired_at)`. Grants must not (live permission → `UNKNOWN_KEY`).
+
+```
+# --keys is required (customer-pinned executor registry). No default fetch.
+node verify-attest.js "$ATTEST" --keys executor-keys.json
+python3 verify_attest.py "$ATTEST" --keys executor-keys.json
+
+# Optional cross-checks against the grant / receipt digest held by the caller:
+node verify-attest.js "$ATTEST" --keys executor-keys.json \
+  --grant "$GRANT" --receipt-digest sha256:…
+```
+
+Exit `0` iff `status` is `ATTEST_VALID` or `ATTEST_RETIRED_KEY_VALID_AT_ISSUE`.
+JSON on stdout matches across JS and Python.
+
+Statuses: `ATTEST_VALID`, `ATTEST_INVALID_SIGNATURE`, `ATTEST_UNKNOWN_KEY`,
+`ATTEST_RETIRED_KEY_VALID_AT_ISSUE`, `ATTEST_MALFORMED`, `ATTEST_UNBOUND`.
+
 ## CLI reference
 
 ```
@@ -185,6 +231,9 @@ verify.js --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>]
 
 verify.py <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--envelope <file>]
 verify.py --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
+
+verify-attest.js <token> --keys <file|url> [--grant <token>] [--receipt-digest sha256:…]
+verify_attest.py <token> --keys <file|url> [--grant <token>] [--receipt-digest sha256:…]
 ```
 
 - `--key <pem>`         verify against a local SPKI PEM public key (offline).
@@ -237,7 +286,8 @@ remains the explicit registry pin (URL or file).
 
 ```
 node test/gen-vectors.js         # regenerate receipt vectors with a fresh EPHEMERAL key
-node test/gen-grant-vectors.js   # regenerate cr.exec.v1 grant vectors (ephemeral key)
+node test/gen-grant-vectors.js    # regenerate cr.exec.v1 grant vectors (ephemeral key)
+node test/gen-attest-vectors.js   # regenerate cr.exec.attest.v1 EG-A-* vectors (ephemeral key)
 bash test/run.sh                 # every vector through JS and Python (receipts + grants)
 ```
 

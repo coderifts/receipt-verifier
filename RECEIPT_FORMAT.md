@@ -213,3 +213,22 @@ GET https://app.coderifts.com/.well-known/coderifts-keys.json
   A single pinned `--key`, or `--fetch` of the legacy single-key body, still
   sees only the active kid — receipts signed under a previous kid then fail as
   `unknown_kid`. Pin the `public_key_pem` active at issuance, or pass `--keys`.
+
+## 8. cr.exec.attest.v1 (execution attestation)
+
+The executor's signed commit statement. Public verifiers: `verify-attest.js` /
+`verify_attest.py`. Spec: `coderifts-app/docs/cr-exec-attest-v1.md`.
+
+Token:
+
+```
+cr.exec.attest.v1|{executor_kid}|{payload_b64}|{sig_b64}
+```
+
+`--keys` is **required** (customer-held executor registry). There is no default
+fetch. Retired-key rule is receipt-class historical
+(`ATTEST_RETIRED_KEY_VALID_AT_ISSUE`), not the grant `UNKNOWN_KEY` rule.
+
+Honesty: the attestation proves a holder of the executor key asserts this
+commit. It does **not** prove unmodified executor code, human review, live
+`GRANT_CURRENT`, or that `result_digest` is a CodeRifts fingerprint.
