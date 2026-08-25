@@ -302,6 +302,37 @@ captured artifact and is not regenerated. Implementations also support v4
 (`expires_at`, `bh`, `--envelope`); see RECEIPT_FORMAT.md for the frozen byte
 layout and status taxonomy.
 
+## Contract attestation (`contract-verify/`)
+
+A second, independent reference verifier lives in
+[`contract-verify/`](contract-verify/). It is the **verify half of the contract
+discovery and attestation protocol**: an agent fetches a small signed bundle
+describing a tool's current API contract, checks it, and gets a verdict *before
+any tool code runs*.
+
+It is a sibling, not a duplicate. The two verify different objects:
+
+| | This repo (root) | `contract-verify/` |
+|---|---|---|
+| Object verified | `chain_receipt` — a signed record that a verdict **was** issued | A signed **contract bundle** advertised at a well-known endpoint |
+| When it runs | After a decision, to prove provenance | Before a tool call, to gate execution |
+| Checks | Ed25519 signature, `kid`, chain `prev` linkage, v4 envelope binding | Signature, contract hash pin, freshness/TTL, rollback, verdict gate |
+| Trust input | Published CodeRifts signing key | Caller-supplied trusted signer set |
+
+Both are dependency-free and offline: root needs `cryptography` for Python,
+`contract-verify/` needs nothing but `python3`.
+
+```
+cd contract-verify
+python3 -m unittest          # 24 tests
+python3 check_vectors.py     # 9 cross-implementation conformance vectors
+python3 demo_loop.py         # full fetch + verify round trip on a local stdlib server
+```
+
+Its own README, schema (`bundle.schema.json`, `SCHEMA.md`) and conformance
+vectors (`test-vectors.json`) travel with it. `test/run.sh` at the repo root does
+not reach into `contract-verify/`; the two suites are run separately.
+
 ## License
 
 MIT.
