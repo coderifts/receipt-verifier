@@ -1,0 +1,201 @@
+{
+  "description": "Conformance test vectors for the contract attestation bundle. Any implementation can verify against these. Signatures are Ed25519 over the canonical compact JSON (sorted keys) of every bundle field except signature.",
+  "guard_public_key_hex": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+  "expected_ref": "refs/heads/main",
+  "cases": [
+    {
+      "name": "fresh_pass",
+      "bundle": {
+        "ref": "refs/heads/main",
+        "commit_sha": "9f2c1a7b3e5d4c6a8b0f1e2d3c4b5a69788776655",
+        "content_hash": "sha256:770b78e42848d2d248004553a5467d39cca097f302936ce05098b69a4002bb93",
+        "issued_at": 1000000,
+        "ttl_seconds": 300,
+        "version": 7,
+        "verdict": "PASS",
+        "key_id": "ed25519:guard-ci",
+        "signature": "234b697ca9392643abc081663115d7455014222f5e577998c094ded20d4f258a9a4714f8d920ad0cb06e583c0ff1eae12f6bd998326db0afe29a2edcc531b409"
+      },
+      "contract": "{\"openapi\":\"3.0.0\",\"paths\":{\"/orders\":{\"get\":{}}}}",
+      "last_seen_version": -1,
+      "now": 1000000,
+      "expect": {
+        "ok": true,
+        "verdict": "PASS",
+        "action": "allow",
+        "new_last_seen": 7
+      }
+    },
+    {
+      "name": "revalidate_v7",
+      "bundle": {
+        "ref": "refs/heads/main",
+        "commit_sha": "9f2c1a7b3e5d4c6a8b0f1e2d3c4b5a69788776655",
+        "content_hash": "sha256:770b78e42848d2d248004553a5467d39cca097f302936ce05098b69a4002bb93",
+        "issued_at": 1000000,
+        "ttl_seconds": 300,
+        "version": 7,
+        "verdict": "PASS",
+        "key_id": "ed25519:guard-ci",
+        "signature": "234b697ca9392643abc081663115d7455014222f5e577998c094ded20d4f258a9a4714f8d920ad0cb06e583c0ff1eae12f6bd998326db0afe29a2edcc531b409"
+      },
+      "contract": "{\"openapi\":\"3.0.0\",\"paths\":{\"/orders\":{\"get\":{}}}}",
+      "last_seen_version": 7,
+      "now": 1000010,
+      "expect": {
+        "ok": true,
+        "verdict": "PASS",
+        "action": "allow"
+      }
+    },
+    {
+      "name": "fresh_block",
+      "bundle": {
+        "ref": "refs/heads/main",
+        "commit_sha": "9f2c1a7b3e5d4c6a8b0f1e2d3c4b5a69788776655",
+        "content_hash": "sha256:770b78e42848d2d248004553a5467d39cca097f302936ce05098b69a4002bb93",
+        "issued_at": 1000000,
+        "ttl_seconds": 300,
+        "version": 8,
+        "verdict": "BLOCK",
+        "key_id": "ed25519:guard-ci",
+        "signature": "2b783a30a115353a0c5dcdbec4a0e1c820d349199294e776572c234fc9918bbd8e177a0af32d1b14f07d46f126e02070e11c68800cca6dcee3ee7dc0cffd8d06"
+      },
+      "contract": "{\"openapi\":\"3.0.0\",\"paths\":{\"/orders\":{\"get\":{}}}}",
+      "last_seen_version": 7,
+      "now": 1000000,
+      "expect": {
+        "ok": true,
+        "verdict": "BLOCK",
+        "action": "deny"
+      }
+    },
+    {
+      "name": "require_approval",
+      "bundle": {
+        "ref": "refs/heads/main",
+        "commit_sha": "9f2c1a7b3e5d4c6a8b0f1e2d3c4b5a69788776655",
+        "content_hash": "sha256:770b78e42848d2d248004553a5467d39cca097f302936ce05098b69a4002bb93",
+        "issued_at": 1000000,
+        "ttl_seconds": 300,
+        "version": 9,
+        "verdict": "REQUIRE_APPROVAL",
+        "key_id": "ed25519:guard-ci",
+        "signature": "b502676f3c284bb164963ccf0f129350296975528854be47b8baf683a11e1f229333e5409e71222b9d50e8b514f835e07961195e42527cf1029d89f7f19c6701"
+      },
+      "contract": "{\"openapi\":\"3.0.0\",\"paths\":{\"/orders\":{\"get\":{}}}}",
+      "last_seen_version": 7,
+      "now": 1000000,
+      "expect": {
+        "ok": true,
+        "verdict": "REQUIRE_APPROVAL",
+        "action": "hold"
+      }
+    },
+    {
+      "name": "tampered_contract",
+      "bundle": {
+        "ref": "refs/heads/main",
+        "commit_sha": "9f2c1a7b3e5d4c6a8b0f1e2d3c4b5a69788776655",
+        "content_hash": "sha256:770b78e42848d2d248004553a5467d39cca097f302936ce05098b69a4002bb93",
+        "issued_at": 1000000,
+        "ttl_seconds": 300,
+        "version": 7,
+        "verdict": "PASS",
+        "key_id": "ed25519:guard-ci",
+        "signature": "234b697ca9392643abc081663115d7455014222f5e577998c094ded20d4f258a9a4714f8d920ad0cb06e583c0ff1eae12f6bd998326db0afe29a2edcc531b409"
+      },
+      "contract": "{\"openapi\":\"3.0.0\",\"paths\":{\"/orders\":{\"get\":{}}}} tampered",
+      "last_seen_version": -1,
+      "now": 1000000,
+      "expect": {
+        "ok": false,
+        "reason_contains": "hash pin"
+      }
+    },
+    {
+      "name": "rollback",
+      "bundle": {
+        "ref": "refs/heads/main",
+        "commit_sha": "9f2c1a7b3e5d4c6a8b0f1e2d3c4b5a69788776655",
+        "content_hash": "sha256:770b78e42848d2d248004553a5467d39cca097f302936ce05098b69a4002bb93",
+        "issued_at": 1000000,
+        "ttl_seconds": 300,
+        "version": 5,
+        "verdict": "PASS",
+        "key_id": "ed25519:guard-ci",
+        "signature": "e48fe5e5729408c52cb987068b206dd0cc2e114006ca8bc61d3ff1cc30e9782739be36f3f44331352a53586cdc7533a38a9d29e06f60a73e5dc7c8c0ade21608"
+      },
+      "contract": "{\"openapi\":\"3.0.0\",\"paths\":{\"/orders\":{\"get\":{}}}}",
+      "last_seen_version": 7,
+      "now": 1000000,
+      "expect": {
+        "ok": false,
+        "reason_contains": "rollback"
+      }
+    },
+    {
+      "name": "expired",
+      "bundle": {
+        "ref": "refs/heads/main",
+        "commit_sha": "9f2c1a7b3e5d4c6a8b0f1e2d3c4b5a69788776655",
+        "content_hash": "sha256:770b78e42848d2d248004553a5467d39cca097f302936ce05098b69a4002bb93",
+        "issued_at": 1000000,
+        "ttl_seconds": 300,
+        "version": 7,
+        "verdict": "PASS",
+        "key_id": "ed25519:guard-ci",
+        "signature": "234b697ca9392643abc081663115d7455014222f5e577998c094ded20d4f258a9a4714f8d920ad0cb06e583c0ff1eae12f6bd998326db0afe29a2edcc531b409"
+      },
+      "contract": "{\"openapi\":\"3.0.0\",\"paths\":{\"/orders\":{\"get\":{}}}}",
+      "last_seen_version": -1,
+      "now": 1000301,
+      "expect": {
+        "ok": false,
+        "reason_contains": "expired"
+      }
+    },
+    {
+      "name": "wrong_ref",
+      "bundle": {
+        "ref": "refs/heads/dev",
+        "commit_sha": "9f2c1a7b3e5d4c6a8b0f1e2d3c4b5a69788776655",
+        "content_hash": "sha256:770b78e42848d2d248004553a5467d39cca097f302936ce05098b69a4002bb93",
+        "issued_at": 1000000,
+        "ttl_seconds": 300,
+        "version": 10,
+        "verdict": "PASS",
+        "key_id": "ed25519:guard-ci",
+        "signature": "b14e4a1883a24429fe32898c585e105f8c7d6e3d99ba8bd2762fe1fb27b6567dbee32fc88b81f27e8b0c52ccd009aa5228d225f60bec16277ecce9fb90c75b01"
+      },
+      "contract": "{\"openapi\":\"3.0.0\",\"paths\":{\"/orders\":{\"get\":{}}}}",
+      "last_seen_version": -1,
+      "now": 1000000,
+      "expect": {
+        "ok": false,
+        "reason_contains": "ref mismatch"
+      }
+    },
+    {
+      "name": "untrusted_signer",
+      "bundle": {
+        "ref": "refs/heads/main",
+        "commit_sha": "9f2c1a7b3e5d4c6a8b0f1e2d3c4b5a69788776655",
+        "content_hash": "sha256:770b78e42848d2d248004553a5467d39cca097f302936ce05098b69a4002bb93",
+        "issued_at": 1000000,
+        "ttl_seconds": 300,
+        "version": 11,
+        "verdict": "PASS",
+        "key_id": "ed25519:guard-ci",
+        "signature": "894179ca0d1acd22004142d48d684f0e42033ff9dd66aebc456edfbdd5cb94d52c9d4c5bdd12328a361feb5a49ec87af6fc2dd3a17ad1521f698663d9b3af402"
+      },
+      "contract": "{\"openapi\":\"3.0.0\",\"paths\":{\"/orders\":{\"get\":{}}}}",
+      "last_seen_version": -1,
+      "now": 1000000,
+      "expect": {
+        "ok": false,
+        "reason_contains": "signature invalid"
+      }
+    }
+  ]
+}
