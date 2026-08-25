@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/coderifts/example-contract-verify/main/bundle.schema.json",
+  "title": "Contract Attestation Bundle",
+  "description": "A signed bundle published at a tool's well-known endpoint. It binds a guard verdict to a specific contract version. The signature covers every field except signature.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ref",
+    "commit_sha",
+    "content_hash",
+    "issued_at",
+    "ttl_seconds",
+    "version",
+    "verdict",
+    "key_id",
+    "signature"
+  ],
+  "properties": {
+    "ref": {
+      "type": "string",
+      "description": "The git ref the contract lives on.",
+      "pattern": "^refs/.+"
+    },
+    "commit_sha": {
+      "type": "string",
+      "description": "The commit the contract came from. SHA-1 (40) or SHA-256 (64) hex, short forms allowed.",
+      "pattern": "^[0-9a-f]{7,64}$"
+    },
+    "content_hash": {
+      "type": "string",
+      "description": "Hash of the canonical contract bytes. The verify side pins this.",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "issued_at": {
+      "type": "integer",
+      "description": "Unix time (seconds) the bundle was issued.",
+      "minimum": 0
+    },
+    "ttl_seconds": {
+      "type": "integer",
+      "description": "Freshness window. The bundle is valid while now <= issued_at + ttl_seconds.",
+      "minimum": 0
+    },
+    "version": {
+      "type": "integer",
+      "description": "Monotonic version. The agent rejects any bundle whose version is below the last accepted one (rollback protection).",
+      "minimum": 0
+    },
+    "verdict": {
+      "type": "string",
+      "description": "The guard decision. The guard is implementation-agnostic; only the vocabulary is fixed.",
+      "enum": ["PASS", "REQUIRE_APPROVAL", "BLOCK"]
+    },
+    "key_id": {
+      "type": "string",
+      "description": "Identifier of the key or identity that signed the bundle, e.g. ed25519:guard-ci.",
+      "minLength": 1
+    },
+    "signature": {
+      "type": "string",
+      "description": "Detached signature over the canonical serialization of all fields except signature. Hex encoded.",
+      "pattern": "^[0-9a-f]+$"
+    }
+  }
+}
