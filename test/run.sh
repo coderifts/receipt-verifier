@@ -446,5 +446,64 @@ else
 fi
 
 echo
+echo "== cr.toolset.attest.v1 vectors (verify-toolset.js == verify_toolset.py) =="
+TS_VECTORS="test/toolset-vectors.json"
+if [ ! -f "$TS_VECTORS" ]; then
+  echo "FAIL  $TS_VECTORS missing"
+  fails=$((fails + 1))
+else
+  TS_KEYS="$(mktemp -t rv_tskeys.XXXXXX)"
+  TS_ENT="$(mktemp -t rv_tsent.XXXXXX)"
+  node -e "process.stdout.write(JSON.stringify(require('./$TS_VECTORS').registry))" > "$TS_KEYS"
+  node -e "process.stdout.write(JSON.stringify(require('./$TS_VECTORS').entries))" > "$TS_ENT"
+  tn="$(node -e "process.stdout.write(String(require('./$TS_VECTORS').vectors.length))")"
+  for i in $(seq 0 $((tn - 1))); do
+    id="$(node -e "process.stdout.write(require('./$TS_VECTORS').vectors[$i].id)")"
+    token="$(node -e "process.stdout.write(require('./$TS_VECTORS').vectors[$i].token)")"
+    es="$(node -e "process.stdout.write(require('./$TS_VECTORS').vectors[$i].expect.status)")"
+    ro="$(node -e "const v=require('./$TS_VECTORS').vectors[$i]; process.stdout.write(v.registry_override?JSON.stringify(v.registry_override):'')")"
+    eo="$(node -e "const v=require('./$TS_VECTORS').vectors[$i]; process.stdout.write(v.entries_override?JSON.stringify(v.entries_override):'')")"
+    checks=$((checks + 1))
+
+    K="$TS_KEYS"
+    if [ -n "$ro" ]; then K="$(mktemp -t rv_tsko.XXXXXX)"; printf '%s' "$ro" > "$K"; fi
+    extra=(--keys "$K")
+    if [ -n "$eo" ]; then
+      E="$(mktemp -t rv_tseo.XXXXXX)"; printf '%s' "$eo" > "$E"; extra+=(--entries "$E")
+    elif [ "$id" = "TS-A-VALID" ]; then
+      extra+=(--entries "$TS_ENT")
+    fi
+
+    out_js="$(node verify-toolset.js "$token" "${extra[@]}" 2>/dev/null)"; code_js=$?
+    out_py="$("$PYTHON" verify_toolset.py "$token" "${extra[@]}" 2>/dev/null)"; code_py=$?
+    tok_ok=1
+    if [ "$out_js" != "$out_py" ]; then
+      echo "FAIL  $id: JS/PY OUTPUT DIFFER"
+      echo "  js: $out_js"
+      echo "  py: $out_py"
+      tok_ok=0
+    fi
+    if [ "$code_js" != "$code_py" ]; then
+      echo "FAIL  $id: exit codes differ (js=$code_js py=$code_py)"
+      tok_ok=0
+    fi
+    got="$(printf '%s' "$out_js" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{process.stdout.write(JSON.parse(s).status)}catch(e){process.stdout.write('PARSE_ERROR')}})")"
+    if [ "$got" != "$es" ]; then
+      echo "FAIL  $id: status $got != expected $es"
+      tok_ok=0
+    fi
+    if [ "$tok_ok" = "1" ]; then echo "ok    $id  js=py=$es"; else fails=$((fails + 1)); fi
+  done
+  rm -f "$TS_KEYS" "$TS_ENT"
+fi
+checks=$((checks + 1))
+if node test/cross-check-toolset.js; then
+  echo "ok    cross-check-toolset (js == app kernel on TS-A-*)"
+else
+  echo "FAIL  cross-check-toolset"
+  fails=$((fails + 1))
+fi
+
+echo
 echo "checks=$checks fails=$fails"
 [ "$fails" = "0" ] && { echo "ALL PASS"; exit 0; } || { echo "FAILURES: $fails"; exit 1; }
