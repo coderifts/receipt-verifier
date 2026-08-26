@@ -152,6 +152,17 @@ def derive_status(payload, entry, opts):
     v = payload.get("v")
     if isinstance(v, int) and v > MAX_SUPPORTED_V:
         return "UNSUPPORTED_VERSION"
+    # FAIL CLOSED ON A STATUS WE DO NOT UNDERSTAND — mirrors verify.js deriveStatus.
+    #
+    # MEASURED 2026-08-26: status "revoked" returned valid/VERIFIED_CURRENT here. The status was
+    # read for "retired" and otherwise ignored, so an operator marking a stolen key revoked would
+    # have believed they had acted while this verifier kept accepting it. The app kernel and the
+    # attest/toolset verifiers already reject an unknown status; these two did not.
+    #
+    # This is only the DIRECTION of the unknown case, not revocation: the rule (compromised_at,
+    # REVOKED_KEY / REVOKED_KEY_UNDECIDABLE) is a separate change across eight verifiers.
+    if entry.get("status") not in ("active", "retired", None):
+        return "UNKNOWN_KEY_STATUS"
     if entry.get("status") == "retired":
         issued = _parse_iso(payload.get("ts"))
         retired = _parse_iso(entry.get("retired_at"))

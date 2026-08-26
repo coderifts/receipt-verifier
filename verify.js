@@ -127,6 +127,23 @@ function resolveEntry(ctx, payload) {
  */
 function deriveStatus(payload, entry, opts) {
   if (typeof payload.v === 'number' && payload.v > MAX_SUPPORTED_V) return 'UNSUPPORTED_VERSION';
+  // FAIL CLOSED ON A STATUS WE DO NOT UNDERSTAND.
+  //
+  // MEASURED 2026-08-26: a registry entry with status "revoked" returned
+  // { valid: true, status: "VERIFIED_CURRENT" } here — the status was read for 'retired' and
+  // otherwise ignored, so anything else fell through to the healthy path. An operator who marked a
+  // stolen key revoked would have believed they had acted while this verifier kept accepting it.
+  // The app kernel and verify-attest/verify-toolset already reject an unknown status; these two
+  // did not, so the fleet disagreed about the same registry.
+  //
+  // This is a bug fix, not revocation: the revocation RULE (compromised_at, REVOKED_KEY /
+  // REVOKED_KEY_UNDECIDABLE) is a separate, larger change across eight verifiers. What lands here
+  // is only the direction of the unknown case. Safe by measurement: the live registry publishes
+  // 'active' only, so no real consumer changes behaviour.
+  const KNOWN_STATUSES = new Set(['active', 'retired', null, undefined]);
+  if (!KNOWN_STATUSES.has(entry.status)) {
+    return 'UNKNOWN_KEY_STATUS';
+  }
   if (entry.status === 'retired') {
     if (entry.retired_at && payload.ts
       && Date.parse(payload.ts) < Date.parse(entry.retired_at)) {
@@ -220,6 +237,7 @@ function verifyReceipt(token, ctx, opts = {}) {
     return { valid: false, status, reason: 'retired_key_after_issue', payload };
   }
   const valid = status === 'VERIFIED_CURRENT' || status === 'RETIRED_KEY_VALID_AT_ISSUE';
+  // UNKNOWN_KEY_STATUS is deliberately absent from the valid set — see deriveStatus.
   return { valid, status, payload };
 }
 
