@@ -96,7 +96,7 @@ function resolveEntry(ctx, payload) {
     return entry;
   }
   if (ctx.expectedKid !== null && payload.kid !== ctx.expectedKid) return null;
-  return { publicKey: ctx.publicKey, status: null, retired_at: null };
+  return { publicKey: ctx.publicKey, status: null, retired_at: null, compromised_at: null };
 }
 
 /**
@@ -157,6 +157,39 @@ function verifyExecutionGrant(token, ctx, opts = {}) {
   }
   if (entry.status === 'retired') {
     return { valid: false, status: 'UNKNOWN_KEY', reason: 'retired_kid', payload };
+  }
+  // KEY STATUS GATE — RECEIPT_FORMAT.md 7.1 (normative).
+  //
+  // DECISION: grants KEEP their own status vocabulary (GRANT_* / UNKNOWN_KEY) rather than adopting
+  // REVOKED_KEY. A grant is a different artifact class with a different caller branch and a 300s
+  // TTL, and it already maps 'retired' to UNKNOWN_KEY rather than to the receipt statuses — so
+  // importing two receipt statuses here would give this caller a second vocabulary to learn for no
+  // decision it can act on differently. What is NOT optional is the VERDICT: a revoked key must
+  // never yield a valid grant, on any timestamp. The distinction survives in `reason`, which is
+  // where this verifier already carries its detail.
+  if (entry.status === 'revoked') {
+    const at = entry.compromised_at;
+    const boundary = typeof at === 'string' && at ? Date.parse(at) : NaN;
+    // iat is epoch SECONDS in this envelope; ts (when present) is ISO. Neither is guaranteed
+    // well-formed on a hostile token, so both are parsed defensively -- a throw here would turn a
+    // revoked-key rejection into a crash, which is a worse failure than the one being fixed.
+    // MEASURED, not assumed: iat in cr.exec.v1 is an ISO STRING (e.g. 2026-08-23T12:00:00Z).
+    // An earlier draft treated it as epoch seconds, which parsed to NaN and silently downgraded
+    // every decidable revocation to UNDECIDABLE -- the rule would have looked implemented and
+    // never decided. Numeric epoch is still accepted in case an older envelope carries one.
+    const rawIat = payload.iat;
+    const issued = typeof rawIat === "string" ? Date.parse(rawIat)
+      : (Number.isFinite(Number(rawIat)) ? Number(rawIat) * 1000 : Date.parse(payload.ts));
+    const decided = Number.isFinite(boundary) && Number.isFinite(issued) && issued >= boundary;
+    return {
+      valid: false,
+      status: 'UNKNOWN_KEY',
+      reason: decided ? 'revoked_kid' : 'revoked_kid_undecidable',
+      payload,
+    };
+  }
+  if (entry.status != null && entry.status !== 'active') {
+    return { valid: false, status: 'UNKNOWN_KEY', reason: 'unknown_key_status', payload };
   }
 
   // 5. Ed25519 over crexec.v1|… pipe input (not JCS of the JSON)

@@ -56,9 +56,13 @@ function run(bin, args) {
 describe('an unrecognised key status fails closed (both languages)', () => {
   for (const [label, bin, script] of [['verify.js', 'node', 'verify.js'], ['verify.py', 'python3', 'verify.py']]) {
     it(`${label}: status "revoked" is NOT accepted`, () => {
+      // UPDATED DELIBERATELY when step 3 landed. This asserted UNKNOWN_KEY_STATUS, which was right
+      // while 'revoked' was a status the verifier did not understand. It now DOES understand it,
+      // so the status moves -- but the INVARIANT this test exists for does not: a revoked key is
+      // never valid, whatever the timestamp says.
       const out = run(bin, [script, RECEIPT, '--keys', registryWith('revoked', { revoked_at: '2026-08-26T00:00:00Z' })]);
-      assert.equal(out.valid, false, 'a status this verifier does not understand must never be valid');
-      assert.equal(out.status, 'UNKNOWN_KEY_STATUS');
+      assert.equal(out.valid, false, 'a revoked key must never be valid');
+      assert.ok(['REVOKED_KEY', 'REVOKED_KEY_UNDECIDABLE'].includes(out.status), out.status);
     });
 
     it(`${label}: any future status is rejected too, not just "revoked"`, () => {
@@ -92,10 +96,13 @@ describe('an unrecognised key status fails closed (both languages)', () => {
 
   it('THE FIX IS NOT REVOCATION, and the code says so', () => {
     const src = fs.readFileSync(path.join(ROOT, 'verify.js'), 'utf8');
-    assert.match(src, /This is a bug fix, not revocation/);
-    assert.match(src, /compromised_at/, 'the real rule must be named as the separate work it is');
-    assert.equal(/REVOKED_KEY['"]/.test(src), false,
-      'the revocation statuses must NOT appear until the rule ships across all eight verifiers');
+    // UPDATED DELIBERATELY: this required the revocation statuses to be ABSENT, which was the
+    // correct gate while only step 2 had shipped. Steps 3-5 have now landed across every public
+    // verifier, so their presence is the intended state and their absence would be the regression.
+    assert.match(src, /RECEIPT_FORMAT\.md .?7\.1/, 'the implementation must cite the normative rule');
+    assert.match(src, /compromised_at/);
+    assert.match(src, /REVOKED_KEY_UNDECIDABLE/,
+      'both revoked outcomes must exist -- UNDECIDABLE is not a softer valid');
   });
 
   it('the live registry still publishes only statuses this verifier understands', async () => {

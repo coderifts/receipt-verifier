@@ -169,6 +169,37 @@ def verify_execution_grant(token, ctx, opts=None):
     if entry.get("status") == "retired":
         return {"valid": False, "status": "UNKNOWN_KEY", "reason": "retired_kid", "payload": payload}
 
+    # KEY STATUS GATE -- RECEIPT_FORMAT 7.1 (normative); mirrors verify-grant.js exactly.
+    # Grants KEEP their own vocabulary (UNKNOWN_KEY + reason), see the JS sibling for why.
+    if entry.get("status") == "revoked":
+        _at = entry.get("compromised_at")
+        _b = None
+        if isinstance(_at, str) and _at:
+            try:
+                from datetime import datetime
+                _b = datetime.fromisoformat(_at.replace("Z", "+00:00")).timestamp() * 1000.0
+            except Exception:
+                _b = None
+        # iat is an ISO STRING in cr.exec.v1; numeric epoch accepted defensively.
+        _i = None
+        _raw = payload.get("iat")
+        if isinstance(_raw, str) and _raw:
+            try:
+                from datetime import datetime as _dt
+                _i = _dt.fromisoformat(_raw.replace("Z", "+00:00")).timestamp() * 1000.0
+            except Exception:
+                _i = None
+        else:
+            try:
+                _i = float(_raw) * 1000.0
+            except Exception:
+                _i = None
+        _decided = _b is not None and _i is not None and _i >= _b
+        return {"valid": False, "status": "UNKNOWN_KEY",
+                "reason": "revoked_kid" if _decided else "revoked_kid_undecidable", "payload": payload}
+    if entry.get("status") is not None and entry.get("status") != "active":
+        return {"valid": False, "status": "UNKNOWN_KEY", "reason": "unknown_key_status", "payload": payload}
+
     # 5. Ed25519 over crexec.v1|… pipe input
     message = reconstruct_signed_input(payload).encode("utf-8")
     try:

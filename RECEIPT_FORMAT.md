@@ -267,8 +267,8 @@ prev(receipt[i])  ==  "sha256:" + sha256hex( entire token string of receipt[i-1]
 7. `body_hash_mismatch` -- (`--envelope`, v4) the envelope's recomputed body hash != `bh`.
 8. `retired_key_after_issue` -- signed by a key already retired at the receipt's `ts`.
 
-`status` (12-status taxonomy) — the verdict a caller branches on. `valid === (status is
-VERIFIED_CURRENT or RETIRED_KEY_VALID_AT_ISSUE)`. **8 live, 4 dormant** (fire only when the
+`status` (15-status taxonomy) — the verdict a caller branches on. `valid === (status is
+VERIFIED_CURRENT or RETIRED_KEY_VALID_AT_ISSUE)`. **11 live, 4 dormant** (fire only when the
 envelope carries the field AND a `--audience`/`--environment`/… check input is supplied):
 
 | status | live? | fires when |
@@ -276,6 +276,9 @@ envelope carries the field AND a `--audience`/`--environment`/… check input is
 | `VERIFIED_CURRENT` | live | signature authentic; not expired; all supplied checks pass |
 | `VERIFIED_EXPIRED` | live | v4 signature authentic but `expires_at + 30s` (`CLOCK_SKEW_LEEWAY_MS`) < now. 0s leeway for destructive operations in production when the intended context declares them; this verifier has `environment` but no destructive / operation_class field, so the 30s default always applies. |
 | `UNKNOWN_KEY` | live | `body.kid` not in the key set |
+| `UNKNOWN_KEY_STATUS` | live | the registry entry carries a `status` this verifier does not understand — fail closed, never valid. See §7.1. |
+| `REVOKED_KEY` | live | signed by a **revoked** key, `ts` at or after `compromised_at`. Signature authentic; the KEY is repudiated. See §7.1. |
+| `REVOKED_KEY_UNDECIDABLE` | live | signed by a **revoked** key, `ts` before `compromised_at`, or the entry carries no `compromised_at`. See §7.1. |
 | `RETIRED_KEY_VALID_AT_ISSUE` | live | signed by a retired key, `ts` < that key's `retired_at` |
 | `INVALID_SIGNATURE` | live | signature/delimiter/body-hash failure, or retired-at-issue |
 | `MALFORMED` | live | structure / JSON failure |
@@ -287,6 +290,60 @@ envelope carries the field AND a `--audience`/`--environment`/… check input is
 | `VERIFIED_SCOPE_MISMATCH` | dormant | authorization scope differs (no check input defined yet) |
 
 An authentic, fresh receipt returns `{ valid: true, status: "VERIFIED_CURRENT", payload }`.
+
+## 7.1 Revocation (NORMATIVE)
+
+A key registry entry has a `status`. Two values are long-standing — `active` and `retired` — and a
+third is defined here: **`revoked`**.
+
+**`retired` is not `revoked`, and conflating them is the bug this section exists to correct.** A
+retired key stopped signing at a known time and nothing bad happened; a receipt whose `ts` predates
+`retired_at` is still good (`RETIRED_KEY_VALID_AT_ISSUE`). A **revoked** key is one we believe an
+attacker held. The distinction matters because **the attacker chooses `ts`**. Under the retirement
+rule, a thief holding a stolen key backdates the timestamp to just before `retired_at` and the
+verifier returns `RETIRED_KEY_VALID_AT_ISSUE` — valid. **No timestamp may ever rehabilitate a
+revoked key's signature.**
+
+### The rule
+
+A registry entry MAY carry `compromised_at` (ISO 8601). For `status: "revoked"`:
+
+| condition | status | `valid` |
+|---|---|---|
+| `ts` >= `compromised_at` | `REVOKED_KEY` | **false** |
+| `ts` < `compromised_at` | `REVOKED_KEY_UNDECIDABLE` | **false** |
+| entry carries no `compromised_at` | `REVOKED_KEY_UNDECIDABLE` | **false** |
+
+**`UNDECIDABLE` is not a softer `valid`.** It reports that we cannot tell a legitimate
+pre-compromise receipt from a backdated forgery — which is the honest answer, and it is still
+`valid: false`. A verifier MUST NOT treat `REVOKED_KEY_UNDECIDABLE` as acceptable evidence.
+
+### Why `compromised_at` is the earliest unruled-out time, not the discovery time
+
+`compromised_at` is **the earliest time we cannot rule out attacker control** — not the moment we
+found out. Those are different, and the gap is not academic. In the OpenAI incident of this week,
+agents read a service's token-signing key and forged administrator credentials; **six days later**
+they recovered key material left in a cache and minted fresh ones. Discovery time would have been
+the wrong boundary by six days, and every forgery inside that window would have verified.
+
+If the earliest unruled-out time is genuinely unknown, the field MUST be omitted rather than
+guessed. Omission means the whole key history is suspect, which is why it maps to
+`REVOKED_KEY_UNDECIDABLE` rather than to a permissive default.
+
+### What a revoked verdict does and does not say
+
+It says: this signature is cryptographically authentic, and the key that produced it is repudiated,
+so the signature is not evidence of anything. It does **not** say the receipt was forged — a
+legitimate receipt minted before the compromise is indistinguishable from a backdated one, and
+saying which would be a claim we cannot support.
+
+### Unknown statuses fail closed
+
+A verifier that meets a `status` it does not understand MUST return `UNKNOWN_KEY_STATUS` with
+`valid: false`. It MUST NOT fall through to the healthy path. Measured 2026-08-26: two verifiers
+did fall through, so a key marked `revoked` verified as `VERIFIED_CURRENT` — an operator would have
+believed they had acted while nothing changed. This rule is what makes it safe to publish a new
+status before every implementation has learned it.
 
 ## 7. Key discovery
 

@@ -112,7 +112,7 @@ function resolveEntry(ctx, payload) {
     return entry; // { publicKey, status, retired_at }
   }
   if (ctx.expectedKid !== null && payload.kid !== ctx.expectedKid) return null;
-  return { publicKey: ctx.publicKey, status: null, retired_at: null };
+  return { publicKey: ctx.publicKey, status: null, retired_at: null, compromised_at: null };
 }
 
 /**
@@ -140,9 +140,21 @@ function deriveStatus(payload, entry, opts) {
   // REVOKED_KEY_UNDECIDABLE) is a separate, larger change across eight verifiers. What lands here
   // is only the direction of the unknown case. Safe by measurement: the live registry publishes
   // 'active' only, so no real consumer changes behaviour.
-  const KNOWN_STATUSES = new Set(['active', 'retired', null, undefined]);
+  const KNOWN_STATUSES = new Set(['active', 'retired', 'revoked', null, undefined]);
   if (!KNOWN_STATUSES.has(entry.status)) {
     return 'UNKNOWN_KEY_STATUS';
+  }
+  // REVOKED — RECEIPT_FORMAT.md §7.1 (normative). The attacker chooses ts, so no timestamp may
+  // rehabilitate a revoked key's signature: BOTH outcomes are valid:false. UNDECIDABLE is not a
+  // softer valid; it reports that we cannot tell a legitimate pre-compromise receipt from a
+  // backdated forgery. A missing compromised_at means the whole key history is suspect.
+  if (entry.status === 'revoked') {
+    const at = entry.compromised_at;
+    if (typeof at !== 'string' || at.length === 0) return 'REVOKED_KEY_UNDECIDABLE';
+    const boundary = Date.parse(at);
+    const issued = Date.parse(payload.ts);
+    if (!Number.isFinite(boundary) || !Number.isFinite(issued)) return 'REVOKED_KEY_UNDECIDABLE';
+    return issued >= boundary ? 'REVOKED_KEY' : 'REVOKED_KEY_UNDECIDABLE';
   }
   if (entry.status === 'retired') {
     if (entry.retired_at && payload.ts
@@ -297,7 +309,15 @@ function keyringFromDocument(doc, source) {
   const keyring = new Map();
   for (const k of keys) {
     if (!k || !k.kid || !k.public_key_pem) throw new Error(`registry entry missing kid/public_key_pem in ${source}`);
-    keyring.set(k.kid, { publicKey: keyFromPem(k.public_key_pem), status: k.status || null, retired_at: k.retired_at || null });
+    // compromised_at MUST be carried through: deriveStatus reads it for the revoked rule
+    // (RECEIPT_FORMAT.md 7.1). Dropping it here made the rule inert — every revoked key
+    // returned UNDECIDABLE regardless of ts, which looks implemented and decides nothing.
+    keyring.set(k.kid, {
+      publicKey: keyFromPem(k.public_key_pem),
+      status: k.status || null,
+      retired_at: k.retired_at || null,
+      compromised_at: k.compromised_at || null,
+    });
   }
   return keyring;
 }

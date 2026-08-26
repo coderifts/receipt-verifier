@@ -148,9 +148,13 @@ function resolveExecutorKey(registry, kid) {
     const publicKey = crypto.createPublicKey(entry.public_key_pem);
     return {
       publicKey,
-      status: entry.status === 'retired' ? 'retired' : 'active',
+      // PASS THE REAL STATUS THROUGH. This used to normalise anything that was not 'retired'
+      // to 'active', which LAUNDERED a revoked key into a healthy one before any gate could see
+      // it -- the status check downstream was correct and simply never received the truth.
+      status: entry.status || 'active',
       valid_from: entry.valid_from || null,
       retired_at: entry.retired_at || null,
+      compromised_at: entry.compromised_at || null,  // carried through for the 7.1 revoked rule
     };
   } catch (_) {
     return null;
@@ -299,6 +303,30 @@ function verifyExecutionAttestation(token, opts = {}) {
     return fail(STATUSES.ATTEST_MALFORMED, 'committed_at_in_future', payload);
   }
 
+
+  // KEY STATUS GATE — RECEIPT_FORMAT.md 7.1 (normative), same rule as verify.js.
+  //
+  // MEASURED 2026-08-26: this verifier returned {valid:true} for a REVOKED key. The window check
+  // below fails closed on an unknown status, but the caller only invoked it for status==='retired',
+  // so 'revoked' fell straight through to the healthy path. A window function that is never called
+  // is not a gate.
+  //
+  // Attestations carry their own status vocabulary, so the revoked verdict is reported through
+  // STATUSES.ATTEST_UNKNOWN_KEY with a distinct REASON rather than by importing the receipt statuses -- the caller
+  // branches on this artifact class's own vocabulary and must not have to learn a second one.
+  {
+    const st = resolved && resolved.status;
+    if (st != null && st !== 'active' && st !== 'retired' && st !== 'revoked') {
+      return fail(STATUSES.ATTEST_UNKNOWN_KEY, 'unknown_key_status', payload);
+    }
+    if (st === 'revoked') {
+      const at = resolved.compromised_at;
+      const boundary = typeof at === 'string' && at ? Date.parse(at) : NaN;
+      const issued = Date.parse(payload.committed_at);
+      const decided = Number.isFinite(boundary) && Number.isFinite(issued) && issued >= boundary;
+      return fail(STATUSES.ATTEST_UNKNOWN_KEY, decided ? 'revoked_key' : 'revoked_key_undecidable', payload);
+    }
+  }
   let retiredHistorical = false;
   if (resolved.status === 'retired') {
     if (!isIssueTimeWithinKeyWindow(payload.committed_at, resolved)) {

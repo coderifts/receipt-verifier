@@ -195,7 +195,10 @@ def resolve_executor_key(registry, kid):
         return None
     return {
         "public_key": public_key,
-        "status": "retired" if entry.get("status") == "retired" else "active",
+        # PASS THE REAL STATUS THROUGH -- normalising non-retired to "active" LAUNDERED a
+        # revoked key into a healthy one before any gate could see it (mirrors verify-attest.js).
+        "status": entry.get("status") or "active",
+        "compromised_at": entry.get("compromised_at"),
         "valid_from": entry.get("valid_from") or None,
         "retired_at": entry.get("retired_at") or None,
     }
@@ -295,6 +298,18 @@ def verify_execution_attestation(token, opts=None):
     resolved = resolve_executor_key(opts.get("registry"), payload.get("executor_kid"))
     if not resolved:
         return fail("ATTEST_UNKNOWN_KEY", "unknown_kid", payload)
+
+    # KEY STATUS GATE -- RECEIPT_FORMAT 7.1 (normative); mirrors the JS sibling exactly.
+    _st = (resolved or {}).get("status")
+    if _st is not None and _st not in ("active", "retired", "revoked"):
+        return fail("ATTEST_UNKNOWN_KEY", "unknown_key_status", payload)
+    if _st == "revoked":
+        _at = (resolved or {}).get("compromised_at")
+        _b = _parse_iso_ms(_at) if isinstance(_at, str) and _at else None
+        _i = _parse_iso_ms(payload.get("committed_at") or payload.get("declared_at") or payload.get("ts"))
+        _decided = _b is not None and _i is not None and _i >= _b
+        return fail("ATTEST_UNKNOWN_KEY", "revoked_key" if _decided else "revoked_key_undecidable", payload)
+
 
     try:
         sig = b64url_decode(parsed["sig"])

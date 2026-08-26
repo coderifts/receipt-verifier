@@ -223,7 +223,10 @@ def _resolve_declarer_key(registry, kid):
         return None
     return {
         "publicKey": pub,
-        "status": "retired" if entry.get("status") == "retired" else "active",
+        # PASS THE REAL STATUS THROUGH -- normalising non-retired to "active" LAUNDERED a
+        # revoked key into a healthy one before any gate could see it (mirrors verify-attest.js).
+        "status": entry.get("status") or "active",
+        "compromised_at": entry.get("compromised_at"),
         "valid_from": entry.get("valid_from") or None,
         "retired_at": entry.get("retired_at") or None,
     }
@@ -315,6 +318,18 @@ def verify_toolset_attestation(token, registry=None, entries=None, intended=None
     resolved = _resolve_declarer_key(registry, payload["kid"])
     if not resolved:
         return _fail(TOOLSET_ATTEST_UNKNOWN_KEY, "kid_not_in_registry", payload)
+
+    # KEY STATUS GATE -- RECEIPT_FORMAT 7.1 (normative); mirrors the JS sibling exactly.
+    _st = (resolved or {}).get("status")
+    if _st is not None and _st not in ("active", "retired", "revoked"):
+        return _fail(TOOLSET_ATTEST_UNKNOWN_KEY, "unknown_key_status", payload)
+    if _st == "revoked":
+        _at = (resolved or {}).get("compromised_at")
+        _b = _parse_ms(_at) if isinstance(_at, str) and _at else None
+        _i = _parse_ms(payload.get("committed_at") or payload.get("declared_at") or payload.get("ts"))
+        _decided = _b is not None and _i is not None and _i >= _b
+        return _fail(TOOLSET_ATTEST_UNKNOWN_KEY, "revoked_key" if _decided else "revoked_key_undecidable", payload)
+
 
     try:
         resolved["publicKey"].verify(_b64url_decode(parsed["sig"]),

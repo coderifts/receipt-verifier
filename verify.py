@@ -137,7 +137,7 @@ def resolve_entry(ctx, payload):
         return entry
     if ctx.get("expected_kid") is not None and kid != ctx["expected_kid"]:
         return None
-    return {"public_key": ctx["public_key"], "status": None, "retired_at": None}
+    return {"public_key": ctx["public_key"], "status": None, "retired_at": None, "compromised_at": None}
 
 
 def _parse_iso(ts):
@@ -161,8 +161,19 @@ def derive_status(payload, entry, opts):
     #
     # This is only the DIRECTION of the unknown case, not revocation: the rule (compromised_at,
     # REVOKED_KEY / REVOKED_KEY_UNDECIDABLE) is a separate change across eight verifiers.
-    if entry.get("status") not in ("active", "retired", None):
+    if entry.get("status") not in ("active", "retired", "revoked", None):
         return "UNKNOWN_KEY_STATUS"
+    # REVOKED — RECEIPT_FORMAT.md 7.1 (normative); mirrors verify.js deriveStatus exactly.
+    # Both outcomes are valid:false. UNDECIDABLE is not a softer valid.
+    if entry.get("status") == "revoked":
+        at = entry.get("compromised_at")
+        if not isinstance(at, str) or not at:
+            return "REVOKED_KEY_UNDECIDABLE"
+        boundary = _parse_iso(at)
+        issued = _parse_iso(payload.get("ts"))
+        if boundary is None or issued is None:
+            return "REVOKED_KEY_UNDECIDABLE"
+        return "REVOKED_KEY" if issued >= boundary else "REVOKED_KEY_UNDECIDABLE"
     if entry.get("status") == "retired":
         issued = _parse_iso(payload.get("ts"))
         retired = _parse_iso(entry.get("retired_at"))
@@ -295,6 +306,9 @@ def keyring_from_document(doc, source):
             "public_key": key_from_pem(k["public_key_pem"]),
             "status": k.get("status"),
             "retired_at": k.get("retired_at"),
+            # Carried through for the revoked rule (RECEIPT_FORMAT 7.1). Dropping it makes the
+            # rule inert: every revoked key would return UNDECIDABLE regardless of ts.
+            "compromised_at": k.get("compromised_at"),
         }
     return keyring
 
