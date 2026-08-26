@@ -137,6 +137,45 @@ node verify.js "$RECEIPT" --keys coderifts-keys.json
 The registry is `{ "keys": [ { "kid", "public_key_pem", "status", "valid_from" } ] }`.
 `--key` and `--keys` are mutually exclusive.
 
+## Evidencing a REFUSAL
+
+Every artifact in this family attests something that happened — a decision, a grant, a commit, a
+coverage observation. A refusal can look like it produces nothing, so an operator wanting to show
+*"the agent tried to deploy and the gate stopped it"* assumes they have only their word for it.
+
+**They do not.** A `BLOCK` mints a signed receipt exactly like an `ALLOW`, and this verifier already
+checks it — no extra tooling, no separate artifact family.
+
+The receipt payload alone will not tell you which it was: an `ALLOW` receipt and a `BLOCK` receipt
+have the **same field set**, and neither carries the verdict. What carries the verdict is the
+`decision_result` envelope, and `payload.bh` binds it. So refusal evidence is **two files**:
+
+```bash
+# the receipt, plus the envelope it was minted for
+node verify.js "$(cat receipt.txt)" --envelope decision_result.json
+# -> {"valid":true,"status":"VERIFIED_CURRENT", ...}
+```
+
+The verifier recomputes the envelope's canonical body hash (RFC 8785, with `receipt` and
+`decision_body_hash` removed) and requires it to equal `payload.bh`. Passing means the envelope in
+front of you is the one that receipt was issued for. Read the verdict from that envelope:
+`decision`, `execution_action`, `operation`, and `blocking_reasons`.
+
+Editing the envelope breaks the binding — flipping `"decision":"BLOCK"` to `"ALLOW"` returns
+`INVALID_SIGNATURE` / `body_hash_mismatch`. That is what makes it evidence rather than a claim.
+
+**What this proves:** at the signed timestamp, a caller presented this change set under this
+intended operation, the gate returned this verdict, and the envelope has not been altered since.
+
+**What it does NOT prove** — and the distinction matters more here than anywhere else in this
+document: **it does not prove the agent then stopped.** It is evidence about a decision we issued,
+never about what the caller did next. An agent that received `STOP` and shipped anyway through some
+other path produces exactly this same receipt. Nothing in this family observes execution that did
+not come back through us; a refusal receipt is proof of what the gate *said*, not of what the world
+*did*. If you need evidence that the guarded path is the only path, that is a different question —
+see `@coderifts/bypass-probe`, which measures it at your own installation and reports what it could
+not reach.
+
 ## Verifying an execution grant
 
 A `cr.exec.v1` grant is the short-lived, mutation-bound sibling of a chain
