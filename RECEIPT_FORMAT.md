@@ -52,10 +52,75 @@ Notes:
 - `ir` is present only when `v === 3`. Like `reg` it is signed-but-INFORMATIONAL:
   it binds the Change-IR that the verdict was computed over, but the verifier does
   not recompute it.
-- `fp` is verified as an opaque binding. This verifier confirms that the signed
-  bytes containing `fp` were signed by the key; it does NOT recompute `fp` from a
-  verdict payload. Recomputing `fp` requires the verdict-core canonical encoder
-  and is out of scope for a receipt verifier.
+- `fp` is verified here as a signed binding: this verifier confirms the signed bytes
+  containing `fp` were signed by the key. It does not recompute `fp` itself.
+  **But `fp` is not opaque, and an earlier version of this document said it was.**
+  Which recipe produced it depends on the path — see §2.0.
+
+### 2.0 Recomputing `fp` (what the earlier "opaque binding" note got wrong)
+
+Two producers mint the `fp` that appears in a chain receipt. Neither is the
+"verdict-core canonical encoder" this document previously named: that module is not
+on the path that produces a receipt's `fp`.
+
+**Change-set / authorize path — `crbundle.v1`. RECOMPUTABLE TODAY.**
+
+Every input is something the caller already holds; there is no internal id, no
+server-side timestamp and no score anywhere in the preimage. Fields are joined with
+US (`\x1f`), artifacts sorted by `(type, id)` so submission order is not significant:
+
+```
+crbundle.v1
+<artifactCount>
+for each sorted artifact:  <type> \x1f <id> \x1f sha256hex(before) \x1f sha256hex(after)
+<operation> \x1f <environment> \x1f <repository> \x1f <branch> \x1f <pull_request> \x1f <policy_profile>
+```
+
+`sha256hex` is hex over the raw UTF-8 bytes; a non-string artifact side is
+`JSON.stringify`-ed first; an absent side is the empty string; an absent context
+field is the empty string. Output is `sha256:<hex>`. The result is time-free: the
+same inputs always give the same digest.
+
+`computeBundleFingerprint(artifacts, context)` in `@coderifts/agent-guard`
+implements exactly this. **Versions up to and including 10.0.0 did not** — that
+build omitted the count and the whole context block and returned a different digest.
+If you pinned a value from it, recompute rather than migrate.
+
+*Cross-check vector* — one artifact, `context.operation = "merge"`:
+
+```
+before: {"openapi":"3.0.0","info":{"title":"t","version":"1.0.0"},"paths":{"/u":{"get":{"responses":{"200":{"description":"ok"}}}}}}
+after:  {"openapi":"3.0.0","info":{"title":"t","version":"1.0.0"},"paths":{}}
+artifact: { id: "openapi.yaml", type: "openapi" }
+context:  { operation: "merge" }
+
+fp = sha256:049650f2d0496f39ad0ec09e57fa1841e9636255f031e99751435b1bc70443df
+```
+
+That value was taken from a live authorize response, where it appears identically as
+`chain_receipt.fp`, `decision_result.fingerprint`, `verdict_fingerprint` and
+`bundle_fingerprint`.
+
+**Single-spec path — NOT recomputable from that route's response today.**
+
+```
+fp = sha256( normalizeSpec(before) \x1f normalizeSpec(after) \x1f normalizePolicy(policy) \x1f scorer_version )
+```
+
+The first three are yours. `scorer_version` is the server's scoring-configuration
+hash plus its mode (e.g. `59ed151:active`), and it is **signed into the fingerprint
+but not returned by the single-spec route** — so you cannot reproduce the digest from
+what that response gives you. It is not withheld on purpose: the change-set path
+already returns `scorer_version` in plain sight. Until the single-spec route does the
+same, treat `fp` on that path as a signed binding only, exactly as this document
+previously described both paths.
+
+**What recomputing an `fp` proves — and what it does not.**
+
+A matching `fp` proves the receipt corresponds to that content and that context, and
+that neither has changed since it was issued. It does **not** prove that any
+particular agent call went through the gate: a receipt is evidence about the change
+it was minted for, never about traffic it never saw.
 
 ### 2.1 Per-operation `expires_at` TTL (authorization window)
 
