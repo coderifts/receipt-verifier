@@ -38,6 +38,38 @@ function fromTheDocument(artifacts, context) {
   return `sha256:${sha(parts.join(NUL))}`;
 }
 
+/** Single-spec fp, implemented ONLY from §2.0's prose. No import from any CodeRifts package. */
+const sortDeep = (v) => {
+  if (Array.isArray(v)) return v.map(sortDeep);
+  if (v && typeof v === 'object') {
+    const out = {};
+    for (const k of Object.keys(v).sort()) out[k] = sortDeep(v[k]);
+    return out;
+  }
+  return v;
+};
+const normalizeSpec = (x) => {
+  if (x == null) return '';
+  const str = String(x).trim();
+  if (!str) return '';
+  try {
+    const p = (str.startsWith('{') || str.startsWith('[')) ? JSON.parse(str) : null;
+    if (p && typeof p === 'object') return JSON.stringify(sortDeep(p));
+  } catch (_) { /* fall through to raw text */ }
+  return str;
+};
+const normalizePolicy = (p) => (!p || typeof p !== 'object' ? '{}' : JSON.stringify(sortDeep(p)));
+const SINGLE_SPEC_NUL = '\x00';
+
+function singleSpecFromTheDocument(before, after, policy, scorerVersion) {
+  const material = [normalizeSpec(before), normalizeSpec(after), normalizePolicy(policy), scorerVersion]
+    .join(SINGLE_SPEC_NUL);
+  return `sha256:${sha(material)}`;
+}
+
+const SS_SCORER = '59ed151:active';
+const SS_FP = 'sha256:b4faaacad943012438d784c8da34594538b9e5883adc341aa10b7bbfca9d921c';
+
 const BEFORE = '{"openapi":"3.0.0","info":{"title":"t","version":"1.0.0"},"paths":{"/u":{"get":{"responses":{"200":{"description":"ok"}}}}}}';
 const AFTER = '{"openapi":"3.0.0","info":{"title":"t","version":"1.0.0"},"paths":{}}';
 const VECTOR_FP = 'sha256:049650f2d0496f39ad0ec09e57fa1841e9636255f031e99751435b1bc70443df';
@@ -83,11 +115,26 @@ describe('§2.0 — the honest half', () => {
     assert.match(FLAT, /not on the path that produces a receipt's `fp`/);
   });
 
-  it('THE SINGLE-SPEC PATH IS MARKED NOT RECOMPUTABLE, with the reason', () => {
-    assert.match(FLAT, /NOT recomputable from that route's response today/);
-    assert.match(FLAT, /signed into the fingerprint but not returned by the single-spec route/);
-    assert.match(FLAT, /not withheld on purpose/,
-      'a reader must not read this as a secret being kept');
+  it('THE SINGLE-SPEC PATH IS NOW DOCUMENTED AS RECOMPUTABLE', () => {
+    assert.match(FLAT, /Single-spec path .* — RECOMPUTABLE/);
+    assert.equal(/NOT recomputable from that route's response today/.test(DOC), false,
+      'the superseded paragraph must be gone, not merely contradicted elsewhere');
+    assert.match(FLAT, /scorer_version`?: \*\*returned in the response\*\*|scorer_version.*returned in the response/);
+  });
+
+  it('BOTH SEPARATORS ARE NAMED, and the difference is called out', () => {
+    assert.match(FLAT, /Separator: `\\x1f` \(US, U\+001F\)/);
+    assert.match(FLAT, /Separator: `\\x00` \(NUL, U\+0000\)/);
+    assert.match(FLAT, /This is NOT the `\\x1f` used above/);
+  });
+
+  it('THE SEPARATOR ERROR IS RECORDED, not silently repaired', () => {
+    assert.match(FLAT, /gave `\\x1f` as the separator for \*\*both\*\* recipes/);
+    assert.match(FLAT, /wrong for the single-spec path/);
+    assert.match(FLAT, /computed a wrong digest/);
+    // The cause, so the next reader does not repeat it.
+    assert.match(FLAT, /both constants are \*named\* `NUL`, and only one of them actually is/);
+    assert.match(FLAT, /A name is not a measurement/);
   });
 
   it('the 10.0.0 defect is disclosed to anyone who pinned a value from it', () => {
@@ -106,6 +153,56 @@ describe('§2.0 — the honest half', () => {
       'posterior_evidence_risk', 'staleness_risk', 'budget_risk', 'provenance_risk',
       'tool_capability_risk', 'memory_boundary_risk', 'source_risk', 'layer05_perturbation']) {
       assert.equal(section.includes(dim), false, `§2.0 discloses the scoring dimension ${dim}`);
+    }
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+describe('§2.0 — the SINGLE-SPEC recipe is reproducible FROM THE DOCUMENT too', () => {
+  /**
+   * THIS TEST IS THE ONE THAT WAS MISSING. The crbundle recipe had a prose-only reimplementation
+   * from the day it was written; the single-spec recipe did not, and that is exactly why a wrong
+   * separator shipped in it. A recipe with no prose-only test is a recipe nobody has checked.
+   */
+  it('THE VECTOR REPRODUCES: prose alone recomputes the live single-spec fp', () => {
+    assert.equal(singleSpecFromTheDocument(BEFORE, AFTER, {}, SS_SCORER), SS_FP,
+      'a third party following only §2.0 must land on the documented value');
+  });
+
+  it('THE SEPARATOR IS LOAD-BEARING: \\x1f produces a DIFFERENT digest', () => {
+    const wrong = `sha256:${sha([normalizeSpec(BEFORE), normalizeSpec(AFTER), normalizePolicy({}), SS_SCORER].join('\x1f'))}`;
+    assert.notEqual(wrong, SS_FP,
+      'if both separators agreed, the shipped error would have been harmless — it was not');
+  });
+
+  it('the two recipes are genuinely different — same inputs, different digests', () => {
+    const bundle = fromTheDocument(
+      [{ id: 'openapi.yaml', type: 'openapi', before: BEFORE, after: AFTER }], { operation: 'merge' },
+    );
+    assert.notEqual(bundle, SS_FP, 'one recipe cannot stand in for the other');
+  });
+
+  it('scorer_version is load-bearing: a different value changes the digest', () => {
+    assert.notEqual(singleSpecFromTheDocument(BEFORE, AFTER, {}, 'other:mode'), SS_FP);
+  });
+
+  it('the document carries the single-spec vector and its scorer_version verbatim', () => {
+    assert.ok(DOC.includes(SS_FP), 'the cross-check vector must be IN the document');
+    assert.ok(DOC.includes(SS_SCORER), 'the scorer_version it was computed with must be there too');
+  });
+
+  it('normalizeSpec key-sorting is stated, and reordering keys does not change the digest', () => {
+    assert.match(FLAT, /object keys sorted at every depth/);
+    const reordered = '{"paths":{"/u":{"get":{"responses":{"200":{"description":"ok"}}}}},"info":{"version":"1.0.0","title":"t"},"openapi":"3.0.0"}';
+    assert.equal(singleSpecFromTheDocument(reordered, AFTER, {}, SS_SCORER), SS_FP,
+      'key order must not matter — if it does, the prose is missing a rule');
+  });
+
+  it('an absent policy normalises to {} exactly as documented', () => {
+    assert.match(FLAT, /a non-object → the literal `\{\}`|non-object → the literal/);
+    for (const p of [undefined, null, 'nope', 42]) {
+      assert.equal(singleSpecFromTheDocument(BEFORE, AFTER, p, SS_SCORER), SS_FP,
+        `policy=${JSON.stringify(p)} must normalise to {}`);
     }
   });
 });

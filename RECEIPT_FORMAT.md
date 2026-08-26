@@ -76,15 +76,19 @@ for each sorted artifact:  <type> \x1f <id> \x1f sha256hex(before) \x1f sha256he
 <operation> \x1f <environment> \x1f <repository> \x1f <branch> \x1f <pull_request> \x1f <policy_profile>
 ```
 
-`sha256hex` is hex over the raw UTF-8 bytes; a non-string artifact side is
-`JSON.stringify`-ed first; an absent side is the empty string; an absent context
-field is the empty string. Output is `sha256:<hex>`. The result is time-free: the
-same inputs always give the same digest.
+**Separator: `\x1f` (US, U+001F).** `sha256hex` is hex over the raw UTF-8 bytes; a
+non-string artifact side is `JSON.stringify`-ed first; an absent side is the empty
+string; an absent context field is the empty string. Output is `sha256:<hex>`. The
+result is time-free: the same inputs always give the same digest.
+
+*Re-verified live after guard 11.0.0 shipped* — the vector below still reproduces
+from a receipt minted against the deployed server.
 
 `computeBundleFingerprint(artifacts, context)` in `@coderifts/agent-guard`
-implements exactly this. **Versions up to and including 10.0.0 did not** — that
-build omitted the count and the whole context block and returned a different digest.
-If you pinned a value from it, recompute rather than migrate.
+implements exactly this **from 11.0.0**, which is published and verified against the
+vector below. **Versions up to and including 10.0.0 did not** — that build omitted
+the count and the whole context block and returned a different digest. If you pinned
+a value from it, recompute rather than migrate.
 
 *Cross-check vector* — one artifact, `context.operation = "merge"`:
 
@@ -101,19 +105,52 @@ That value was taken from a live authorize response, where it appears identicall
 `chain_receipt.fp`, `decision_result.fingerprint`, `verdict_fingerprint` and
 `bundle_fingerprint`.
 
-**Single-spec path — NOT recomputable from that route's response today.**
+**Single-spec path (`/api/v1/agent/preflight`, `/api/v1/mcp-diff`) — RECOMPUTABLE.**
 
 ```
-fp = sha256( normalizeSpec(before) \x1f normalizeSpec(after) \x1f normalizePolicy(policy) \x1f scorer_version )
+fp = sha256( normalizeSpec(before) ‖ normalizeSpec(after) ‖ normalizePolicy(policy) ‖ scorer_version )
 ```
 
-The first three are yours. `scorer_version` is the server's scoring-configuration
-hash plus its mode (e.g. `59ed151:active`), and it is **signed into the fingerprint
-but not returned by the single-spec route** — so you cannot reproduce the digest from
-what that response gives you. It is not withheld on purpose: the change-set path
-already returns `scorer_version` in plain sight. Until the single-spec route does the
-same, treat `fp` on that path as a signed binding only, exactly as this document
-previously described both paths.
+**Separator: `\x00` (NUL, U+0000). This is NOT the `\x1f` used above** — the two
+paths genuinely differ, and joining this preimage with `\x1f` produces a wrong
+digest.
+
+- `normalizeSpec(s)`: trim; if the text starts with `{` or `[` parse it as JSON,
+  otherwise as YAML; on a successful object parse emit `JSON.stringify` of the value
+  with **object keys sorted at every depth** (arrays keep order); on any parse
+  failure emit the trimmed raw text. `null`/empty → `""`.
+- `normalizePolicy(p)`: a non-object → the literal `{}`; otherwise the same
+  sorted-key `JSON.stringify`.
+- `scorer_version`: **returned in the response**, e.g. `59ed151:active`. It is the
+  server's scoring-configuration hash plus its mode. You do not compute it — read it
+  from the same response that carried the fingerprint.
+
+*Cross-check vector* — taken from a live `POST /api/v1/agent/preflight`:
+
+```
+old_spec: {"openapi":"3.0.0","info":{"title":"t","version":"1.0.0"},"paths":{"/u":{"get":{"responses":{"200":{"description":"ok"}}}}}}
+new_spec: {"openapi":"3.0.0","info":{"title":"t","version":"1.0.0"},"paths":{}}
+policy:   {}                       (none supplied)
+response scorer_version: 59ed151:active
+
+fp = sha256:b4faaacad943012438d784c8da34594538b9e5883adc341aa10b7bbfca9d921c
+```
+
+**Corrections this section has had to make.** Both are recorded rather than quietly
+edited, because a document that silently repairs itself teaches you its history
+cannot be trusted:
+
+1. An earlier revision called `fp` an **opaque binding** requiring the "verdict-core
+   canonical encoder". That module is not on the path that produces a receipt's `fp`
+   at all, and both real recipes are reproducible from what a caller already holds.
+2. A revision published **on the same day as this one** gave `\x1f` as the separator
+   for **both** recipes. That is correct for `crbundle.v1` and **wrong for the
+   single-spec path**, which uses `\x00`. Anyone who followed that revision computed
+   a wrong digest for the single-spec path — the precise failure mode this section
+   was rewritten to eliminate. The cause is worth knowing: in the app source both
+   constants are *named* `NUL`, and only one of them actually is
+   (`change-set.js` holds `'\x1f'`; `core/verdict-fingerprint.js` holds a raw
+   U+0000). A name is not a measurement.
 
 **What recomputing an `fp` proves — and what it does not.**
 
