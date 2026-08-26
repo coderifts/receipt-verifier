@@ -133,8 +133,26 @@ describe('§2.0 — the honest half', () => {
     assert.match(FLAT, /wrong for the single-spec path/);
     assert.match(FLAT, /computed a wrong digest/);
     // The cause, so the next reader does not repeat it.
-    assert.match(FLAT, /both constants are \*named\* `NUL`, and only one of them actually is/);
+    //
+    // UPDATED DELIBERATELY (not to green a red suite): the old assertion pinned the sentence
+    // "in the app source both constants are *named* NUL", which was PRESENT tense. The renames
+    // have since landed in the app and in all three public mirrors, so that sentence would have
+    // aged into a lie. The historical claim is what must survive — it is the reason a wrong value
+    // passed review — so the assertions below pin the cause in the PAST tense and additionally
+    // require the note to say what is true now.
+    assert.match(FLAT, /\*\*At the time\*\*, three separator constants were all \*named\* `NUL`/);
+    assert.match(FLAT, /raw U\+0000 control byte/);
     assert.match(FLAT, /A name is not a measurement/);
+  });
+
+  it('THE PRESENT TENSE IS STATED TOO, so the note cannot age into a lie', () => {
+    assert.match(FLAT, /\*\*Fixed at the source since\.\*\*/);
+    assert.match(FLAT, /now named `US`/);
+    assert.match(FLAT, /\*\*No mirror is still lagging\.\*\*/);
+    // A rename claimed without proof is exactly the class of unmeasured statement this section
+    // exists to retract, so the note must say the renames were proved digest-neutral.
+    assert.match(FLAT, /proved\s+digest-neutral/);
+    assert.match(FLAT, /not one byte of any preimage moved/);
   });
 
   it('the 10.0.0 defect is disclosed to anyone who pinned a value from it', () => {

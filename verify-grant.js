@@ -41,7 +41,11 @@ const {
 
 const GRANT_VERSION = 'cr.exec.v1';
 const SIGNING_PREFIX = 'crexec.v1';
-const NUL = '\x1f';
+// US (Unit Separator, 0x1F). Named for the byte it holds — it is NOT US, which is 0x00.
+// The old name mirrored the server's, and that misnomer is what let RECEIPT_FORMAT.md §2.0
+// give this separator for the single-spec preimage, which actually uses 0x00 — see the
+// corrections note in that section. Renamed in coderifts-app 90c39cc; this mirror follows.
+const US = '\x1f';
 const SIGNED_FIELDS = Object.freeze([
   'kid', 'receipt_digest', 'scope_hash', 'audience', 'operation', 'target_id', 'jti', 'iat', 'exp',
 ]);
@@ -76,7 +80,7 @@ function computeScopeHash({ operation, target_id, after_payload }) {
     operation == null ? '' : String(operation),
     target_id == null ? '' : String(target_id),
     after_payload == null ? '' : String(after_payload),
-  ].join(NUL);
+  ].join(US);
   return `sha256:${sha256hex(preimage)}`;
 }
 

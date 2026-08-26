@@ -147,10 +147,23 @@ cannot be trusted:
    for **both** recipes. That is correct for `crbundle.v1` and **wrong for the
    single-spec path**, which uses `\x00`. Anyone who followed that revision computed
    a wrong digest for the single-spec path — the precise failure mode this section
-   was rewritten to eliminate. The cause is worth knowing: in the app source both
-   constants are *named* `NUL`, and only one of them actually is
-   (`change-set.js` holds `'\x1f'`; `core/verdict-fingerprint.js` holds a raw
-   U+0000). A name is not a measurement.
+   was rewritten to eliminate.
+
+   The cause is worth keeping, because it is the reason a wrong value survived review.
+   **At the time**, three separator constants were all *named* `NUL` and only one of
+   them was: `change-set.js` and `execution-grant.js` each held `'\x1f'` under that
+   name, and `core/verdict-fingerprint.js` held a **raw U+0000 control byte** rather
+   than the `'\x00'` escape — so `grep 'const NUL'` failed silently on the one file
+   that really did hold NUL, and a reader saw an apparently blank value.
+   **A name is not a measurement.**
+
+   **Fixed at the source since.** The 0x1F constants are now named `US` and the NUL
+   one is written as an escape, in the app (`coderifts-app` 90c39cc) and in every
+   public mirror that carries the same preimage — `@coderifts/agent-guard`
+   (`execution-time-fingerprint.ts`, `enforcement-gate.ts`) and this repository's own
+   `verify-grant.js`. **No mirror is still lagging.** Every rename was proved
+   digest-neutral by recomputing a real vector before and after; not one byte of any
+   preimage moved.
 
 **What recomputing an `fp` proves — and what it does not.**
 
