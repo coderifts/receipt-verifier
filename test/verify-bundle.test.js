@@ -152,6 +152,96 @@ describe('COMPOSITION: real signed vectors verify through the existing verifiers
   });
 });
 
+describe('THE FULL CHAIN: receipt -> grant -> attest (1126)', () => {
+  const attestVectors = require('../test/attest-vectors.json');
+  const attestOf = (name) => attestVectors.vectors.find((v) => v.name === name);
+
+  /**
+   * ARITY IS NOT UNIFORM ACROSS THE VERIFIERS, and it is a real trap for anyone assembling
+   * per-slot material. Measured:
+   *   verifyReceipt(token, ctx, opts)
+   *   verifyExecutionGrant(token, ctx, opts)
+   *   verifyExecutionAttestation(token, opts)      <- TWO arguments
+   * So for the attest slot BOTH the registry and `intended` go in position 2. Passing `intended`
+   * in a third argument is silently ignored: the cross-check never fires and a mismatched
+   * attestation grades ATTEST_VALID. That is exactly how this suite first reported all four
+   * mismatch vectors as VERIFIED, and it is a caller mistake, not a verifier defect.
+   */
+  const chainReg = (attestName) => ({
+    perSlot: {
+      receipt: {
+        ctx: { publicKey: receiptVectors.public_key_pem, expectedKid: receiptVectors.kid },
+        opts: {},
+      },
+      execution_grant: {
+        ctx: { publicKey: grantVectors.public_key_pem, expectedKid: grantVectors.kid },
+        opts: { intended: intendedFor('EG-VALID') },
+      },
+      commit_attestation: {
+        ctx: {
+          registry: attestVectors.registry,
+          intended: { grant: (attestOf(attestName).flags || {}).grant },
+        },
+        opts: {},
+      },
+    },
+  });
+
+  const chainBundle = (attestName) => bundleOf({
+    receipt: RECEIPT,
+    execution_grant: GRANT_OK,
+    commit_attestation: attestOf(attestName).token,
+  });
+
+  it('the fixed chain is VERIFIED across all three slots', () => {
+    const r = verifyBundle(chainBundle('EG-A-VALID'), ctx, chainReg('EG-A-VALID'));
+    assert.equal(r.bundle, BUNDLE.VERIFIED, JSON.stringify(r.slots));
+    assert.equal(r.verified_count, 3);
+    assert.equal(r.invalid_count, 0);
+    assert.equal(r.slots.find((s) => s.slot === 'commit_attestation').state, SLOT.VERIFIED);
+  });
+
+  it('the chain still names what it does NOT contain', () => {
+    const r = verifyBundle(chainBundle('EG-A-VALID'), ctx, chainReg('EG-A-VALID'));
+    assert.ok(r.absent_count >= 4, 'three verified slots must not silence the rest of the chain');
+  });
+
+  for (const [name, reason] of [
+    ['EG-A-MISMATCH-RECEIPT', 'receipt_digest_mismatch'],
+    ['EG-A-MISMATCH-SCOPE', 'scope_hash_mismatch'],
+    ['EG-A-UNBOUND-JTI', 'grant_jti_mismatch'],
+    ['EG-A-STATE-NONCE-MISMATCH', 'state_nonce_mismatch'],
+  ]) {
+    it(`${name} makes the whole chain INVALID (${reason})`, () => {
+      const r = verifyBundle(chainBundle(name), ctx, chainReg(name));
+      assert.equal(r.bundle, BUNDLE.INVALID, `${name} must never grade VERIFIED`);
+      const cs = r.slots.find((s) => s.slot === 'commit_attestation');
+      assert.equal(cs.state, SLOT.INVALID);
+      assert.equal(cs.status, 'ATTEST_UNBOUND');
+      assert.equal(cs.reason, reason);
+    });
+  }
+
+  it('the two new mismatch vectors are marked INTENTIONAL, so nobody "fixes" them', () => {
+    for (const n of ['EG-A-MISMATCH-RECEIPT', 'EG-A-MISMATCH-SCOPE']) {
+      const v = attestOf(n);
+      assert.ok(v, `${n} must exist`);
+      assert.match(v.note, /INTENTIONALLY NON-MATCHING/);
+      assert.match(v.note, /never be "fixed" to match/);
+    }
+  });
+
+  it('THE POSITIVE VECTORS ACTUALLY CROSS-CHECK — they used to pass by absence', () => {
+    // Measured before 1126: 5 of 7 attest vectors carried no grant flag, so
+    // verify-attest.js:339 `wantsCross` was false. EG-A-VALID returned valid:true having compared
+    // none of its three bindings. A vector that passes by absence asserts nothing.
+    for (const n of ['EG-A-VALID', 'EG-A-RETIRED-KEY-VALID-AT-ISSUE']) {
+      const f = attestOf(n).flags || {};
+      assert.ok(f.grant, `${n} must supply an intended grant or its bindings are never compared`);
+    }
+  });
+});
+
 describe('LINKAGE: the bundle is more than a container', () => {
   it('THE FIXED PAIR: a grant binding the REAL receipt is VERIFIED, and the link holds', () => {
     // 1125. Until the vectors were regenerated, this exact bundle was INVALID — the grant bound

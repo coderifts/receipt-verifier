@@ -24,9 +24,45 @@ const { privateKey, publicKey } = crypto.generateKeyPairSync('ed25519');
 const publicPem = publicKey.export({ type: 'spki', format: 'pem' });
 
 const COMMITTED = '2026-06-15T12:00:00Z';
-const SCOPE = 'sha256:' + 'ab'.repeat(32);
-const RD = 'sha256:' + 'cd'.repeat(32);
-const JTI = 'jti-1';
+/**
+ * THE GRANT THESE ATTESTATIONS BIND (roadmap 1126).
+ *
+ * These three were filler: SCOPE = 'ab'x32, RD = 'cd'x32, JTI = 'jti-1'. None resolved to anything
+ * in this repository, so our own vectors taught that the attestation->grant link need not hold —
+ * the same defect 1125 fixed one layer down.
+ *
+ * WHAT THE VERIFIER ACTUALLY CHECKS, measured at verify-attest.js:346-357: given an intended grant
+ * it compares, by string equality, grant_jti / scope_hash / state_nonce / receipt_digest against
+ * the grant's own payload fields. It does NOT re-derive scope_hash from operation+target+
+ * after_payload — so a "real" scope_hash is meaningful only because the GRANT's scope_hash is
+ * itself computed by computeScopeHash in gen-grant-vectors.js. Binding to the real grant makes the
+ * whole chain genuine; inventing a plausible-looking hash here would have been theatre.
+ *
+ * ORDERING, load-bearing: vectors.json -> grant-vectors.json -> attest-vectors.json. Each link
+ * binds the one above it, so regenerate in that order.
+ */
+const GRANT_VECTORS = require('./grant-vectors.json');
+const REAL_GRANT = GRANT_VECTORS.vectors.find((v) => v.name === 'EG-VALID');
+if (!REAL_GRANT || typeof REAL_GRANT.token !== 'string') {
+  throw new Error(
+    'gen-attest-vectors: test/grant-vectors.json has no `EG-VALID` grant to bind. Run '
+    + 'node test/gen-vectors.js && node test/gen-grant-vectors.js first — an attestation bound to '
+    + 'a grant that does not exist is the defect this generator was changed to remove (1126).',
+  );
+}
+const REAL_GRANT_TOKEN = REAL_GRANT.token;
+const REAL_GRANT_BODY = JSON.parse(
+  Buffer.from(REAL_GRANT_TOKEN.split('.')[0], 'base64url').toString('utf8'),
+);
+/** All three now come from the real grant, so the chain receipt -> grant -> attest resolves. */
+const SCOPE = REAL_GRANT_BODY.scope_hash;
+const RD = REAL_GRANT_BODY.receipt_digest;
+const JTI = REAL_GRANT_BODY.jti;
+for (const [n, val] of [['scope_hash', SCOPE], ['receipt_digest', RD], ['jti', JTI]]) {
+  if (typeof val !== 'string' || val.length === 0) {
+    throw new Error(`gen-attest-vectors: EG-VALID grant carries no ${n} to bind`);
+  }
+}
 
 function b64url(buf) {
   return Buffer.from(buf).toString('base64url');
@@ -92,10 +128,15 @@ const nonceTok = issue({ state_nonce: 'nonce-A' });
 
 const vectors = [
   {
+    // 1126 — flags.grant is now the REAL grant token, so the cross-check actually FIRES.
+    // Measured before the fix: 5 of 7 vectors carried no grant flag, so verify-attest.js:339
+    // `wantsCross` was false and the three bindings were never compared. EG-A-VALID passed with
+    // valid:true having checked nothing about them.
     name: 'EG-A-VALID',
     token: validTok,
     expected: { valid: true, status: 'ATTEST_VALID' },
     keys: 'registry',
+    flags: { grant: REAL_GRANT_TOKEN },
   },
   {
     name: 'EG-A-BAD-SIG',
@@ -110,10 +151,12 @@ const vectors = [
     keys: 'empty',
   },
   {
+    // The other vector expecting valid:true while checking no binding — same fix.
     name: 'EG-A-RETIRED-KEY-VALID-AT-ISSUE',
     token: validTok,
     expected: { valid: true, status: 'ATTEST_RETIRED_KEY_VALID_AT_ISSUE' },
     keys: 'retired_registry',
+    flags: { grant: REAL_GRANT_TOKEN },
   },
   {
     name: 'EG-A-MALFORMED',
@@ -134,6 +177,29 @@ const vectors = [
     expected: { valid: false, status: 'ATTEST_UNBOUND', reason: 'state_nonce_mismatch' },
     keys: 'registry',
     flags: { grant: fakeGrant(JTI, { state_nonce: 'nonce-B' }) },
+  },
+  {
+    // 1126 — receipt_digest has a CHECKED comparison (verify-attest.js:355) and had no negative
+    // vector. Without one, a regression that stopped comparing it would go unnoticed.
+    name: 'EG-A-MISMATCH-RECEIPT',
+    note: 'INTENTIONALLY NON-MATCHING: the intended grant carries a different receipt_digest than '
+      + 'this attestation binds. It must never be "fixed" to match — it exists to prove the '
+      + 'attestation->receipt binding is actually checked.',
+    token: validTok,
+    expected: { valid: false, status: 'ATTEST_UNBOUND', reason: 'receipt_digest_mismatch' },
+    keys: 'registry',
+    flags: { grant: fakeGrant(JTI, { receipt_digest: `sha256:${'11'.repeat(32)}` }) },
+  },
+  {
+    // Same reasoning for scope_hash (verify-attest.js:349).
+    name: 'EG-A-MISMATCH-SCOPE',
+    note: 'INTENTIONALLY NON-MATCHING: the intended grant carries a different scope_hash than this '
+      + 'attestation binds. It must never be "fixed" to match — it exists to prove the '
+      + 'attestation->scope binding is actually checked.',
+    token: validTok,
+    expected: { valid: false, status: 'ATTEST_UNBOUND', reason: 'scope_hash_mismatch' },
+    keys: 'registry',
+    flags: { grant: fakeGrant(JTI, { scope_hash: `sha256:${'22'.repeat(32)}` }) },
   },
 ];
 

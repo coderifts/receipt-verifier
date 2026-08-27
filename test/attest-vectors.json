@@ -1,11 +1,11 @@
 {
   "kid": "exec-test-k1",
-  "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAOySfLCZR/PJpbkFqaspPCJtDP9l7dOnI65d7OmRSzoU=\n-----END PUBLIC KEY-----\n",
+  "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAtTNSe66CDiJsNnZ3Yv1zz6gu0yEbHcnsXrmoanPq19A=\n-----END PUBLIC KEY-----\n",
   "registry": {
     "keys": [
       {
         "kid": "exec-test-k1",
-        "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAOySfLCZR/PJpbkFqaspPCJtDP9l7dOnI65d7OmRSzoU=\n-----END PUBLIC KEY-----\n",
+        "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAtTNSe66CDiJsNnZ3Yv1zz6gu0yEbHcnsXrmoanPq19A=\n-----END PUBLIC KEY-----\n",
         "status": "active",
         "valid_from": "2026-01-01T00:00:00Z",
         "retired_at": null
@@ -16,7 +16,7 @@
     "keys": [
       {
         "kid": "exec-test-k1",
-        "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAOySfLCZR/PJpbkFqaspPCJtDP9l7dOnI65d7OmRSzoU=\n-----END PUBLIC KEY-----\n",
+        "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAtTNSe66CDiJsNnZ3Yv1zz6gu0yEbHcnsXrmoanPq19A=\n-----END PUBLIC KEY-----\n",
         "status": "retired",
         "valid_from": "2026-01-01T00:00:00Z",
         "retired_at": "2026-12-01T00:00:00Z"
@@ -29,16 +29,19 @@
   "vectors": [
     {
       "name": "EG-A-VALID",
-      "token": "cr.exec.attest.v1|exec-test-k1|eyJ2IjoiY3IuZXhlYy5hdHRlc3QudjEiLCJleGVjdXRvcl9raWQiOiJleGVjLXRlc3QtazEiLCJncmFudF9qdGkiOiJqdGktMSIsInJlY2VpcHRfZGlnZXN0Ijoic2hhMjU2OmNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2QiLCJzY29wZV9oYXNoIjoic2hhMjU2OmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWIiLCJjb21taXR0ZWRfYXQiOiIyMDI2LTA2LTE1VDEyOjAwOjAwWiJ9|gJkNbUbxSU38I2DbPF-qKdcUOKN25eOzodXnPxjyQ1T8-0Z6c9ijlEa6DkhDuRQ9-8Az3cGkaTbhmcmfZHZvDg",
+      "token": "cr.exec.attest.v1|exec-test-k1|eyJ2IjoiY3IuZXhlYy5hdHRlc3QudjEiLCJleGVjdXRvcl9raWQiOiJleGVjLXRlc3QtazEiLCJncmFudF9qdGkiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJyZWNlaXB0X2RpZ2VzdCI6InNoYTI1NjpmYmE0MzU3OTUyNzQ2ZmViZGEyODlmYWQ0YmY5NzFhY2JiYWZlNzJmOTcwODE5MGQzNmM1YzVjMDU0ZWJjYmNkIiwic2NvcGVfaGFzaCI6InNoYTI1NjphNWNlZWI3NzkzNWI2ZmM0YzlhMjE5MDY1YjNkZThiNDFhM2UxZjA4OTI0NTdjYTUxNjJlYzJiZDI3YzI1ZTJmIiwiY29tbWl0dGVkX2F0IjoiMjAyNi0wNi0xNVQxMjowMDowMFoifQ|C9ED9W5frbLjVD_kCtRmMTgw7pFeK3hI0ctWZFSaRpypSGMU97CBs1ZC_Cs6WWAo8KMiCp9Ui9evoFzjxI7lAQ",
       "expected": {
         "valid": true,
         "status": "ATTEST_VALID"
       },
-      "keys": "registry"
+      "keys": "registry",
+      "flags": {
+        "grant": "eyJ2IjoiY3IuZXhlYy52MSIsImtpZCI6ImVnLXRlc3QtazEiLCJyZWNlaXB0X2RpZ2VzdCI6InNoYTI1NjpmYmE0MzU3OTUyNzQ2ZmViZGEyODlmYWQ0YmY5NzFhY2JiYWZlNzJmOTcwODE5MGQzNmM1YzVjMDU0ZWJjYmNkIiwic2NvcGVfaGFzaCI6InNoYTI1NjphNWNlZWI3NzkzNWI2ZmM0YzlhMjE5MDY1YjNkZThiNDFhM2UxZjA4OTI0NTdjYTUxNjJlYzJiZDI3YzI1ZTJmIiwiYXVkaWVuY2UiOiJ2OmRlYWRiZWVmZGVhZCIsIm9wZXJhdGlvbiI6Im1lcmdlIiwidGFyZ2V0X2lkIjoic2hhMjU2OnRndCIsImp0aSI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMSIsImlhdCI6IjIwMjYtMDgtMjNUMTI6MDA6MDBaIiwiZXhwIjoiMjA5OS0wMS0wMVQwMDowMDowMFoifQ.QmYJPwIQfiTk5z3oBhT7iuGfQXoxUEnBDnoN8Szbf7BWOKK4F_oQTnpJv-epiJGWBoSlZD3SYi6LBi4r8WVSAw"
+      }
     },
     {
       "name": "EG-A-BAD-SIG",
-      "token": "cr.exec.attest.v1|exec-test-k1|eyJ2IjoiY3IuZXhlYy5hdHRlc3QudjEiLCJleGVjdXRvcl9raWQiOiJleGVjLXRlc3QtazEiLCJncmFudF9qdGkiOiJqdGktMSIsInJlY2VpcHRfZGlnZXN0Ijoic2hhMjU2OmNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2QiLCJzY29wZV9oYXNoIjoic2hhMjU2OmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWIiLCJjb21taXR0ZWRfYXQiOiIyMDI2LTA2LTE1VDEyOjAwOjAwWiJ9|f5kNbUbxSU38I2DbPF-qKdcUOKN25eOzodXnPxjyQ1T8-0Z6c9ijlEa6DkhDuRQ9-8Az3cGkaTbhmcmfZHZvDg",
+      "token": "cr.exec.attest.v1|exec-test-k1|eyJ2IjoiY3IuZXhlYy5hdHRlc3QudjEiLCJleGVjdXRvcl9raWQiOiJleGVjLXRlc3QtazEiLCJncmFudF9qdGkiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJyZWNlaXB0X2RpZ2VzdCI6InNoYTI1NjpmYmE0MzU3OTUyNzQ2ZmViZGEyODlmYWQ0YmY5NzFhY2JiYWZlNzJmOTcwODE5MGQzNmM1YzVjMDU0ZWJjYmNkIiwic2NvcGVfaGFzaCI6InNoYTI1NjphNWNlZWI3NzkzNWI2ZmM0YzlhMjE5MDY1YjNkZThiNDFhM2UxZjA4OTI0NTdjYTUxNjJlYzJiZDI3YzI1ZTJmIiwiY29tbWl0dGVkX2F0IjoiMjAyNi0wNi0xNVQxMjowMDowMFoifQ|9NED9W5frbLjVD_kCtRmMTgw7pFeK3hI0ctWZFSaRpypSGMU97CBs1ZC_Cs6WWAo8KMiCp9Ui9evoFzjxI7lAQ",
       "expected": {
         "valid": false,
         "status": "ATTEST_INVALID_SIGNATURE",
@@ -48,7 +51,7 @@
     },
     {
       "name": "EG-A-UNKNOWN-KID",
-      "token": "cr.exec.attest.v1|exec-test-k1|eyJ2IjoiY3IuZXhlYy5hdHRlc3QudjEiLCJleGVjdXRvcl9raWQiOiJleGVjLXRlc3QtazEiLCJncmFudF9qdGkiOiJqdGktMSIsInJlY2VpcHRfZGlnZXN0Ijoic2hhMjU2OmNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2QiLCJzY29wZV9oYXNoIjoic2hhMjU2OmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWIiLCJjb21taXR0ZWRfYXQiOiIyMDI2LTA2LTE1VDEyOjAwOjAwWiJ9|gJkNbUbxSU38I2DbPF-qKdcUOKN25eOzodXnPxjyQ1T8-0Z6c9ijlEa6DkhDuRQ9-8Az3cGkaTbhmcmfZHZvDg",
+      "token": "cr.exec.attest.v1|exec-test-k1|eyJ2IjoiY3IuZXhlYy5hdHRlc3QudjEiLCJleGVjdXRvcl9raWQiOiJleGVjLXRlc3QtazEiLCJncmFudF9qdGkiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJyZWNlaXB0X2RpZ2VzdCI6InNoYTI1NjpmYmE0MzU3OTUyNzQ2ZmViZGEyODlmYWQ0YmY5NzFhY2JiYWZlNzJmOTcwODE5MGQzNmM1YzVjMDU0ZWJjYmNkIiwic2NvcGVfaGFzaCI6InNoYTI1NjphNWNlZWI3NzkzNWI2ZmM0YzlhMjE5MDY1YjNkZThiNDFhM2UxZjA4OTI0NTdjYTUxNjJlYzJiZDI3YzI1ZTJmIiwiY29tbWl0dGVkX2F0IjoiMjAyNi0wNi0xNVQxMjowMDowMFoifQ|C9ED9W5frbLjVD_kCtRmMTgw7pFeK3hI0ctWZFSaRpypSGMU97CBs1ZC_Cs6WWAo8KMiCp9Ui9evoFzjxI7lAQ",
       "expected": {
         "valid": false,
         "status": "ATTEST_UNKNOWN_KEY",
@@ -58,12 +61,15 @@
     },
     {
       "name": "EG-A-RETIRED-KEY-VALID-AT-ISSUE",
-      "token": "cr.exec.attest.v1|exec-test-k1|eyJ2IjoiY3IuZXhlYy5hdHRlc3QudjEiLCJleGVjdXRvcl9raWQiOiJleGVjLXRlc3QtazEiLCJncmFudF9qdGkiOiJqdGktMSIsInJlY2VpcHRfZGlnZXN0Ijoic2hhMjU2OmNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2QiLCJzY29wZV9oYXNoIjoic2hhMjU2OmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWIiLCJjb21taXR0ZWRfYXQiOiIyMDI2LTA2LTE1VDEyOjAwOjAwWiJ9|gJkNbUbxSU38I2DbPF-qKdcUOKN25eOzodXnPxjyQ1T8-0Z6c9ijlEa6DkhDuRQ9-8Az3cGkaTbhmcmfZHZvDg",
+      "token": "cr.exec.attest.v1|exec-test-k1|eyJ2IjoiY3IuZXhlYy5hdHRlc3QudjEiLCJleGVjdXRvcl9raWQiOiJleGVjLXRlc3QtazEiLCJncmFudF9qdGkiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJyZWNlaXB0X2RpZ2VzdCI6InNoYTI1NjpmYmE0MzU3OTUyNzQ2ZmViZGEyODlmYWQ0YmY5NzFhY2JiYWZlNzJmOTcwODE5MGQzNmM1YzVjMDU0ZWJjYmNkIiwic2NvcGVfaGFzaCI6InNoYTI1NjphNWNlZWI3NzkzNWI2ZmM0YzlhMjE5MDY1YjNkZThiNDFhM2UxZjA4OTI0NTdjYTUxNjJlYzJiZDI3YzI1ZTJmIiwiY29tbWl0dGVkX2F0IjoiMjAyNi0wNi0xNVQxMjowMDowMFoifQ|C9ED9W5frbLjVD_kCtRmMTgw7pFeK3hI0ctWZFSaRpypSGMU97CBs1ZC_Cs6WWAo8KMiCp9Ui9evoFzjxI7lAQ",
       "expected": {
         "valid": true,
         "status": "ATTEST_RETIRED_KEY_VALID_AT_ISSUE"
       },
-      "keys": "retired_registry"
+      "keys": "retired_registry",
+      "flags": {
+        "grant": "eyJ2IjoiY3IuZXhlYy52MSIsImtpZCI6ImVnLXRlc3QtazEiLCJyZWNlaXB0X2RpZ2VzdCI6InNoYTI1NjpmYmE0MzU3OTUyNzQ2ZmViZGEyODlmYWQ0YmY5NzFhY2JiYWZlNzJmOTcwODE5MGQzNmM1YzVjMDU0ZWJjYmNkIiwic2NvcGVfaGFzaCI6InNoYTI1NjphNWNlZWI3NzkzNWI2ZmM0YzlhMjE5MDY1YjNkZThiNDFhM2UxZjA4OTI0NTdjYTUxNjJlYzJiZDI3YzI1ZTJmIiwiYXVkaWVuY2UiOiJ2OmRlYWRiZWVmZGVhZCIsIm9wZXJhdGlvbiI6Im1lcmdlIiwidGFyZ2V0X2lkIjoic2hhMjU2OnRndCIsImp0aSI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMSIsImlhdCI6IjIwMjYtMDgtMjNUMTI6MDA6MDBaIiwiZXhwIjoiMjA5OS0wMS0wMVQwMDowMDowMFoifQ.QmYJPwIQfiTk5z3oBhT7iuGfQXoxUEnBDnoN8Szbf7BWOKK4F_oQTnpJv-epiJGWBoSlZD3SYi6LBi4r8WVSAw"
+      }
     },
     {
       "name": "EG-A-MALFORMED",
@@ -77,7 +83,7 @@
     },
     {
       "name": "EG-A-UNBOUND-JTI",
-      "token": "cr.exec.attest.v1|exec-test-k1|eyJ2IjoiY3IuZXhlYy5hdHRlc3QudjEiLCJleGVjdXRvcl9raWQiOiJleGVjLXRlc3QtazEiLCJncmFudF9qdGkiOiJqdGktMSIsInJlY2VpcHRfZGlnZXN0Ijoic2hhMjU2OmNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2QiLCJzY29wZV9oYXNoIjoic2hhMjU2OmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWIiLCJjb21taXR0ZWRfYXQiOiIyMDI2LTA2LTE1VDEyOjAwOjAwWiJ9|gJkNbUbxSU38I2DbPF-qKdcUOKN25eOzodXnPxjyQ1T8-0Z6c9ijlEa6DkhDuRQ9-8Az3cGkaTbhmcmfZHZvDg",
+      "token": "cr.exec.attest.v1|exec-test-k1|eyJ2IjoiY3IuZXhlYy5hdHRlc3QudjEiLCJleGVjdXRvcl9raWQiOiJleGVjLXRlc3QtazEiLCJncmFudF9qdGkiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJyZWNlaXB0X2RpZ2VzdCI6InNoYTI1NjpmYmE0MzU3OTUyNzQ2ZmViZGEyODlmYWQ0YmY5NzFhY2JiYWZlNzJmOTcwODE5MGQzNmM1YzVjMDU0ZWJjYmNkIiwic2NvcGVfaGFzaCI6InNoYTI1NjphNWNlZWI3NzkzNWI2ZmM0YzlhMjE5MDY1YjNkZThiNDFhM2UxZjA4OTI0NTdjYTUxNjJlYzJiZDI3YzI1ZTJmIiwiY29tbWl0dGVkX2F0IjoiMjAyNi0wNi0xNVQxMjowMDowMFoifQ|C9ED9W5frbLjVD_kCtRmMTgw7pFeK3hI0ctWZFSaRpypSGMU97CBs1ZC_Cs6WWAo8KMiCp9Ui9evoFzjxI7lAQ",
       "expected": {
         "valid": false,
         "status": "ATTEST_UNBOUND",
@@ -85,12 +91,12 @@
       },
       "keys": "registry",
       "flags": {
-        "grant": "eyJ2IjoiY3IuZXhlYy52MSIsImtpZCI6ImdyYW50LWsxIiwicmVjZWlwdF9kaWdlc3QiOiJzaGEyNTY6Y2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZCIsInNjb3BlX2hhc2giOiJzaGEyNTY6YWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYiIsImF1ZGllbmNlIjoidjpkZWFkYmVlZmRlYWQiLCJvcGVyYXRpb24iOiJtZXJnZSIsInRhcmdldF9pZCI6InNoYTI1Njp0Z3QiLCJqdGkiOiJvdGhlci1qdGkiLCJpYXQiOiIyMDI2LTA2LTE1VDEyOjAwOjAwWiIsImV4cCI6IjIwOTktMDEtMDFUMDA6MDA6MDBaIn0.eA"
+        "grant": "eyJ2IjoiY3IuZXhlYy52MSIsImtpZCI6ImdyYW50LWsxIiwicmVjZWlwdF9kaWdlc3QiOiJzaGEyNTY6ZmJhNDM1Nzk1Mjc0NmZlYmRhMjg5ZmFkNGJmOTcxYWNiYmFmZTcyZjk3MDgxOTBkMzZjNWM1YzA1NGViY2JjZCIsInNjb3BlX2hhc2giOiJzaGEyNTY6YTVjZWViNzc5MzViNmZjNGM5YTIxOTA2NWIzZGU4YjQxYTNlMWYwODkyNDU3Y2E1MTYyZWMyYmQyN2MyNWUyZiIsImF1ZGllbmNlIjoidjpkZWFkYmVlZmRlYWQiLCJvcGVyYXRpb24iOiJtZXJnZSIsInRhcmdldF9pZCI6InNoYTI1Njp0Z3QiLCJqdGkiOiJvdGhlci1qdGkiLCJpYXQiOiIyMDI2LTA2LTE1VDEyOjAwOjAwWiIsImV4cCI6IjIwOTktMDEtMDFUMDA6MDA6MDBaIn0.eA"
       }
     },
     {
       "name": "EG-A-STATE-NONCE-MISMATCH",
-      "token": "cr.exec.attest.v1|exec-test-k1|eyJ2IjoiY3IuZXhlYy5hdHRlc3QudjEiLCJleGVjdXRvcl9raWQiOiJleGVjLXRlc3QtazEiLCJncmFudF9qdGkiOiJqdGktMSIsInJlY2VpcHRfZGlnZXN0Ijoic2hhMjU2OmNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2QiLCJzY29wZV9oYXNoIjoic2hhMjU2OmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWIiLCJjb21taXR0ZWRfYXQiOiIyMDI2LTA2LTE1VDEyOjAwOjAwWiIsInN0YXRlX25vbmNlIjoibm9uY2UtQSJ9|u8pDr2xJPH-l0ObWzgJF5XKIUeH4rd0jf_XB7OiG2BLbkbPpBaOL-_NRY5JNSe3yOmbWbwj9dl_wkPu1Q2HQCg",
+      "token": "cr.exec.attest.v1|exec-test-k1|eyJ2IjoiY3IuZXhlYy5hdHRlc3QudjEiLCJleGVjdXRvcl9raWQiOiJleGVjLXRlc3QtazEiLCJncmFudF9qdGkiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJyZWNlaXB0X2RpZ2VzdCI6InNoYTI1NjpmYmE0MzU3OTUyNzQ2ZmViZGEyODlmYWQ0YmY5NzFhY2JiYWZlNzJmOTcwODE5MGQzNmM1YzVjMDU0ZWJjYmNkIiwic2NvcGVfaGFzaCI6InNoYTI1NjphNWNlZWI3NzkzNWI2ZmM0YzlhMjE5MDY1YjNkZThiNDFhM2UxZjA4OTI0NTdjYTUxNjJlYzJiZDI3YzI1ZTJmIiwiY29tbWl0dGVkX2F0IjoiMjAyNi0wNi0xNVQxMjowMDowMFoiLCJzdGF0ZV9ub25jZSI6Im5vbmNlLUEifQ|Ql1FiDKy3XfRW7-OKJA_MixBfwMr09MN_aKWi3h1inTb95lFlpvVWXEEleNajrXI5i1ZWDZYw8N2pxukDQloBw",
       "expected": {
         "valid": false,
         "status": "ATTEST_UNBOUND",
@@ -98,7 +104,35 @@
       },
       "keys": "registry",
       "flags": {
-        "grant": "eyJ2IjoiY3IuZXhlYy52MSIsImtpZCI6ImdyYW50LWsxIiwicmVjZWlwdF9kaWdlc3QiOiJzaGEyNTY6Y2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZCIsInNjb3BlX2hhc2giOiJzaGEyNTY6YWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYiIsImF1ZGllbmNlIjoidjpkZWFkYmVlZmRlYWQiLCJvcGVyYXRpb24iOiJtZXJnZSIsInRhcmdldF9pZCI6InNoYTI1Njp0Z3QiLCJqdGkiOiJqdGktMSIsImlhdCI6IjIwMjYtMDYtMTVUMTI6MDA6MDBaIiwiZXhwIjoiMjA5OS0wMS0wMVQwMDowMDowMFoiLCJzdGF0ZV9ub25jZSI6Im5vbmNlLUIifQ.eA"
+        "grant": "eyJ2IjoiY3IuZXhlYy52MSIsImtpZCI6ImdyYW50LWsxIiwicmVjZWlwdF9kaWdlc3QiOiJzaGEyNTY6ZmJhNDM1Nzk1Mjc0NmZlYmRhMjg5ZmFkNGJmOTcxYWNiYmFmZTcyZjk3MDgxOTBkMzZjNWM1YzA1NGViY2JjZCIsInNjb3BlX2hhc2giOiJzaGEyNTY6YTVjZWViNzc5MzViNmZjNGM5YTIxOTA2NWIzZGU4YjQxYTNlMWYwODkyNDU3Y2E1MTYyZWMyYmQyN2MyNWUyZiIsImF1ZGllbmNlIjoidjpkZWFkYmVlZmRlYWQiLCJvcGVyYXRpb24iOiJtZXJnZSIsInRhcmdldF9pZCI6InNoYTI1Njp0Z3QiLCJqdGkiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJpYXQiOiIyMDI2LTA2LTE1VDEyOjAwOjAwWiIsImV4cCI6IjIwOTktMDEtMDFUMDA6MDA6MDBaIiwic3RhdGVfbm9uY2UiOiJub25jZS1CIn0.eA"
+      }
+    },
+    {
+      "name": "EG-A-MISMATCH-RECEIPT",
+      "note": "INTENTIONALLY NON-MATCHING: the intended grant carries a different receipt_digest than this attestation binds. It must never be \"fixed\" to match — it exists to prove the attestation->receipt binding is actually checked.",
+      "token": "cr.exec.attest.v1|exec-test-k1|eyJ2IjoiY3IuZXhlYy5hdHRlc3QudjEiLCJleGVjdXRvcl9raWQiOiJleGVjLXRlc3QtazEiLCJncmFudF9qdGkiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJyZWNlaXB0X2RpZ2VzdCI6InNoYTI1NjpmYmE0MzU3OTUyNzQ2ZmViZGEyODlmYWQ0YmY5NzFhY2JiYWZlNzJmOTcwODE5MGQzNmM1YzVjMDU0ZWJjYmNkIiwic2NvcGVfaGFzaCI6InNoYTI1NjphNWNlZWI3NzkzNWI2ZmM0YzlhMjE5MDY1YjNkZThiNDFhM2UxZjA4OTI0NTdjYTUxNjJlYzJiZDI3YzI1ZTJmIiwiY29tbWl0dGVkX2F0IjoiMjAyNi0wNi0xNVQxMjowMDowMFoifQ|C9ED9W5frbLjVD_kCtRmMTgw7pFeK3hI0ctWZFSaRpypSGMU97CBs1ZC_Cs6WWAo8KMiCp9Ui9evoFzjxI7lAQ",
+      "expected": {
+        "valid": false,
+        "status": "ATTEST_UNBOUND",
+        "reason": "receipt_digest_mismatch"
+      },
+      "keys": "registry",
+      "flags": {
+        "grant": "eyJ2IjoiY3IuZXhlYy52MSIsImtpZCI6ImdyYW50LWsxIiwicmVjZWlwdF9kaWdlc3QiOiJzaGEyNTY6MTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMSIsInNjb3BlX2hhc2giOiJzaGEyNTY6YTVjZWViNzc5MzViNmZjNGM5YTIxOTA2NWIzZGU4YjQxYTNlMWYwODkyNDU3Y2E1MTYyZWMyYmQyN2MyNWUyZiIsImF1ZGllbmNlIjoidjpkZWFkYmVlZmRlYWQiLCJvcGVyYXRpb24iOiJtZXJnZSIsInRhcmdldF9pZCI6InNoYTI1Njp0Z3QiLCJqdGkiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJpYXQiOiIyMDI2LTA2LTE1VDEyOjAwOjAwWiIsImV4cCI6IjIwOTktMDEtMDFUMDA6MDA6MDBaIn0.eA"
+      }
+    },
+    {
+      "name": "EG-A-MISMATCH-SCOPE",
+      "note": "INTENTIONALLY NON-MATCHING: the intended grant carries a different scope_hash than this attestation binds. It must never be \"fixed\" to match — it exists to prove the attestation->scope binding is actually checked.",
+      "token": "cr.exec.attest.v1|exec-test-k1|eyJ2IjoiY3IuZXhlYy5hdHRlc3QudjEiLCJleGVjdXRvcl9raWQiOiJleGVjLXRlc3QtazEiLCJncmFudF9qdGkiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJyZWNlaXB0X2RpZ2VzdCI6InNoYTI1NjpmYmE0MzU3OTUyNzQ2ZmViZGEyODlmYWQ0YmY5NzFhY2JiYWZlNzJmOTcwODE5MGQzNmM1YzVjMDU0ZWJjYmNkIiwic2NvcGVfaGFzaCI6InNoYTI1NjphNWNlZWI3NzkzNWI2ZmM0YzlhMjE5MDY1YjNkZThiNDFhM2UxZjA4OTI0NTdjYTUxNjJlYzJiZDI3YzI1ZTJmIiwiY29tbWl0dGVkX2F0IjoiMjAyNi0wNi0xNVQxMjowMDowMFoifQ|C9ED9W5frbLjVD_kCtRmMTgw7pFeK3hI0ctWZFSaRpypSGMU97CBs1ZC_Cs6WWAo8KMiCp9Ui9evoFzjxI7lAQ",
+      "expected": {
+        "valid": false,
+        "status": "ATTEST_UNBOUND",
+        "reason": "scope_hash_mismatch"
+      },
+      "keys": "registry",
+      "flags": {
+        "grant": "eyJ2IjoiY3IuZXhlYy52MSIsImtpZCI6ImdyYW50LWsxIiwicmVjZWlwdF9kaWdlc3QiOiJzaGEyNTY6ZmJhNDM1Nzk1Mjc0NmZlYmRhMjg5ZmFkNGJmOTcxYWNiYmFmZTcyZjk3MDgxOTBkMzZjNWM1YzA1NGViY2JjZCIsInNjb3BlX2hhc2giOiJzaGEyNTY6MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMiIsImF1ZGllbmNlIjoidjpkZWFkYmVlZmRlYWQiLCJvcGVyYXRpb24iOiJtZXJnZSIsInRhcmdldF9pZCI6InNoYTI1Njp0Z3QiLCJqdGkiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJpYXQiOiIyMDI2LTA2LTE1VDEyOjAwOjAwWiIsImV4cCI6IjIwOTktMDEtMDFUMDA6MDA6MDBaIn0.eA"
       }
     }
   ]
