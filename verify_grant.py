@@ -32,6 +32,7 @@ from cryptography.exceptions import InvalidSignature
 from verify import (
     CLOCK_SKEW_LEEWAY_MS,
     b64url_decode,
+    canonical_json,
     expiry_leeway_ms,
     fetch_key_info,
     is_expired_at,
@@ -41,11 +42,19 @@ from verify import (
 )
 
 GRANT_VERSION = "cr.exec.v1"
+GRANT_VERSION_V2 = "cr.exec.v2"
 SIGNING_PREFIX = "crexec.v1"
+SIGNING_PREFIX_V2 = "crexec.v2"
 NUL = "\x1f"
 SIGNED_FIELDS = [
     "kid", "receipt_digest", "scope_hash", "audience", "operation", "target_id", "jti", "iat", "exp",
 ]
+V2_REQUIRED_STRINGS = [
+    "v", "kid", "grant_id", "receipt_hash", "tenant_id", "executor_id", "adapter_id",
+    "operation", "target_uri", "expected_state_token", "after_payload_hash",
+    "nonce_hash", "policy_hash", "audience_hash", "not_before", "expires_at",
+]
+TARGET_SCHEMES = ("fs", "git", "api", "db", "registry", "deploy")
 DEFAULT_FETCH_URL = "https://app.coderifts.com/api/v1/attestation/public-key"
 
 USAGE = (
@@ -71,6 +80,34 @@ def is_issued_in_future(issued_at_ms, now_ms, context=None):
 
 def scalar(v):
     return "" if v is None else str(v)
+
+
+def sha256pref(s):
+    return "sha256:" + sha256hex(str(s))
+
+
+def canonicalize_target_uri(raw):
+    import re
+    if not isinstance(raw, str) or len(raw) == 0:
+        return None
+    m = re.match(r"^([A-Za-z][A-Za-z0-9+.-]*)://([^?#]*)$", raw)
+    if not m:
+        return None
+    scheme = m.group(1).lower()
+    if scheme not in TARGET_SCHEMES:
+        return None
+    rest = m.group(2)
+    if re.match(r"^[^\s/]*:", rest) and "@" in rest and scheme != "git":
+        return None
+    if ".." in rest or "//" in rest or re.search(r"\s", rest):
+        return None
+    if rest.endswith("/") and len(rest) > 1:
+        rest = rest.rstrip("/")
+    return scheme + "://" + rest
+
+
+def signing_input_v2(body):
+    return SIGNING_PREFIX_V2 + "|" + canonical_json(body)
 
 
 def reconstruct_signed_input(payload):
@@ -128,7 +165,82 @@ def _parse_iso_ms(ts):
         return None
 
 
-def verify_execution_grant(token, ctx, opts=None):
+def _verify_execution_grant_v2(payload, sig_b64, ctx, opts):
+    opts = opts or {}
+    for k in V2_REQUIRED_STRINGS:
+        v = payload.get(k)
+        if not isinstance(v, str) or len(v) == 0:
+            return {"valid": False, "status": "MALFORMED", "reason": "missing_field", "payload": payload}
+    if not isinstance(payload.get("max_attempts"), int) or payload["max_attempts"] < 1:
+        return {"valid": False, "status": "MALFORMED", "reason": "bad_max_attempts", "payload": payload}
+    allowed = set(V2_REQUIRED_STRINGS + ["max_attempts"])
+    for k in payload.keys():
+        if k not in allowed:
+            return {"valid": False, "status": "MALFORMED", "reason": "unknown_field", "payload": payload}
+    if canonicalize_target_uri(payload.get("target_uri")) is None:
+        return {"valid": False, "status": "MALFORMED", "reason": "bad_target_uri", "payload": payload}
+
+    entry = resolve_entry(ctx, payload)
+    if entry is None:
+        return {"valid": False, "status": "UNKNOWN_KEY", "reason": "unknown_kid", "payload": payload}
+    if entry.get("status") == "retired":
+        return {"valid": False, "status": "UNKNOWN_KEY", "reason": "retired_kid", "payload": payload}
+
+    message = signing_input_v2(payload).encode("utf-8")
+    try:
+        sig = b64url_decode(sig_b64)
+    except Exception:
+        return {"valid": False, "status": "INVALID_SIGNATURE", "reason": "signature_error", "payload": payload}
+    try:
+        entry["public_key"].verify(sig, message)
+    except InvalidSignature:
+        return {"valid": False, "status": "INVALID_SIGNATURE", "reason": "signature_mismatch", "payload": payload}
+    except Exception:
+        return {"valid": False, "status": "INVALID_SIGNATURE", "reason": "signature_error", "payload": payload}
+
+    from datetime import datetime, timezone
+    now = opts["now"] if opts.get("now") is not None else (datetime.now(timezone.utc).timestamp() * 1000)
+    exp_ms = _parse_iso_ms(payload.get("expires_at"))
+    nbf_ms = _parse_iso_ms(payload.get("not_before"))
+    if exp_ms is None or nbf_ms is None:
+        return {"valid": False, "status": "MALFORMED", "reason": "bad_timestamp", "payload": payload}
+    intended = opts.get("intended") if isinstance(opts.get("intended"), dict) else {}
+    if is_expired_at(exp_ms, now, intended):
+        return {"valid": False, "status": "GRANT_EXPIRED", "reason": "expired", "payload": payload}
+    if is_issued_in_future(nbf_ms, now, intended):
+        return {"valid": False, "status": "GRANT_EXPIRED", "reason": "nbf_in_future", "payload": payload}
+
+    if intended.get("executor_id") and payload.get("executor_id") != str(intended["executor_id"]):
+        return {"valid": False, "status": "GRANT_UNBOUND", "reason": "executor_mismatch", "payload": payload}
+    if intended.get("adapter_id") and payload.get("adapter_id") != str(intended["adapter_id"]):
+        return {"valid": False, "status": "GRANT_UNBOUND", "reason": "adapter_mismatch", "payload": payload}
+    if intended.get("target_uri"):
+        want = canonicalize_target_uri(str(intended["target_uri"])) or str(intended["target_uri"])
+        if payload.get("target_uri") != want:
+            return {"valid": False, "status": "GRANT_UNBOUND", "reason": "target_mismatch", "payload": payload}
+    if intended.get("audience"):
+        if payload.get("audience_hash") != sha256pref(intended["audience"]):
+            return {"valid": False, "status": "GRANT_UNBOUND", "reason": "audience_mismatch", "payload": payload}
+    if intended.get("audience_hash") and payload.get("audience_hash") != str(intended["audience_hash"]):
+        return {"valid": False, "status": "GRANT_UNBOUND", "reason": "audience_mismatch", "payload": payload}
+    if intended.get("after_payload") is not None:
+        if payload.get("after_payload_hash") != sha256pref(intended["after_payload"]):
+            return {"valid": False, "status": "GRANT_UNBOUND", "reason": "after_payload_mismatch", "payload": payload}
+    if intended.get("operation") and payload.get("operation") != str(intended["operation"]):
+        return {"valid": False, "status": "GRANT_UNBOUND", "reason": "operation_mismatch", "payload": payload}
+    if intended.get("receipt_token"):
+        if sha256pref(intended["receipt_token"]) != payload.get("receipt_hash"):
+            return {"valid": False, "status": "GRANT_UNBOUND", "reason": "receipt_hash_mismatch", "payload": payload}
+    return {"valid": True, "status": "GRANT_CURRENT", "payload": payload}
+
+
+def verify_execution_grant(token, ctx=None, opts=None):
+    from arity import split3
+    c, o = split3("verify_execution_grant", ctx, opts)
+    return _verify_execution_grant(token, c, o)
+
+
+def _verify_execution_grant(token, ctx, opts=None):
     """10-step algorithm from docs/cr-exec-v1.md. Return key-for-key match of verify-grant.js."""
     opts = opts or {}
     # 1. structure
@@ -145,6 +257,8 @@ def verify_execution_grant(token, ctx, opts=None):
         return {"valid": False, "status": "MALFORMED", "reason": "bad_json"}
     if not isinstance(payload, dict):
         return {"valid": False, "status": "MALFORMED", "reason": "bad_json"}
+    if payload.get("v") == GRANT_VERSION_V2:
+        return _verify_execution_grant_v2(payload, segments[1], ctx, opts)
     if payload.get("v") != GRANT_VERSION:
         return {"valid": False, "status": "MALFORMED", "reason": "unsupported_version", "payload": payload}
     for k in SIGNED_FIELDS:
@@ -274,6 +388,8 @@ def parse_args(argv):
         "intended_operation": None,
         "intended_target": None,
         "intended_audience": None,
+        "intended_executor": None,
+        "intended_adapter": None,
         "intended_after_file": None,
         "intended_scope_hash": None,
         "receipt": None,
@@ -303,6 +419,12 @@ def parse_args(argv):
         elif a == "--intended-audience":
             i += 1
             opts["intended_audience"] = argv[i] if i < len(argv) else None
+        elif a == "--intended-executor":
+            i += 1
+            opts["intended_executor"] = argv[i] if i < len(argv) else None
+        elif a == "--intended-adapter":
+            i += 1
+            opts["intended_adapter"] = argv[i] if i < len(argv) else None
         elif a == "--intended-after-file":
             i += 1
             opts["intended_after_file"] = argv[i] if i < len(argv) else None
@@ -357,8 +479,13 @@ def main():
         intended["operation"] = opts["intended_operation"]
     if opts["intended_target"] is not None:
         intended["target_id"] = opts["intended_target"]
+        intended["target_uri"] = opts["intended_target"]
     if opts["intended_audience"] is not None:
         intended["audience"] = opts["intended_audience"]
+    if opts["intended_executor"] is not None:
+        intended["executor_id"] = opts["intended_executor"]
+    if opts["intended_adapter"] is not None:
+        intended["adapter_id"] = opts["intended_adapter"]
     if opts["intended_scope_hash"] is not None:
         intended["scope_hash"] = opts["intended_scope_hash"]
     if opts["receipt"] is not None:
@@ -370,7 +497,7 @@ def main():
         except Exception as e:
             fail("could not read --intended-after-file: " + str(e))
 
-    result = verify_execution_grant(opts["grant"], ctx, {"intended": intended})
+    result = _verify_execution_grant(opts["grant"], ctx, {"intended": intended})
     sys.stdout.write(json.dumps(result, separators=(",", ":")) + "\n")
     sys.exit(0 if result["valid"] else 1)
 

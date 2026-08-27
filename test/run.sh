@@ -268,7 +268,7 @@ GRANT_AFTER="$(mktemp -t rv_gafter.XXXXXX)"
 trap 'rm -f "$PEM" "$CHAIN_FILE" "$LIVE_PEM" "$KEYS_FILE" "$ENV_FILE" "$ENV_TAMPERED" "$RETIRED_KEYS" "$GRANT_PEM" "$GRANT_KEYS" "$GRANT_AFTER"' EXIT
 
 echo
-echo "== cr.exec.v1 grant vectors (verify-grant.js == verify_grant.py) =="
+echo "== cr.exec.v1/v2 grant vectors (verify-grant.js == verify_grant.py) =="
 if [ ! -f "$GRANT_VECTORS" ]; then
   echo "FAIL  $GRANT_VECTORS missing — run: node test/gen-grant-vectors.js"
   fails=$((fails + 1))
@@ -299,9 +299,13 @@ else
     aud="$(node -e "const f=require('./$GRANT_VECTORS').vectors[$i].flags||{}; process.stdout.write(f['intended-audience']||'')")"
     rec="$(node -e "const f=require('./$GRANT_VECTORS').vectors[$i].flags||{}; process.stdout.write(f.receipt||'')")"
     after="$(node -e "const f=require('./$GRANT_VECTORS').vectors[$i].flags||{}; process.stdout.write(f.after_payload==null?'':String(f.after_payload))")"
+    execid="$(node -e "const f=require('./$GRANT_VECTORS').vectors[$i].flags||{}; process.stdout.write(f['intended-executor']||'')")"
+    adp="$(node -e "const f=require('./$GRANT_VECTORS').vectors[$i].flags||{}; process.stdout.write(f['intended-adapter']||'')")"
     [ -n "$op" ] && extra+=(--intended-operation "$op")
     [ -n "$tgt" ] && extra+=(--intended-target "$tgt")
     [ -n "$aud" ] && extra+=(--intended-audience "$aud")
+    [ -n "$execid" ] && extra+=(--intended-executor "$execid")
+    [ -n "$adp" ] && extra+=(--intended-adapter "$adp")
     [ -n "$rec" ] && extra+=(--receipt "$rec")
     if [ -n "$after" ]; then
       printf '%s' "$after" > "$GRANT_AFTER"

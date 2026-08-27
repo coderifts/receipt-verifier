@@ -17,7 +17,8 @@ const vectors = require('./attest-vectors.json');
 const { verifyExecutionAttestation } = require('../verify-attest.js');
 
 const APP = process.env.CODERIFTS_APP_DIR
-  || path.join(os.homedir(), 'coderifts-app', 'src', 'verdict-core', 'execution-attestation.js');
+  ? path.join(process.env.CODERIFTS_APP_DIR, 'src', 'verdict-core', 'execution-attestation.js')
+  : path.join(os.homedir(), 'coderifts-app', 'src', 'verdict-core', 'execution-attestation.js');
 
 // ── 1133: A MISSING APP CHECKOUT FAILS LOUD, IT DOES NOT SKIP ────────────────────────────────
 //

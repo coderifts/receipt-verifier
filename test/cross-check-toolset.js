@@ -21,7 +21,8 @@ const doc = require('./toolset-vectors.json');
 const pub = require('../verify-toolset.js');
 
 const APP = process.env.CODERIFTS_APP_DIR
-  || path.join(os.homedir(), 'coderifts-app', 'src', 'verdict-core', 'toolset-attestation.js');
+  ? path.join(process.env.CODERIFTS_APP_DIR, 'src', 'verdict-core', 'toolset-attestation.js')
+  : path.join(os.homedir(), 'coderifts-app', 'src', 'verdict-core', 'toolset-attestation.js');
 
 // ── 1133: A MISSING APP CHECKOUT FAILS LOUD, IT DOES NOT SKIP ────────────────────────────────
 //

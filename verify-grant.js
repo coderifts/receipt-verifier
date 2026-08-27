@@ -34,13 +34,17 @@ const {
   keyFromPem,
   fetchKeyInfo,
   sha256hex,
+  canonicalJson,
   CLOCK_SKEW_LEEWAY_MS,
   isExpiredAt,
   expiryLeewayMs,
 } = require('./verify.js');
+const { split3ary } = require('./arity');
 
 const GRANT_VERSION = 'cr.exec.v1';
+const GRANT_VERSION_V2 = 'cr.exec.v2';
 const SIGNING_PREFIX = 'crexec.v1';
+const SIGNING_PREFIX_V2 = 'crexec.v2';
 // US (Unit Separator, 0x1F). Named for the byte it holds — it is NOT US, which is 0x00.
 // The old name mirrored the server's, and that misnomer is what let RECEIPT_FORMAT.md §2.0
 // give this separator for the single-spec preimage, which actually uses 0x00 — see the
@@ -49,6 +53,12 @@ const US = '\x1f';
 const SIGNED_FIELDS = Object.freeze([
   'kid', 'receipt_digest', 'scope_hash', 'audience', 'operation', 'target_id', 'jti', 'iat', 'exp',
 ]);
+const V2_REQUIRED_STRINGS = Object.freeze([
+  'v', 'kid', 'grant_id', 'receipt_hash', 'tenant_id', 'executor_id', 'adapter_id',
+  'operation', 'target_uri', 'expected_state_token', 'after_payload_hash',
+  'nonce_hash', 'policy_hash', 'audience_hash', 'not_before', 'expires_at',
+]);
+const TARGET_SCHEMES = Object.freeze(['fs', 'git', 'api', 'db', 'registry', 'deploy']);
 const DEFAULT_FETCH_URL = 'https://app.coderifts.com/api/v1/attestation/public-key';
 
 function isIssuedInFuture(issuedAtMs, nowMs, context) {
@@ -73,6 +83,27 @@ function reconstructSignedInput(payload) {
     scalar(payload.iat),
     scalar(payload.exp),
   ].join('|');
+}
+
+function sha256pref(s) {
+  return `sha256:${sha256hex(String(s))}`;
+}
+
+function canonicalizeTargetUri(raw) {
+  if (typeof raw !== 'string' || raw.length === 0) return null;
+  const m = raw.match(/^([A-Za-z][A-Za-z0-9+.-]*):\/\/([^?#]*)$/);
+  if (!m) return null;
+  const scheme = m[1].toLowerCase();
+  if (!TARGET_SCHEMES.includes(scheme)) return null;
+  let rest = m[2];
+  if (/^[^\s/]*:/.test(rest) && rest.includes('@') && scheme !== 'git') return null;
+  if (rest.includes('..') || rest.includes('//') || /\s/.test(rest)) return null;
+  if (rest.endsWith('/') && rest.length > 1) rest = rest.replace(/\/+$/, '');
+  return `${scheme}://${rest}`;
+}
+
+function signingInputV2(body) {
+  return `${SIGNING_PREFIX_V2}|${canonicalJson(body)}`;
 }
 
 function computeScopeHash({ operation, target_id, after_payload }) {
@@ -100,13 +131,107 @@ function resolveEntry(ctx, payload) {
 }
 
 /**
- * Verify a cr.exec.v1 grant. 10-step algorithm from docs/cr-exec-v1.md.
+ * cr.exec.v2 — JSON-canonical preimage, exact executor/adapter/target/audience bind.
+ */
+function verifyExecutionGrantV2(payload, sigB64, ctx, opts = {}) {
+  for (const k of V2_REQUIRED_STRINGS) {
+    if (typeof payload[k] !== 'string' || payload[k].length === 0) {
+      return { valid: false, status: 'MALFORMED', reason: 'missing_field', payload };
+    }
+  }
+  if (!Number.isInteger(payload.max_attempts) || payload.max_attempts < 1) {
+    return { valid: false, status: 'MALFORMED', reason: 'bad_max_attempts', payload };
+  }
+  const allowed = new Set([...V2_REQUIRED_STRINGS, 'max_attempts']);
+  for (const k of Object.keys(payload)) {
+    if (!allowed.has(k)) return { valid: false, status: 'MALFORMED', reason: 'unknown_field', payload };
+  }
+  if (!canonicalizeTargetUri(payload.target_uri)) {
+    return { valid: false, status: 'MALFORMED', reason: 'bad_target_uri', payload };
+  }
+
+  const entry = resolveEntry(ctx, payload);
+  if (!entry) {
+    return { valid: false, status: 'UNKNOWN_KEY', reason: 'unknown_kid', payload };
+  }
+  if (entry.status === 'retired') {
+    return { valid: false, status: 'UNKNOWN_KEY', reason: 'retired_kid', payload };
+  }
+  if (entry.status === 'revoked') {
+    return { valid: false, status: 'UNKNOWN_KEY', reason: 'revoked_kid', payload };
+  }
+
+  let ok = false;
+  try {
+    ok = crypto.verify(
+      null,
+      Buffer.from(signingInputV2(payload), 'utf8'),
+      entry.publicKey,
+      Buffer.from(sigB64, 'base64url'),
+    );
+  } catch (_) {
+    return { valid: false, status: 'INVALID_SIGNATURE', reason: 'signature_error', payload };
+  }
+  if (!ok) return { valid: false, status: 'INVALID_SIGNATURE', reason: 'signature_mismatch', payload };
+
+  const now = Number.isFinite(opts.now) ? opts.now : Date.now();
+  const expMs = Date.parse(payload.expires_at);
+  const nbfMs = Date.parse(payload.not_before);
+  if (!Number.isFinite(expMs) || !Number.isFinite(nbfMs)) {
+    return { valid: false, status: 'MALFORMED', reason: 'bad_timestamp', payload };
+  }
+  const intended = opts.intended && typeof opts.intended === 'object' ? opts.intended : {};
+  if (isExpiredAt(expMs, now, intended)) {
+    return { valid: false, status: 'GRANT_EXPIRED', reason: 'expired', payload };
+  }
+  if (isIssuedInFuture(nbfMs, now, intended)) {
+    return { valid: false, status: 'GRANT_EXPIRED', reason: 'nbf_in_future', payload };
+  }
+
+  if (intended.executor_id && payload.executor_id !== String(intended.executor_id)) {
+    return { valid: false, status: 'GRANT_UNBOUND', reason: 'executor_mismatch', payload };
+  }
+  if (intended.adapter_id && payload.adapter_id !== String(intended.adapter_id)) {
+    return { valid: false, status: 'GRANT_UNBOUND', reason: 'adapter_mismatch', payload };
+  }
+  if (intended.target_uri) {
+    const want = canonicalizeTargetUri(String(intended.target_uri)) || String(intended.target_uri);
+    if (payload.target_uri !== want) {
+      return { valid: false, status: 'GRANT_UNBOUND', reason: 'target_mismatch', payload };
+    }
+  }
+  if (intended.audience) {
+    if (payload.audience_hash !== sha256pref(intended.audience)) {
+      return { valid: false, status: 'GRANT_UNBOUND', reason: 'audience_mismatch', payload };
+    }
+  }
+  if (intended.audience_hash && payload.audience_hash !== String(intended.audience_hash)) {
+    return { valid: false, status: 'GRANT_UNBOUND', reason: 'audience_mismatch', payload };
+  }
+  if (intended.after_payload != null) {
+    if (payload.after_payload_hash !== sha256pref(intended.after_payload)) {
+      return { valid: false, status: 'GRANT_UNBOUND', reason: 'after_payload_mismatch', payload };
+    }
+  }
+  if (intended.operation && payload.operation !== String(intended.operation)) {
+    return { valid: false, status: 'GRANT_UNBOUND', reason: 'operation_mismatch', payload };
+  }
+  if (intended.receipt_token) {
+    if (sha256pref(intended.receipt_token) !== payload.receipt_hash) {
+      return { valid: false, status: 'GRANT_UNBOUND', reason: 'receipt_hash_mismatch', payload };
+    }
+  }
+  return { valid: true, status: 'GRANT_CURRENT', payload };
+}
+
+/**
+ * Verify a cr.exec.v1 or cr.exec.v2 grant. 10-step algorithm from docs/cr-exec-v1.md for v1.
  * @param {string} token
  * @param {{ publicKey?: import('crypto').KeyObject, keyring?: Map, expectedKid: (string|null) }} ctx
  * @param {{ intended?: object, now?: number }} [opts]
  * @returns {{ valid: boolean, status: string, reason?: string, payload?: object }}
  */
-function verifyExecutionGrant(token, ctx, opts = {}) {
+function verifyExecutionGrantInner(token, ctx, opts = {}) {
   // 1. structure
   if (typeof token !== 'string' || token.length === 0) {
     return { valid: false, status: 'MALFORMED', reason: 'malformed_structure' };
@@ -125,6 +250,9 @@ function verifyExecutionGrant(token, ctx, opts = {}) {
   }
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return { valid: false, status: 'MALFORMED', reason: 'bad_json' };
+  }
+  if (payload.v === GRANT_VERSION_V2) {
+    return verifyExecutionGrantV2(payload, segments[1], ctx, opts);
   }
   if (payload.v !== GRANT_VERSION) {
     return { valid: false, status: 'MALFORMED', reason: 'unsupported_version', payload };
@@ -267,6 +395,8 @@ function parseArgs(argv) {
     intendedOperation: null,
     intendedTarget: null,
     intendedAudience: null,
+    intendedExecutor: null,
+    intendedAdapter: null,
     intendedAfterFile: null,
     intendedScopeHash: null,
     receipt: null,
@@ -281,6 +411,8 @@ function parseArgs(argv) {
     else if (a === '--intended-operation') opts.intendedOperation = argv[++i];
     else if (a === '--intended-target') opts.intendedTarget = argv[++i];
     else if (a === '--intended-audience') opts.intendedAudience = argv[++i];
+    else if (a === '--intended-executor') opts.intendedExecutor = argv[++i];
+    else if (a === '--intended-adapter') opts.intendedAdapter = argv[++i];
     else if (a === '--intended-after-file') opts.intendedAfterFile = argv[++i];
     else if (a === '--intended-scope-hash') opts.intendedScopeHash = argv[++i];
     else if (a === '--receipt') opts.receipt = argv[++i];
@@ -340,8 +472,13 @@ async function main() {
 
   const intended = {};
   if (opts.intendedOperation != null) intended.operation = opts.intendedOperation;
-  if (opts.intendedTarget != null) intended.target_id = opts.intendedTarget;
+  if (opts.intendedTarget != null) {
+    intended.target_id = opts.intendedTarget;
+    intended.target_uri = opts.intendedTarget;
+  }
   if (opts.intendedAudience != null) intended.audience = opts.intendedAudience;
+  if (opts.intendedExecutor != null) intended.executor_id = opts.intendedExecutor;
+  if (opts.intendedAdapter != null) intended.adapter_id = opts.intendedAdapter;
   if (opts.intendedScopeHash != null) intended.scope_hash = opts.intendedScopeHash;
   if (opts.receipt != null) intended.receipt_token = opts.receipt;
   if (opts.intendedAfterFile) {
@@ -352,19 +489,29 @@ async function main() {
     }
   }
 
-  const result = verifyExecutionGrant(opts.grant, ctx, { intended });
+  const result = verifyExecutionGrantInner(opts.grant, ctx, { intended });
   process.stdout.write(JSON.stringify(result) + '\n');
   process.exit(result.valid ? 0 : 1);
+}
+
+function verifyExecutionGrant(token, second, third) {
+  const { ctx, opts } = split3ary('verifyExecutionGrant', arguments.length, second, third);
+  return verifyExecutionGrantInner(token, ctx, opts);
 }
 
 module.exports = {
   verifyExecutionGrant,
   reconstructSignedInput,
+  signingInputV2,
+  canonicalizeTargetUri,
   computeScopeHash,
   receiptDigest,
+  sha256pref,
   resolveEntry,
   GRANT_VERSION,
+  GRANT_VERSION_V2,
   SIGNING_PREFIX,
+  SIGNING_PREFIX_V2,
   SIGNED_FIELDS,
   CLOCK_SKEW_LEEWAY_MS,
   isIssuedInFuture,

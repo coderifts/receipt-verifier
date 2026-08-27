@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from verify_grant import (  # noqa: E402
     CLOCK_SKEW_LEEWAY_MS,
     GRANT_VERSION,
+    GRANT_VERSION_V2,
     SIGNING_PREFIX,
     compute_scope_hash,
     verify_execution_grant,
@@ -16,6 +17,7 @@ from verify_grant import (  # noqa: E402
 class TestGrantConstants(unittest.TestCase):
     def test_tags(self):
         self.assertEqual(GRANT_VERSION, "cr.exec.v1")
+        self.assertEqual(GRANT_VERSION_V2, "cr.exec.v2")
         self.assertEqual(SIGNING_PREFIX, "crexec.v1")
         self.assertEqual(CLOCK_SKEW_LEEWAY_MS, 30_000)
 
