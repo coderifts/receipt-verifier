@@ -1,17 +1,18 @@
 {
   "spec": "cr.toolset.attest.v1",
   "note": "Ephemeral key, regenerated per run. Never a production key. Entries are the declared set.",
-  "generated_by": "scripts/generate-toolset-attest-vectors.js",
+  "generated_by": "test/gen-toolset-vectors.js",
+  "independence": "Independent of coderifts-app/test/toolset-attest-vectors.json by decision (1127c); ids and scenarios are kept aligned by intent, bytes are not, cross-checks compare verdicts.",
   "registry": {
     "keys": [
       {
         "kid": "vec-declarer-k1",
-        "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEANOV5y1OCKgtrjS8S0YTT4JB3ucFVHOggTQKtAjjE4PU=\n-----END PUBLIC KEY-----\n",
+        "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEATpXblDhHAXbWwTAn9D9/86mzBjv+wB4OPt9iBGBY0Mk=\n-----END PUBLIC KEY-----\n",
         "status": "active"
       },
       {
         "kid": "vec-declarer-k0",
-        "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEANOV5y1OCKgtrjS8S0YTT4JB3ucFVHOggTQKtAjjE4PU=\n-----END PUBLIC KEY-----\n",
+        "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEATpXblDhHAXbWwTAn9D9/86mzBjv+wB4OPt9iBGBY0Mk=\n-----END PUBLIC KEY-----\n",
         "status": "retired",
         "valid_from": "2026-01-01T00:00:00.000Z",
         "retired_at": "2026-06-01T00:00:00.000Z"
@@ -37,7 +38,7 @@
   "vectors": [
     {
       "id": "TS-A-VALID",
-      "token": "cr.toolset.attest.v1|vec-declarer-k1|eyJ2IjoiY3IudG9vbHNldC5hdHRlc3QudjEiLCJraWQiOiJ2ZWMtZGVjbGFyZXItazEiLCJkZWNsYXJlciI6InZlY3RvcnMtZGVjbGFyZXIiLCJzdGF0ZW1lbnQiOiJ0aGlzIGlzIHRoZSBjb21wbGV0ZSBzZXQgb2YgdG9vbHMgdGhhdCBjYW4gbXV0YXRlIGEgZ292ZXJuZWQgdGFyZ2V0Iiwic2V0X2RpZ2VzdCI6InNoYTI1NjpkNDVkMjAwNGJlYzY5M2E3NzE1NjY3NGUxNmI2OGJmMWE4OWY2NGJhMDkzN2Q0MGI4NDUwNTIwNmIxOWQ0NDNjIiwiZGVjbGFyZWRfYXQiOiIyMDI2LTAzLTAxVDAwOjAwOjAwLjAwMFoiLCJndWFyZF92ZXJzaW9uIjoiOS42LjAiLCJmcmFtZXdvcmsiOiJsYW5nZ3JhcGgiLCJmcmFtZXdvcmtfdmVyc2lvbiI6IjAuMi4xIiwidG9vbF9jb3VudCI6MywibXV0YXRpbmdfY291bnQiOjJ9|UhKcjRJYS7qnx6lOSCpcxMvP7C6SgEWw5CFhg9oBY3tC6DFa5Blde-2fhwXYk08NitRB2E6kgzHuS1U-SioCDA",
+      "token": "cr.toolset.attest.v1|vec-declarer-k1|eyJ2IjoiY3IudG9vbHNldC5hdHRlc3QudjEiLCJraWQiOiJ2ZWMtZGVjbGFyZXItazEiLCJkZWNsYXJlciI6InZlY3RvcnMtZGVjbGFyZXIiLCJzdGF0ZW1lbnQiOiJ0aGlzIGlzIHRoZSBjb21wbGV0ZSBzZXQgb2YgdG9vbHMgdGhhdCBjYW4gbXV0YXRlIGEgZ292ZXJuZWQgdGFyZ2V0Iiwic2V0X2RpZ2VzdCI6InNoYTI1NjpkNDVkMjAwNGJlYzY5M2E3NzE1NjY3NGUxNmI2OGJmMWE4OWY2NGJhMDkzN2Q0MGI4NDUwNTIwNmIxOWQ0NDNjIiwiZGVjbGFyZWRfYXQiOiIyMDI2LTAzLTAxVDAwOjAwOjAwLjAwMFoiLCJndWFyZF92ZXJzaW9uIjoiOS42LjAiLCJmcmFtZXdvcmsiOiJsYW5nZ3JhcGgiLCJmcmFtZXdvcmtfdmVyc2lvbiI6IjAuMi4xIiwidG9vbF9jb3VudCI6MywibXV0YXRpbmdfY291bnQiOjJ9|CPC6cusSzcwcnFo8E6LV7kwoZAX8kReYu7072OFACqHwxVSGo15yket2ti61eJpaO7hfXxU3vtMFsJp5plJZAw",
       "expect": {
         "valid": true,
         "status": "TOOLSET_ATTEST_VALID"
@@ -45,7 +46,7 @@
     },
     {
       "id": "TS-A-BAD-SIG",
-      "token": "cr.toolset.attest.v1|vec-declarer-k1|eyJ2IjoiY3IudG9vbHNldC5hdHRlc3QudjEiLCJraWQiOiJ2ZWMtZGVjbGFyZXItazEiLCJkZWNsYXJlciI6Im5vdC10aGUtZGVjbGFyZXIiLCJzdGF0ZW1lbnQiOiJ0aGlzIGlzIHRoZSBjb21wbGV0ZSBzZXQgb2YgdG9vbHMgdGhhdCBjYW4gbXV0YXRlIGEgZ292ZXJuZWQgdGFyZ2V0Iiwic2V0X2RpZ2VzdCI6InNoYTI1NjpkNDVkMjAwNGJlYzY5M2E3NzE1NjY3NGUxNmI2OGJmMWE4OWY2NGJhMDkzN2Q0MGI4NDUwNTIwNmIxOWQ0NDNjIiwiZGVjbGFyZWRfYXQiOiIyMDI2LTAzLTAxVDAwOjAwOjAwLjAwMFoiLCJndWFyZF92ZXJzaW9uIjoiOS42LjAiLCJmcmFtZXdvcmsiOiJsYW5nZ3JhcGgiLCJmcmFtZXdvcmtfdmVyc2lvbiI6IjAuMi4xIiwidG9vbF9jb3VudCI6MywibXV0YXRpbmdfY291bnQiOjJ9|UhKcjRJYS7qnx6lOSCpcxMvP7C6SgEWw5CFhg9oBY3tC6DFa5Blde-2fhwXYk08NitRB2E6kgzHuS1U-SioCDA",
+      "token": "cr.toolset.attest.v1|vec-declarer-k1|eyJ2IjoiY3IudG9vbHNldC5hdHRlc3QudjEiLCJraWQiOiJ2ZWMtZGVjbGFyZXItazEiLCJkZWNsYXJlciI6Im5vdC10aGUtZGVjbGFyZXIiLCJzdGF0ZW1lbnQiOiJ0aGlzIGlzIHRoZSBjb21wbGV0ZSBzZXQgb2YgdG9vbHMgdGhhdCBjYW4gbXV0YXRlIGEgZ292ZXJuZWQgdGFyZ2V0Iiwic2V0X2RpZ2VzdCI6InNoYTI1NjpkNDVkMjAwNGJlYzY5M2E3NzE1NjY3NGUxNmI2OGJmMWE4OWY2NGJhMDkzN2Q0MGI4NDUwNTIwNmIxOWQ0NDNjIiwiZGVjbGFyZWRfYXQiOiIyMDI2LTAzLTAxVDAwOjAwOjAwLjAwMFoiLCJndWFyZF92ZXJzaW9uIjoiOS42LjAiLCJmcmFtZXdvcmsiOiJsYW5nZ3JhcGgiLCJmcmFtZXdvcmtfdmVyc2lvbiI6IjAuMi4xIiwidG9vbF9jb3VudCI6MywibXV0YXRpbmdfY291bnQiOjJ9|CPC6cusSzcwcnFo8E6LV7kwoZAX8kReYu7072OFACqHwxVSGo15yket2ti61eJpaO7hfXxU3vtMFsJp5plJZAw",
       "expect": {
         "valid": false,
         "status": "TOOLSET_ATTEST_INVALID_SIGNATURE"
@@ -53,7 +54,7 @@
     },
     {
       "id": "TS-A-UNKNOWN-KID",
-      "token": "cr.toolset.attest.v1|vec-declarer-k1|eyJ2IjoiY3IudG9vbHNldC5hdHRlc3QudjEiLCJraWQiOiJ2ZWMtZGVjbGFyZXItazEiLCJkZWNsYXJlciI6InZlY3RvcnMtZGVjbGFyZXIiLCJzdGF0ZW1lbnQiOiJ0aGlzIGlzIHRoZSBjb21wbGV0ZSBzZXQgb2YgdG9vbHMgdGhhdCBjYW4gbXV0YXRlIGEgZ292ZXJuZWQgdGFyZ2V0Iiwic2V0X2RpZ2VzdCI6InNoYTI1NjpkNDVkMjAwNGJlYzY5M2E3NzE1NjY3NGUxNmI2OGJmMWE4OWY2NGJhMDkzN2Q0MGI4NDUwNTIwNmIxOWQ0NDNjIiwiZGVjbGFyZWRfYXQiOiIyMDI2LTAzLTAxVDAwOjAwOjAwLjAwMFoiLCJndWFyZF92ZXJzaW9uIjoiOS42LjAiLCJmcmFtZXdvcmsiOiJsYW5nZ3JhcGgiLCJmcmFtZXdvcmtfdmVyc2lvbiI6IjAuMi4xIiwidG9vbF9jb3VudCI6MywibXV0YXRpbmdfY291bnQiOjJ9|UhKcjRJYS7qnx6lOSCpcxMvP7C6SgEWw5CFhg9oBY3tC6DFa5Blde-2fhwXYk08NitRB2E6kgzHuS1U-SioCDA",
+      "token": "cr.toolset.attest.v1|vec-declarer-k1|eyJ2IjoiY3IudG9vbHNldC5hdHRlc3QudjEiLCJraWQiOiJ2ZWMtZGVjbGFyZXItazEiLCJkZWNsYXJlciI6InZlY3RvcnMtZGVjbGFyZXIiLCJzdGF0ZW1lbnQiOiJ0aGlzIGlzIHRoZSBjb21wbGV0ZSBzZXQgb2YgdG9vbHMgdGhhdCBjYW4gbXV0YXRlIGEgZ292ZXJuZWQgdGFyZ2V0Iiwic2V0X2RpZ2VzdCI6InNoYTI1NjpkNDVkMjAwNGJlYzY5M2E3NzE1NjY3NGUxNmI2OGJmMWE4OWY2NGJhMDkzN2Q0MGI4NDUwNTIwNmIxOWQ0NDNjIiwiZGVjbGFyZWRfYXQiOiIyMDI2LTAzLTAxVDAwOjAwOjAwLjAwMFoiLCJndWFyZF92ZXJzaW9uIjoiOS42LjAiLCJmcmFtZXdvcmsiOiJsYW5nZ3JhcGgiLCJmcmFtZXdvcmtfdmVyc2lvbiI6IjAuMi4xIiwidG9vbF9jb3VudCI6MywibXV0YXRpbmdfY291bnQiOjJ9|CPC6cusSzcwcnFo8E6LV7kwoZAX8kReYu7072OFACqHwxVSGo15yket2ti61eJpaO7hfXxU3vtMFsJp5plJZAw",
       "registry_override": {
         "keys": []
       },
@@ -64,7 +65,7 @@
     },
     {
       "id": "TS-A-RETIRED-KEY-VALID-AT-ISSUE",
-      "token": "cr.toolset.attest.v1|vec-declarer-k0|eyJ2IjoiY3IudG9vbHNldC5hdHRlc3QudjEiLCJraWQiOiJ2ZWMtZGVjbGFyZXItazAiLCJkZWNsYXJlciI6InZlY3RvcnMtZGVjbGFyZXIiLCJzdGF0ZW1lbnQiOiJ0aGlzIGlzIHRoZSBjb21wbGV0ZSBzZXQgb2YgdG9vbHMgdGhhdCBjYW4gbXV0YXRlIGEgZ292ZXJuZWQgdGFyZ2V0Iiwic2V0X2RpZ2VzdCI6InNoYTI1NjpkNDVkMjAwNGJlYzY5M2E3NzE1NjY3NGUxNmI2OGJmMWE4OWY2NGJhMDkzN2Q0MGI4NDUwNTIwNmIxOWQ0NDNjIiwiZGVjbGFyZWRfYXQiOiIyMDI2LTAzLTAxVDAwOjAwOjAwLjAwMFoiLCJndWFyZF92ZXJzaW9uIjoiOS42LjAiLCJmcmFtZXdvcmsiOiJsYW5nZ3JhcGgiLCJmcmFtZXdvcmtfdmVyc2lvbiI6IjAuMi4xIiwidG9vbF9jb3VudCI6MywibXV0YXRpbmdfY291bnQiOjJ9|5a5f1GSN4bvw9cNOaGDDdHSBHXH2YwjV-e0nMFY55_awfbt80tGi3EuFQCfr1KC23ElsxInVnS4x1QN1RKDMAw",
+      "token": "cr.toolset.attest.v1|vec-declarer-k0|eyJ2IjoiY3IudG9vbHNldC5hdHRlc3QudjEiLCJraWQiOiJ2ZWMtZGVjbGFyZXItazAiLCJkZWNsYXJlciI6InZlY3RvcnMtZGVjbGFyZXIiLCJzdGF0ZW1lbnQiOiJ0aGlzIGlzIHRoZSBjb21wbGV0ZSBzZXQgb2YgdG9vbHMgdGhhdCBjYW4gbXV0YXRlIGEgZ292ZXJuZWQgdGFyZ2V0Iiwic2V0X2RpZ2VzdCI6InNoYTI1NjpkNDVkMjAwNGJlYzY5M2E3NzE1NjY3NGUxNmI2OGJmMWE4OWY2NGJhMDkzN2Q0MGI4NDUwNTIwNmIxOWQ0NDNjIiwiZGVjbGFyZWRfYXQiOiIyMDI2LTAzLTAxVDAwOjAwOjAwLjAwMFoiLCJndWFyZF92ZXJzaW9uIjoiOS42LjAiLCJmcmFtZXdvcmsiOiJsYW5nZ3JhcGgiLCJmcmFtZXdvcmtfdmVyc2lvbiI6IjAuMi4xIiwidG9vbF9jb3VudCI6MywibXV0YXRpbmdfY291bnQiOjJ9|XNSESEMJkcaJCZ3KZAPbmsWZ31kcBiCoOp4kDXxKrEaRyWM2Vj1uxlggZ0xuIoqS_SDQ1avAWD7nst5IU8KWBg",
       "expect": {
         "valid": true,
         "status": "TOOLSET_ATTEST_RETIRED_KEY_VALID_AT_ISSUE"
@@ -72,7 +73,7 @@
     },
     {
       "id": "TS-A-RETIRED-OUT-OF-WINDOW",
-      "token": "cr.toolset.attest.v1|vec-declarer-k0|eyJ2IjoiY3IudG9vbHNldC5hdHRlc3QudjEiLCJraWQiOiJ2ZWMtZGVjbGFyZXItazAiLCJkZWNsYXJlciI6InZlY3RvcnMtZGVjbGFyZXIiLCJzdGF0ZW1lbnQiOiJ0aGlzIGlzIHRoZSBjb21wbGV0ZSBzZXQgb2YgdG9vbHMgdGhhdCBjYW4gbXV0YXRlIGEgZ292ZXJuZWQgdGFyZ2V0Iiwic2V0X2RpZ2VzdCI6InNoYTI1NjpkNDVkMjAwNGJlYzY5M2E3NzE1NjY3NGUxNmI2OGJmMWE4OWY2NGJhMDkzN2Q0MGI4NDUwNTIwNmIxOWQ0NDNjIiwiZGVjbGFyZWRfYXQiOiIyMDI2LTA3LTAxVDAwOjAwOjAwLjAwMFoiLCJndWFyZF92ZXJzaW9uIjoiOS42LjAiLCJmcmFtZXdvcmsiOiJsYW5nZ3JhcGgiLCJmcmFtZXdvcmtfdmVyc2lvbiI6IjAuMi4xIiwidG9vbF9jb3VudCI6MywibXV0YXRpbmdfY291bnQiOjJ9|QVz3uzx9-zxWWpeSmSW1BkDvb2a8F3ExoU91LsZvqaK0mdddpln1NgCvATKwgbAlYgOtTPoO9Z4ZjJmcLEgJAw",
+      "token": "cr.toolset.attest.v1|vec-declarer-k0|eyJ2IjoiY3IudG9vbHNldC5hdHRlc3QudjEiLCJraWQiOiJ2ZWMtZGVjbGFyZXItazAiLCJkZWNsYXJlciI6InZlY3RvcnMtZGVjbGFyZXIiLCJzdGF0ZW1lbnQiOiJ0aGlzIGlzIHRoZSBjb21wbGV0ZSBzZXQgb2YgdG9vbHMgdGhhdCBjYW4gbXV0YXRlIGEgZ292ZXJuZWQgdGFyZ2V0Iiwic2V0X2RpZ2VzdCI6InNoYTI1NjpkNDVkMjAwNGJlYzY5M2E3NzE1NjY3NGUxNmI2OGJmMWE4OWY2NGJhMDkzN2Q0MGI4NDUwNTIwNmIxOWQ0NDNjIiwiZGVjbGFyZWRfYXQiOiIyMDI2LTA3LTAxVDAwOjAwOjAwLjAwMFoiLCJndWFyZF92ZXJzaW9uIjoiOS42LjAiLCJmcmFtZXdvcmsiOiJsYW5nZ3JhcGgiLCJmcmFtZXdvcmtfdmVyc2lvbiI6IjAuMi4xIiwidG9vbF9jb3VudCI6MywibXV0YXRpbmdfY291bnQiOjJ9|qPGSrB5gf50nx3HVJIqpKQR_hY_KNpgPzjbio91VxMs5cpjzD5cMdI62KegkfYq5qVKzwOHFP51W2PiYZwjGAQ",
       "expect": {
         "valid": false,
         "status": "TOOLSET_ATTEST_UNKNOWN_KEY"
@@ -88,7 +89,7 @@
     },
     {
       "id": "TS-A-UNKNOWN-FIELD",
-      "token": "cr.toolset.attest.v1|vec-declarer-k1|eyJ2IjoiY3IudG9vbHNldC5hdHRlc3QudjEiLCJraWQiOiJ2ZWMtZGVjbGFyZXItazEiLCJkZWNsYXJlciI6InZlY3RvcnMtZGVjbGFyZXIiLCJzdGF0ZW1lbnQiOiJ0aGlzIGlzIHRoZSBjb21wbGV0ZSBzZXQgb2YgdG9vbHMgdGhhdCBjYW4gbXV0YXRlIGEgZ292ZXJuZWQgdGFyZ2V0Iiwic2V0X2RpZ2VzdCI6InNoYTI1NjpkNDVkMjAwNGJlYzY5M2E3NzE1NjY3NGUxNmI2OGJmMWE4OWY2NGJhMDkzN2Q0MGI4NDUwNTIwNmIxOWQ0NDNjIiwiZGVjbGFyZWRfYXQiOiIyMDI2LTAzLTAxVDAwOjAwOjAwLjAwMFoiLCJndWFyZF92ZXJzaW9uIjoiOS42LjAiLCJmcmFtZXdvcmsiOiJsYW5nZ3JhcGgiLCJmcmFtZXdvcmtfdmVyc2lvbiI6IjAuMi4xIiwidG9vbF9jb3VudCI6MywibXV0YXRpbmdfY291bnQiOjIsInNpZ25lZF9vZmZfYnkiOiJsZWdhbCJ9|UhKcjRJYS7qnx6lOSCpcxMvP7C6SgEWw5CFhg9oBY3tC6DFa5Blde-2fhwXYk08NitRB2E6kgzHuS1U-SioCDA",
+      "token": "cr.toolset.attest.v1|vec-declarer-k1|eyJ2IjoiY3IudG9vbHNldC5hdHRlc3QudjEiLCJraWQiOiJ2ZWMtZGVjbGFyZXItazEiLCJkZWNsYXJlciI6InZlY3RvcnMtZGVjbGFyZXIiLCJzdGF0ZW1lbnQiOiJ0aGlzIGlzIHRoZSBjb21wbGV0ZSBzZXQgb2YgdG9vbHMgdGhhdCBjYW4gbXV0YXRlIGEgZ292ZXJuZWQgdGFyZ2V0Iiwic2V0X2RpZ2VzdCI6InNoYTI1NjpkNDVkMjAwNGJlYzY5M2E3NzE1NjY3NGUxNmI2OGJmMWE4OWY2NGJhMDkzN2Q0MGI4NDUwNTIwNmIxOWQ0NDNjIiwiZGVjbGFyZWRfYXQiOiIyMDI2LTAzLTAxVDAwOjAwOjAwLjAwMFoiLCJndWFyZF92ZXJzaW9uIjoiOS42LjAiLCJmcmFtZXdvcmsiOiJsYW5nZ3JhcGgiLCJmcmFtZXdvcmtfdmVyc2lvbiI6IjAuMi4xIiwidG9vbF9jb3VudCI6MywibXV0YXRpbmdfY291bnQiOjIsInNpZ25lZF9vZmZfYnkiOiJsZWdhbCJ9|CPC6cusSzcwcnFo8E6LV7kwoZAX8kReYu7072OFACqHwxVSGo15yket2ti61eJpaO7hfXxU3vtMFsJp5plJZAw",
       "expect": {
         "valid": false,
         "status": "TOOLSET_ATTEST_MALFORMED"
@@ -96,7 +97,7 @@
     },
     {
       "id": "TS-A-UNBOUND-DROPPED",
-      "token": "cr.toolset.attest.v1|vec-declarer-k1|eyJ2IjoiY3IudG9vbHNldC5hdHRlc3QudjEiLCJraWQiOiJ2ZWMtZGVjbGFyZXItazEiLCJkZWNsYXJlciI6InZlY3RvcnMtZGVjbGFyZXIiLCJzdGF0ZW1lbnQiOiJ0aGlzIGlzIHRoZSBjb21wbGV0ZSBzZXQgb2YgdG9vbHMgdGhhdCBjYW4gbXV0YXRlIGEgZ292ZXJuZWQgdGFyZ2V0Iiwic2V0X2RpZ2VzdCI6InNoYTI1NjpkNDVkMjAwNGJlYzY5M2E3NzE1NjY3NGUxNmI2OGJmMWE4OWY2NGJhMDkzN2Q0MGI4NDUwNTIwNmIxOWQ0NDNjIiwiZGVjbGFyZWRfYXQiOiIyMDI2LTAzLTAxVDAwOjAwOjAwLjAwMFoiLCJndWFyZF92ZXJzaW9uIjoiOS42LjAiLCJmcmFtZXdvcmsiOiJsYW5nZ3JhcGgiLCJmcmFtZXdvcmtfdmVyc2lvbiI6IjAuMi4xIiwidG9vbF9jb3VudCI6MywibXV0YXRpbmdfY291bnQiOjJ9|UhKcjRJYS7qnx6lOSCpcxMvP7C6SgEWw5CFhg9oBY3tC6DFa5Blde-2fhwXYk08NitRB2E6kgzHuS1U-SioCDA",
+      "token": "cr.toolset.attest.v1|vec-declarer-k1|eyJ2IjoiY3IudG9vbHNldC5hdHRlc3QudjEiLCJraWQiOiJ2ZWMtZGVjbGFyZXItazEiLCJkZWNsYXJlciI6InZlY3RvcnMtZGVjbGFyZXIiLCJzdGF0ZW1lbnQiOiJ0aGlzIGlzIHRoZSBjb21wbGV0ZSBzZXQgb2YgdG9vbHMgdGhhdCBjYW4gbXV0YXRlIGEgZ292ZXJuZWQgdGFyZ2V0Iiwic2V0X2RpZ2VzdCI6InNoYTI1NjpkNDVkMjAwNGJlYzY5M2E3NzE1NjY3NGUxNmI2OGJmMWE4OWY2NGJhMDkzN2Q0MGI4NDUwNTIwNmIxOWQ0NDNjIiwiZGVjbGFyZWRfYXQiOiIyMDI2LTAzLTAxVDAwOjAwOjAwLjAwMFoiLCJndWFyZF92ZXJzaW9uIjoiOS42LjAiLCJmcmFtZXdvcmsiOiJsYW5nZ3JhcGgiLCJmcmFtZXdvcmtfdmVyc2lvbiI6IjAuMi4xIiwidG9vbF9jb3VudCI6MywibXV0YXRpbmdfY291bnQiOjJ9|CPC6cusSzcwcnFo8E6LV7kwoZAX8kReYu7072OFACqHwxVSGo15yket2ti61eJpaO7hfXxU3vtMFsJp5plJZAw",
       "entries_override": [
         {
           "name": "patch_spec",
@@ -115,7 +116,7 @@
     },
     {
       "id": "TS-A-UNBOUND-ADDED",
-      "token": "cr.toolset.attest.v1|vec-declarer-k1|eyJ2IjoiY3IudG9vbHNldC5hdHRlc3QudjEiLCJraWQiOiJ2ZWMtZGVjbGFyZXItazEiLCJkZWNsYXJlciI6InZlY3RvcnMtZGVjbGFyZXIiLCJzdGF0ZW1lbnQiOiJ0aGlzIGlzIHRoZSBjb21wbGV0ZSBzZXQgb2YgdG9vbHMgdGhhdCBjYW4gbXV0YXRlIGEgZ292ZXJuZWQgdGFyZ2V0Iiwic2V0X2RpZ2VzdCI6InNoYTI1NjpkNDVkMjAwNGJlYzY5M2E3NzE1NjY3NGUxNmI2OGJmMWE4OWY2NGJhMDkzN2Q0MGI4NDUwNTIwNmIxOWQ0NDNjIiwiZGVjbGFyZWRfYXQiOiIyMDI2LTAzLTAxVDAwOjAwOjAwLjAwMFoiLCJndWFyZF92ZXJzaW9uIjoiOS42LjAiLCJmcmFtZXdvcmsiOiJsYW5nZ3JhcGgiLCJmcmFtZXdvcmtfdmVyc2lvbiI6IjAuMi4xIiwidG9vbF9jb3VudCI6MywibXV0YXRpbmdfY291bnQiOjJ9|UhKcjRJYS7qnx6lOSCpcxMvP7C6SgEWw5CFhg9oBY3tC6DFa5Blde-2fhwXYk08NitRB2E6kgzHuS1U-SioCDA",
+      "token": "cr.toolset.attest.v1|vec-declarer-k1|eyJ2IjoiY3IudG9vbHNldC5hdHRlc3QudjEiLCJraWQiOiJ2ZWMtZGVjbGFyZXItazEiLCJkZWNsYXJlciI6InZlY3RvcnMtZGVjbGFyZXIiLCJzdGF0ZW1lbnQiOiJ0aGlzIGlzIHRoZSBjb21wbGV0ZSBzZXQgb2YgdG9vbHMgdGhhdCBjYW4gbXV0YXRlIGEgZ292ZXJuZWQgdGFyZ2V0Iiwic2V0X2RpZ2VzdCI6InNoYTI1NjpkNDVkMjAwNGJlYzY5M2E3NzE1NjY3NGUxNmI2OGJmMWE4OWY2NGJhMDkzN2Q0MGI4NDUwNTIwNmIxOWQ0NDNjIiwiZGVjbGFyZWRfYXQiOiIyMDI2LTAzLTAxVDAwOjAwOjAwLjAwMFoiLCJndWFyZF92ZXJzaW9uIjoiOS42LjAiLCJmcmFtZXdvcmsiOiJsYW5nZ3JhcGgiLCJmcmFtZXdvcmtfdmVyc2lvbiI6IjAuMi4xIiwidG9vbF9jb3VudCI6MywibXV0YXRpbmdfY291bnQiOjJ9|CPC6cusSzcwcnFo8E6LV7kwoZAX8kReYu7072OFACqHwxVSGo15yket2ti61eJpaO7hfXxU3vtMFsJp5plJZAw",
       "entries_override": [
         {
           "name": "patch_spec",

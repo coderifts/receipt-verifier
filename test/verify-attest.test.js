@@ -147,6 +147,46 @@ describe('the arity asymmetry is REAL and cannot be introspected', () => {
   });
 });
 
+describe('vector provenance is honest (1127c)', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+
+  it('toolset-vectors.json generated_by resolves to a script THAT EXISTS IN THIS REPO', () => {
+    // THIS IS WHAT WAS FALSE BEFORE. The field named
+    // `scripts/generate-toolset-attest-vectors.js`, a path that exists only in coderifts-app, and
+    // the two files were byte-identical — which, with a per-run ephemeral key, is possible only if
+    // one was COPIED from the other. The document claimed a provenance this repository could not
+    // honour, and nothing here could regenerate it.
+    const gen = toolsetVectors.generated_by;
+    assert.ok(typeof gen === 'string' && gen.length > 0, 'a vector file must say what made it');
+    const abs = path.join(__dirname, '..', gen);
+    assert.ok(fs.existsSync(abs), `generated_by names ${gen}, which does not exist in this repo`);
+  });
+
+  it('every vector set names a generator that exists here', () => {
+    // The same check across all four sets, so a future vendored file cannot repeat the defect.
+    for (const [file, field] of [
+      ['toolset-vectors.json', 'generated_by'],
+    ]) {
+      const doc = require(`../test/${file}`);
+      if (doc[field] == null) continue;
+      const abs = path.join(__dirname, '..', doc[field]);
+      assert.ok(fs.existsSync(abs), `${file}: ${field} names ${doc[field]}, missing here`);
+    }
+  });
+
+  it('the independence decision is recorded IN the file, not only in a commit message', () => {
+    assert.match(toolsetVectors.independence, /Independent of coderifts-app/);
+    assert.match(toolsetVectors.independence, /cross-checks\s+compare verdicts/);
+  });
+
+  it('NO PRIVATE KEY is embedded — presence check only', () => {
+    const raw = fs.readFileSync(path.join(__dirname, 'toolset-vectors.json'), 'utf8');
+    assert.equal(/PRIVATE KEY|private_key|secret_key/.test(raw), false);
+    assert.ok(toolsetVectors.registry.keys.length === 2, 'active + retired, public material only');
+  });
+});
+
 describe('the README states the shapes', () => {
   const readme = require('node:fs').readFileSync(
     require('node:path').join(__dirname, '..', 'README.md'), 'utf8',
