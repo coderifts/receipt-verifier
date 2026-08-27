@@ -204,6 +204,8 @@ const vectors = [
 ];
 
 const out = {
+  // 1132 — see the note in test/gen-vectors.js. Asserted to resolve in this repository.
+  generated_by: 'test/gen-attest-vectors.js',
   kid: KID,
   public_key_pem: publicPem,
   registry,

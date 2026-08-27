@@ -209,6 +209,11 @@ const LIVE = {
 
 const vectors = {
   note: 'Ephemeral test key. NOT the production key. Regenerate with: node test/gen-vectors.js',
+  // 1132 — the generator that produced this file, as a path resolvable IN THIS REPOSITORY.
+  // toolset-vectors.json once named a generator that existed only in coderifts-app (1127c); a
+  // provenance field pointing somewhere unreachable is worse than none, because it reads as an
+  // answer. test/verify-attest.test.js asserts every declared path exists here.
+  generated_by: 'test/gen-vectors.js',
   kid: KID,
   public_key_pem: publicPem,
   vectors: [
