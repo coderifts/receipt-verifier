@@ -23,9 +23,25 @@ const pub = require('../verify-toolset.js');
 const APP = process.env.CODERIFTS_APP_DIR
   || path.join(os.homedir(), 'coderifts-app', 'src', 'verdict-core', 'toolset-attestation.js');
 
+// ── 1133: A MISSING APP CHECKOUT FAILS LOUD, IT DOES NOT SKIP ────────────────────────────────
+//
+// This used to print "— skip" and exit 0. run.sh checks the exit code explicitly, so a skip did
+// not become a swallowed failure — it became something worse: run.sh printed
+//   ok    cross-check-toolset (js == app kernel on ...)
+// a green line asserting an agreement that was never tested. MEASURED 2026-08-27: the CI workflow
+// (.github/workflows/verify-live-receipt.yml) checks out THIS repository only and never the app,
+// so $HOME/coderifts-app does not exist there and this comparison has never actually run in CI.
+//
+// Same rule the app applies to its own vendored-sync gate: a missing checkout fails loud, never
+// skips. An absent comparison must not be reported as a passing one.
 if (!fs.existsSync(APP)) {
-  console.log(`cross-check-toolset: app kernel not found at ${APP} — skip`);
-  process.exit(0);
+  console.error(
+    `cross-check-toolset: app kernel not found at ${APP}; set CODERIFTS_APP_DIR to a `
+    + 'coderifts-app checkout, or clone it at $HOME/coderifts-app. Refusing to skip: this harness '
+    + 'is the only place the public verifier is compared against the app kernel, and reporting a '
+    + 'comparison that did not happen is worse than not having one.',
+  );
+  process.exit(1);
 }
 
 // eslint-disable-next-line import/no-dynamic-require, global-require
