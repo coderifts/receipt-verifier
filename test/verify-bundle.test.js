@@ -19,19 +19,26 @@ const receiptVectors = require('../test/vectors.json');
 
 const GRANT_OK = grantVectors.vectors.find((v) => v.name === 'EG-VALID').token;
 const GRANT_EXPIRED = grantVectors.vectors.find((v) => v.name === 'EG-EXPIRED').token;
-/** The grant vectors bind this exact string as their receipt — it is what the digest covers. */
-const RECEIPT_FOR_GRANT = grantVectors.receipt;
-/** A REAL signed receipt, from this repository's receipt vectors — a different key entirely. */
+/**
+ * 1125 — the grant vectors now bind a REAL receipt. Until 2026-08-27 they bound the literal string
+ * 'receipt.token', so this bundle held two genuinely signed artifacts about different things.
+ */
 const REAL_RECEIPT = receiptVectors.vectors.find((v) => v.name === 'valid_v4').token;
+/** Deliberately non-matching: binds a different real receipt. Never "fix" it — see its `note`. */
+const GRANT_MISMATCH = grantVectors.vectors
+  .find((v) => v.name === 'EG-MISMATCH-FOREIGN-RECEIPT').token;
 
-const GRANT_FLAGS = grantVectors.vectors.find((v) => v.name === 'EG-VALID').flags || {};
-const grantIntended = {
-  operation: GRANT_FLAGS['intended-operation'],
-  target_id: GRANT_FLAGS['intended-target'],
-  audience: GRANT_FLAGS['intended-audience'],
-  after_payload: GRANT_FLAGS.after_payload,
-  receipt_token: GRANT_FLAGS.receipt || RECEIPT_FOR_GRANT,
+const intendedFor = (name) => {
+  const f = grantVectors.vectors.find((v) => v.name === name).flags || {};
+  return {
+    operation: f['intended-operation'] || grantVectors.operation,
+    target_id: f['intended-target'] || grantVectors.target_id,
+    audience: f['intended-audience'] || grantVectors.audience,
+    after_payload: f.after_payload != null ? f.after_payload : grantVectors.after_payload,
+    receipt_token: f.receipt || grantVectors.receipt,
+  };
 };
+const grantIntended = intendedFor('EG-VALID');
 
 /**
  * PER-SLOT MATERIAL, because a receipt and a grant here are signed by DIFFERENT keys. A single
@@ -51,6 +58,17 @@ const REG = {
   },
 };
 const RECEIPT = REAL_RECEIPT;
+
+/** Per-slot material for a named grant vector, so each case verifies against its own intent. */
+const regFor = (name) => ({
+  perSlot: {
+    receipt: { ctx: { publicKey: receiptVectors.public_key_pem, expectedKid: receiptVectors.kid }, opts: {} },
+    execution_grant: {
+      ctx: { publicKey: grantVectors.public_key_pem, expectedKid: grantVectors.kid },
+      opts: { intended: intendedFor(name) },
+    },
+  },
+});
 
 const bundleOf = (slots) => ({ v: BUNDLE_VERSION, slots });
 
@@ -135,18 +153,42 @@ describe('COMPOSITION: real signed vectors verify through the existing verifiers
 });
 
 describe('LINKAGE: the bundle is more than a container', () => {
-  it('TWO VALID DOCUMENTS ABOUT DIFFERENT THINGS is INVALID, not VERIFIED', () => {
-    // THE CASE A CONTAINER ALONE WOULD PASS, and this repository's own vectors produce it: the
-    // receipt vector is a real signed receipt, and the grant vector binds the placeholder string
-    // "receipt.token". BOTH verify individually. A bundle that reported VERIFIED here would be
-    // asserting a chain that does not exist, which is precisely what the linkage check is for.
-    const r = verifyBundle(bundleOf({ receipt: RECEIPT, execution_grant: GRANT_OK }), ctx, REG);
-    assert.equal(r.verified_count, 2, 'each half verifies on its own');
-    assert.equal(r.bundle, BUNDLE.INVALID, 'but they are not the same chain');
+  it('THE FIXED PAIR: a grant binding the REAL receipt is VERIFIED, and the link holds', () => {
+    // 1125. Until the vectors were regenerated, this exact bundle was INVALID — the grant bound
+    // the placeholder string 'receipt.token'. The assertion below used to pin that, correctly for
+    // the data and wrongly for what the data taught. It is re-pointed, not deleted: the mismatch
+    // case it protected now lives in the test underneath, on a vector that is non-matching ON
+    // PURPOSE and says so in its own `note`.
+    const r = verifyBundle(
+      bundleOf({ receipt: RECEIPT, execution_grant: GRANT_OK }), ctx, regFor('EG-VALID'),
+    );
+    assert.equal(r.bundle, BUNDLE.VERIFIED, JSON.stringify(r.slots));
+    assert.equal(r.verified_count, 2);
     const link = r.linkage.find((l) => l.link === 'grant_binds_receipt');
-    assert.ok(link, 'both present and verified → the link must be checked');
-    assert.equal(link.ok, false);
-    assert.match(link.reason, /does not bind the receipt in this bundle/);
+    assert.ok(link, 'both halves verified → the link must be checked');
+    assert.equal(link.ok, true, 'the grant must bind the receipt in this bundle');
+  });
+
+  it('TWO VALID DOCUMENTS ABOUT DIFFERENT THINGS is INVALID, not VERIFIED', () => {
+    // THE CASE A CONTAINER ALONE WOULD PASS. EG-MISMATCH-FOREIGN-RECEIPT binds a DIFFERENT real
+    // receipt: both artifacts are genuinely signed, and they are not the same chain.
+    const r = verifyBundle(
+      bundleOf({ receipt: RECEIPT, execution_grant: GRANT_MISMATCH }),
+      ctx,
+      regFor('EG-MISMATCH-FOREIGN-RECEIPT'),
+    );
+    assert.equal(r.bundle, BUNDLE.INVALID, 'a foreign binding must never grade VERIFIED');
+    const grantSlot = r.slots.find((s) => s.slot === 'execution_grant');
+    assert.equal(grantSlot.state, SLOT.INVALID);
+    assert.equal(grantSlot.status, 'GRANT_UNBOUND');
+    assert.equal(grantSlot.reason, 'receipt_digest_mismatch');
+  });
+
+  it('the mismatch vector is marked INTENTIONAL, so nobody "fixes" it later', () => {
+    const v = grantVectors.vectors.find((x) => x.name === 'EG-MISMATCH-FOREIGN-RECEIPT');
+    assert.ok(v, 'the negative case must survive the positive fix');
+    assert.match(v.note, /INTENTIONALLY NON-MATCHING/);
+    assert.match(v.note, /never be "fixed" to match/);
   });
 
   it('the link is only checked when BOTH halves verified — never asserted over a failure', () => {
