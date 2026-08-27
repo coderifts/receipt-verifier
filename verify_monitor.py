@@ -147,7 +147,9 @@ def verify_monitoring_attestation(token, opts=None):
     Python raises TypeError on an extra positional argument, so the 1128 guard the JS
     sibling needs is supplied by the language here.
     """
-    o = opts or {}
+    o = dict(opts or {})
+    if o.get("ctx") and o.get("registry") is None and isinstance(o.get("ctx"), dict):
+        o["registry"] = o["ctx"].get("registry")
     parsed = parse_monitor_token(token)
     if not parsed["ok"]:
         return fail(parsed["status"], parsed.get("reason"), parsed.get("payload", _MISSING))

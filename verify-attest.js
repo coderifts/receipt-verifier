@@ -284,6 +284,9 @@ function verifyExecutionAttestation(token, opts = {}) {
       + 'would silently not run, grading a mismatched attestation ATTEST_VALID.',
     );
   }
+  if (opts && opts.ctx && opts.registry == null && opts.ctx.registry) {
+    opts = { ...opts, registry: opts.ctx.registry };
+  }
   const parsed = parseAttestToken(token);
   if (!parsed.ok) {
     return fail(parsed.status, parsed.reason, parsed.payload);

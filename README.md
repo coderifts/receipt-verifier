@@ -262,50 +262,46 @@ JSON on stdout matches across JS and Python.
 Statuses: `ATTEST_VALID`, `ATTEST_INVALID_SIGNATURE`, `ATTEST_UNKNOWN_KEY`,
 `ATTEST_RETIRED_KEY_VALID_AT_ISSUE`, `ATTEST_MALFORMED`, `ATTEST_UNBOUND`.
 
-## Verifier signatures — they are not all the same shape
+## Verifier signatures — unified `(token, opts)` (1129)
 
-The four verifiers do **not** share an arity, and the difference is easy to walk into:
-
-```js
-verifyReceipt(token, ctx, opts)               // 3 arguments
-verifyExecutionGrant(token, ctx, opts)        // 3 arguments
-verifyExecutionAttestation(token, opts)       // 2 arguments  <-- different, throws on a 3rd
-verifyToolsetAttestation(token, opts)         // 2 arguments  <-- different, throws on a 3rd
-```
-
-For the two-argument verifiers, everything goes in the **second** argument — the registry and the
-cross-check material together, so `intended` is passed as `opts.intended`:
+All seven verifiers accept **`(token, opts)`** with `opts.ctx` (keyring / publicKey / registry)
+and `opts.intended` (cross-check bindings):
 
 ```js
-verifyExecutionAttestation(token, {
-  registry,
-  intended: { grant },        // NOT a third argument
-});
+verifyReceipt(token, { ctx, envelope })
+verifyChain(tokens, { ctx })
+verifyExecutionGrant(token, { ctx, intended })
+verifyExecutionAttestation(token, { ctx: { registry }, intended })
+verifyToolsetAttestation(token, { ctx: { registry, entries }, intended })
+verifyMonitoringAttestation(token, { ctx: { registry }, intended })
+verifyBundle(bundle, { ctx, perSlot })
 ```
 
-**Passing a third argument to either two-argument verifier now throws.** It used to be ignored,
-and the consequence was not a missing check but a wrong verdict: with `intended` dropped, the
-cross-check does not run and the artifact grades valid. Measured on both:
+The former 3-ary signatures remain as **deprecated wrappers**: they warn
+**once** (`DeprecationWarning`) and forward into the unified shape:
 
-| verifier | `intended` in `opts` | `intended` passed third |
-|---|---|---|
-| `verifyExecutionAttestation` | `ATTEST_UNBOUND / receipt_digest_mismatch` | `ATTEST_VALID` |
-| `verifyToolsetAttestation` | `TOOLSET_ATTEST_UNBOUND / declarer_mismatch` | `TOOLSET_ATTEST_VALID` |
+```js
+verifyReceipt(token, ctx, opts)               // deprecated wrapper
+verifyChain(tokens, ctx, opts)                // deprecated wrapper
+verifyExecutionGrant(token, ctx, opts)        // deprecated wrapper
+verifyBundle(bundle, ctx, opts)               // deprecated wrapper
+verifyExecutionAttestation(token, opts)       // 2-ary; throws on a 3rd (1128)
+verifyToolsetAttestation(token, opts)         // 2-ary; throws on a 3rd (1128)
+verifyMonitoringAttestation(token, opts)      // 2-ary; throws on a 3rd (1128)
+```
 
-The arity itself is unchanged — altering it is breaking and belongs to a versioned release — so
-what is closed is the silence.
+**1128 still throws** on a third argument to the original 2-ary verifiers
+(`verifyExecutionAttestation`, `verifyToolsetAttestation`, `verifyMonitoringAttestation`).
+A dropped third argument used to skip the cross-check and grade a mismatch valid.
 
-Python needs no equivalent guard: `verify_execution_attestation(token, opts)` already raises
-`TypeError` on an extra positional argument.
+Python mirrors: `verify_receipt` / `verify_execution_grant` / `verify_chain` accept a unified
+dict as the second argument; a second+third positional pair warns once. Attest / monitor already
+opts-based. The Python toolset verifier remains keyword-based —
+`verify_toolset_attestation(token, registry, entries, intended, now_ms)` — and also accepts a
+unified opts dict as the second argument. Extra positionals raise `TypeError`. Unifying the
+remaining keyword-only spelling is a later versioned wave.
 
-**JS and Python do not share a shape here.** The Python toolset verifier is keyword-based —
-`verify_toolset_attestation(token, registry, entries, intended, now_ms)` — against the JS
-`verifyToolsetAttestation(token, opts)`. That is not a fail-open (Python raises on arity errors),
-but it is a real asymmetry a cross-language caller has to know. Unifying the four shapes across
-both languages is breaking and belongs to the versioned wave, on its own line.
-
-Do not detect the shape with `Function.length`. Parameters with defaults are not counted, so
-`verifyExecutionGrant` (3-ary) and `verifyToolsetAttestation` (2-ary) both report `2`.
+Do not detect the shape with `Function.length`. Parameters with defaults are not counted.
 
 ## CLI reference
 

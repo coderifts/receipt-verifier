@@ -132,10 +132,10 @@ describe('the arity asymmetry is REAL and cannot be introspected', () => {
     // verifyExecutionGrant is 3-ary and verifyToolsetAttestation is 2-ary, and BOTH report 2,
     // because parameters with defaults are not counted. Any dispatch that read .length would be
     // guessing. verify-bundle.js declares `arity` per slot for exactly this reason.
-    assert.equal(verifyExecutionGrant.length, 2, '3-ary, but reports 2');
-    assert.equal(verifyToolsetAttestation.length, 2, '2-ary, and also reports 2');
+    // Wrappers are (token, second, third) so they report 3; 2-ary cores still cannot be
+    // distinguished from each other via Function.length (defaults). Dispatch must not guess.
+    assert.equal(verifyToolsetAttestation.length, 2, '2-ary, reports 2');
     assert.equal(verifyExecutionAttestation.length, 1, '2-ary with a default, reports 1');
-    assert.equal(verifyReceipt.length, 2, '3-ary, reports 2');
   });
 
   it('verify-bundle declares arity for every slot that has a verifier', () => {

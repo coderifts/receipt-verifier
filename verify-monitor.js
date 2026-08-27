@@ -175,6 +175,9 @@ function verifyMonitoringAttestation(token, opts = {}) {
     );
   }
 
+  if (opts && opts.ctx && opts.registry == null && opts.ctx.registry) {
+    opts = { ...opts, registry: opts.ctx.registry };
+  }
   const parsed = parseMonitorToken(token);
   if (!parsed.ok) return fail(parsed.status, parsed.reason, parsed.payload);
   const payload = parsed.payload;

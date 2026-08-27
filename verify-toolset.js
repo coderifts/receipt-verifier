@@ -277,7 +277,9 @@ function verifyToolsetAttestation(token, opts) {
       + 'would silently not run, grading a mismatched declaration TOOLSET_ATTEST_VALID.',
     );
   }
-  const o = opts || {};
+  const o = Object.assign({}, opts || {});
+  if (o.ctx && o.registry == null && o.ctx.registry) o.registry = o.ctx.registry;
+  if (o.ctx && o.entries == null && o.ctx.entries) o.entries = o.ctx.entries;
   const parsed = parseAttestToken(token);
   if (!parsed.ok) return fail(parsed.status, parsed.reason, parsed.payload);
   const payload = parsed.payload;

@@ -286,6 +286,9 @@ def nonce_of(obj):
 
 def verify_execution_attestation(token, opts=None):
     opts = opts or {}
+    if opts.get("ctx") and opts.get("registry") is None and isinstance(opts["ctx"], dict):
+        opts = dict(opts)
+        opts["registry"] = opts["ctx"].get("registry")
     parsed = parse_attest_token(token)
     if not parsed.get("ok"):
         if "payload" in parsed:

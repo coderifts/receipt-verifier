@@ -28,6 +28,7 @@
 
 const crypto = require('node:crypto');
 const fs = require('node:fs');
+const { split3ary } = require('./arity');
 
 const DEFAULT_FETCH_URL = 'https://app.coderifts.com/.well-known/coderifts-keys.json';
 const SIGNING_PREFIX = 'crchain.v1';
@@ -187,7 +188,7 @@ function deriveStatus(payload, entry, opts) {
  * @param {{ publicKey?: import('crypto').KeyObject, keyring?: Map<string,{publicKey:import('crypto').KeyObject}>, expectedKid: (string|null) }} ctx
  * @returns {{ valid: boolean, reason?: string, payload?: object }}
  */
-function verifyReceipt(token, ctx, opts = {}) {
+function verifyReceiptInner(token, ctx, opts = {}) {
   // 1. structure
   if (typeof token !== 'string' || token.length === 0) {
     return { valid: false, status: 'MALFORMED', reason: 'malformed_structure' };
@@ -257,14 +258,14 @@ function verifyReceipt(token, ctx, opts = {}) {
  * Verify a chain of tokens (oldest first): every signature valid AND every non-genesis
  * link's prev == 'sha256:' + sha256hex(previous token string).
  */
-function verifyChain(tokens, ctx, opts = {}) {
+function verifyChainInner(tokens, ctx, opts = {}) {
   const links = [];
   let allValid = true;
   let first = null;
 
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
-    const res = verifyReceipt(token, ctx, opts);
+    const res = verifyReceiptInner(token, ctx, opts);
     const link = { index: i, signature_valid: res.valid };
     if (!res.valid) link.reason = res.reason;
     const prev = res.payload ? res.payload.prev : undefined;
@@ -467,13 +468,23 @@ async function main() {
     const raw = fs.readFileSync(opts.chainFile, 'utf8');
     const tokens = raw.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
     if (tokens.length === 0) return fail('chain file is empty');
-    result = verifyChain(tokens, ctx, verifyOpts);
+    result = verifyChainInner(tokens, ctx, verifyOpts);
   } else {
-    result = verifyReceipt(opts.receipt, ctx, verifyOpts);
+    result = verifyReceiptInner(opts.receipt, ctx, verifyOpts);
   }
 
   process.stdout.write(JSON.stringify(result) + '\n');
   process.exit(result.valid ? 0 : 1);
+}
+
+function verifyReceipt(token, second, third) {
+  const { ctx, opts } = split3ary('verifyReceipt', arguments.length, second, third);
+  return verifyReceiptInner(token, ctx, opts);
+}
+
+function verifyChain(tokens, second, third) {
+  const { ctx, opts } = split3ary('verifyChain', arguments.length, second, third);
+  return verifyChainInner(tokens, ctx, opts);
 }
 
 // Reusable API — require('./verify') imports the pure verify logic WITHOUT running the CLI. The

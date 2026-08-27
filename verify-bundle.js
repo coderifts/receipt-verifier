@@ -47,6 +47,7 @@ const { verifyReceipt } = require('./verify.js');
 const { verifyExecutionGrant, receiptDigest } = require('./verify-grant.js');
 const { verifyExecutionAttestation } = require('./verify-attest.js');
 const { verifyToolsetAttestation } = require('./verify-toolset.js');
+const { split3ary } = require('./arity');
 
 const BUNDLE_VERSION = 'cr.bundle.v1';
 
@@ -75,8 +76,8 @@ const CEILING = 'A complete bundle proves the chain we minted is internally cons
  * rather than a gap in the holder's setup, and the result says which kind of absence it is.
  */
 const SLOTS = Object.freeze([
-  { key: 'receipt', verify: verifyReceipt, arity: 3, executor: false },
-  { key: 'execution_grant', verify: verifyExecutionGrant, arity: 3, executor: false },
+  { key: 'receipt', verify: verifyReceipt, arity: 2, executor: false },
+  { key: 'execution_grant', verify: verifyExecutionGrant, arity: 2, executor: false },
   { key: 'toolset_declaration', verify: verifyToolsetAttestation, arity: 2, executor: false },
   { key: 'commit_attestation', verify: verifyExecutionAttestation, arity: 2, executor: true },
   { key: 'nonce_commitment', verify: null, executor: true },
@@ -121,7 +122,7 @@ function slotResult(key, state, extra = {}) {
  * self-certifying, which is not verification. The caller supplies the material, exactly as every
  * other verifier in this repository requires.
  */
-function verifyBundle(bundle, ctx = {}, opts = {}) {
+function verifyBundleInner(bundle, ctx = {}, opts = {}) {
   const perSlot = (opts && opts.perSlot) || {};
   if (!bundle || typeof bundle !== 'object') {
     return { bundle: BUNDLE.INVALID, reason: 'not_an_object', slots: [], verified_count: 0, ceiling: CEILING };
@@ -193,9 +194,11 @@ function verifyBundle(bundle, ctx = {}, opts = {}) {
       //
       // For a 2-ary verifier ctx and opts are MERGED, opts winning, so material is never dropped
       // for having been placed in the sibling field.
-      r = def.arity === 2
-        ? def.verify(token, { ...(over.ctx || ctx), ...(over.opts || opts) })
-        : def.verify(token, over.ctx || ctx, over.opts || opts);
+      // Unified (token, { ctx, intended }) plus the measured 2-ary merge: per-slot
+      // ctx used to be spread into opts so `intended` living on ctx still cross-checks.
+      const baseCtx = over.ctx || ctx || {};
+      const baseOpts = over.opts || opts || {};
+      r = def.verify(token, { ctx: baseCtx, ...baseCtx, ...baseOpts });
     } catch (err) {
       r = { valid: false, status: 'VERIFIER_THREW', reason: String(err && err.message).slice(0, 120) };
     }
@@ -244,6 +247,11 @@ function verifyBundle(bundle, ctx = {}, opts = {}) {
     linkage,
     ceiling: CEILING,
   });
+}
+
+function verifyBundle(bundle, second, third) {
+  const { ctx, opts } = split3ary('verifyBundle', arguments.length, second, third);
+  return verifyBundleInner(bundle, ctx, opts);
 }
 
 module.exports = {

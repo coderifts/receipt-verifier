@@ -195,7 +195,13 @@ def derive_status(payload, entry, opts):
     return "VERIFIED_CURRENT"
 
 
-def verify_receipt(token, ctx, opts=None):
+def verify_receipt(token, ctx=None, opts=None):
+    from arity import split3
+    c, o = split3("verify_receipt", ctx, opts)
+    return _verify_receipt(token, c, o)
+
+
+def _verify_receipt(token, ctx, opts=None):
     """Return an ordered dict {valid, status, reason?, payload?} matching verify.js key-for-key."""
     opts = opts or {}
     # 1. structure
@@ -253,13 +259,19 @@ def verify_receipt(token, ctx, opts=None):
     return {"valid": valid, "status": status, "payload": payload}
 
 
-def verify_chain(tokens, ctx, opts=None):
+def verify_chain(tokens, ctx=None, opts=None):
+    from arity import split3
+    c, o = split3("verify_chain", ctx, opts)
+    return _verify_chain(tokens, c, o)
+
+
+def _verify_chain(tokens, ctx, opts=None):
     links = []
     all_valid = True
     first = None
 
     for i, token in enumerate(tokens):
-        res = verify_receipt(token, ctx, opts)
+        res = _verify_receipt(token, ctx, opts)
         link = {"index": i, "signature_valid": res["valid"]}
         if not res["valid"] and "reason" in res:
             link["reason"] = res["reason"]
@@ -453,7 +465,7 @@ def main():
             fail("chain file is empty")
         result = verify_chain(tokens, ctx, verify_opts)
     else:
-        result = verify_receipt(opts["receipt"], ctx, verify_opts)
+        result = _verify_receipt(opts["receipt"], ctx, verify_opts)
 
     sys.stdout.write(json.dumps(result, separators=(",", ":")) + "\n")
     sys.exit(0 if result["valid"] else 1)

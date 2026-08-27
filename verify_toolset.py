@@ -310,6 +310,13 @@ def _parse_attest_token(token):
 
 
 def verify_toolset_attestation(token, registry=None, entries=None, intended=None, now_ms=None):
+    if isinstance(registry, dict) and (registry.get("ctx") is not None or registry.get("intended") is not None or registry.get("registry") is not None) and entries is None and intended is None:
+        opts = registry
+        ctx = opts.get("ctx") or {}
+        registry = ctx.get("registry") if ctx.get("registry") is not None else opts.get("registry")
+        entries = ctx.get("entries") if ctx.get("entries") is not None else opts.get("entries")
+        intended = opts.get("intended")
+        now_ms = opts.get("now_ms", now_ms)
     parsed = _parse_attest_token(token)
     if not parsed["ok"]:
         return _fail(parsed["status"], parsed["reason"], parsed.get("payload"))
