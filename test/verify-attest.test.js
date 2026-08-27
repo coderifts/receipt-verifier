@@ -163,15 +163,24 @@ describe('vector provenance is honest (1127c)', () => {
     assert.ok(fs.existsSync(abs), `generated_by names ${gen}, which does not exist in this repo`);
   });
 
-  it('every vector set names a generator that exists here', () => {
-    // The same check across all four sets, so a future vendored file cannot repeat the defect.
-    for (const [file, field] of [
-      ['toolset-vectors.json', 'generated_by'],
-    ]) {
+  it('EVERY vector set names a generator that exists here', () => {
+    // 1132 — every set declares provenance, so a future vendored file cannot repeat the 1127c
+    // defect (a generated_by naming a path that exists only in coderifts-app).
+    //
+    // DISCOVERED, not listed: a hand-maintained list lets the NEXT vector set be added without
+    // provenance and never noticed. Measured 2026-08-27 — monitor-vectors.json was already on
+    // disk while this list still named four.
+    const SETS = fs.readdirSync(__dirname).filter((f) => /^(.*-)?vectors\.json$/.test(f)).sort();
+    assert.ok(SETS.length >= 5,
+      `discovered only ${SETS.length} vector sets (${SETS.join(', ')}) — a shrunken glob would `
+      + 'make this loop iterate zero times and pass without checking anything');
+    for (const file of SETS) {
       const doc = require(`../test/${file}`);
-      if (doc[field] == null) continue;
-      const abs = path.join(__dirname, '..', doc[field]);
-      assert.ok(fs.existsSync(abs), `${file}: ${field} names ${doc[field]}, missing here`);
+      assert.ok(typeof doc.generated_by === 'string' && doc.generated_by.length > 0,
+        `${file} declares no generated_by — a generated file must say what made it`);
+      const abs = path.join(__dirname, '..', doc.generated_by);
+      assert.ok(fs.existsSync(abs),
+        `${file}: generated_by names ${doc.generated_by}, which does not exist in this repo`);
     }
   });
 

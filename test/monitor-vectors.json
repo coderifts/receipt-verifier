@@ -1,0 +1,118 @@
+{
+  "spec": "cr.monitor.attest.v1",
+  "note": "Ephemeral key, regenerated per run. Never a production key.",
+  "generated_by": "test/gen-monitor-vectors.js",
+  "independence": "Independent of coderifts-app by decision (1127c); ids and scenarios are kept aligned by intent, bytes are not, cross-checks compare verdicts. The seven MON-A-* ids match coderifts-app/test/adapter-acceptance/cases.v1.json, which carries them as scenario names with no runner.",
+  "kid": "mon-test-k1",
+  "registry": {
+    "keys": [
+      {
+        "kid": "mon-test-k1",
+        "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAphpVeJsS5HQdCBnjrmNl81Osqp/31Y1yWWzJhk/XayI=\n-----END PUBLIC KEY-----\n",
+        "status": "active"
+      }
+    ]
+  },
+  "retired_registry": {
+    "keys": [
+      {
+        "kid": "mon-test-k0",
+        "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAphpVeJsS5HQdCBnjrmNl81Osqp/31Y1yWWzJhk/XayI=\n-----END PUBLIC KEY-----\n",
+        "status": "retired",
+        "valid_from": "2026-01-01T00:00:00.000Z",
+        "retired_at": "2026-06-01T00:00:00.000Z"
+      }
+    ]
+  },
+  "empty_registry": {
+    "keys": []
+  },
+  "decision_id": "dec-0001",
+  "receipt_digest": "sha256:abababababababababababababababababababababababababababababababab",
+  "vectors": [
+    {
+      "name": "MON-A-VALID",
+      "token": "cr.monitor.attest.v1|mon-test-k1|eyJ2IjoiY3IubW9uaXRvci5hdHRlc3QudjEiLCJraWQiOiJtb24tdGVzdC1rMSIsImRlY2lzaW9uX2lkIjoiZGVjLTAwMDEiLCJyZWNlaXB0X2RpZ2VzdCI6InNoYTI1NjphYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiIiwiZGVsaXZlcnlfc3RhdHVzIjoiZGVsaXZlcmVkX2Fja2VkIiwic2lua19raW5kIjoiaHR0cCIsIm9ic2VydmVkX2F0IjoiMjAyNi0wMy0wMVQwMDowMDowMC4wMDBaIn0|n6HIE4e-uzt1CdPWYeJFccrbeao0nN0QgLLhNSh9qKszzRLQHhkWkeio9llLo-Yy-uuVjF7yZZLcC1dLzXthCw",
+      "keys": "registry",
+      "expected": {
+        "valid": true,
+        "status": "MON_ATTEST_VALID"
+      }
+    },
+    {
+      "name": "MON-A-BAD-SIG",
+      "token": "cr.monitor.attest.v1|mon-test-k1|eyJ2IjoiY3IubW9uaXRvci5hdHRlc3QudjEiLCJraWQiOiJtb24tdGVzdC1rMSIsImRlY2lzaW9uX2lkIjoiZGVjLXRhbXBlcmVkIiwicmVjZWlwdF9kaWdlc3QiOiJzaGEyNTY6YWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYiIsImRlbGl2ZXJ5X3N0YXR1cyI6ImRlbGl2ZXJlZF9hY2tlZCIsInNpbmtfa2luZCI6Imh0dHAiLCJvYnNlcnZlZF9hdCI6IjIwMjYtMDMtMDFUMDA6MDA6MDAuMDAwWiJ9|n6HIE4e-uzt1CdPWYeJFccrbeao0nN0QgLLhNSh9qKszzRLQHhkWkeio9llLo-Yy-uuVjF7yZZLcC1dLzXthCw",
+      "keys": "registry",
+      "expected": {
+        "valid": false,
+        "status": "MON_ATTEST_INVALID_SIGNATURE",
+        "reason": "signature_mismatch"
+      }
+    },
+    {
+      "name": "MON-A-UNKNOWN-KID",
+      "token": "cr.monitor.attest.v1|mon-test-k1|eyJ2IjoiY3IubW9uaXRvci5hdHRlc3QudjEiLCJraWQiOiJtb24tdGVzdC1rMSIsImRlY2lzaW9uX2lkIjoiZGVjLTAwMDEiLCJyZWNlaXB0X2RpZ2VzdCI6InNoYTI1NjphYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiIiwiZGVsaXZlcnlfc3RhdHVzIjoiZGVsaXZlcmVkX2Fja2VkIiwic2lua19raW5kIjoiaHR0cCIsIm9ic2VydmVkX2F0IjoiMjAyNi0wMy0wMVQwMDowMDowMC4wMDBaIn0|n6HIE4e-uzt1CdPWYeJFccrbeao0nN0QgLLhNSh9qKszzRLQHhkWkeio9llLo-Yy-uuVjF7yZZLcC1dLzXthCw",
+      "keys": "empty",
+      "expected": {
+        "valid": false,
+        "status": "MON_ATTEST_UNKNOWN_KEY",
+        "reason": "unknown_kid"
+      }
+    },
+    {
+      "name": "MON-A-RETIRED-KEY-VALID-AT-ISSUE",
+      "token": "cr.monitor.attest.v1|mon-test-k0|eyJ2IjoiY3IubW9uaXRvci5hdHRlc3QudjEiLCJraWQiOiJtb24tdGVzdC1rMCIsImRlY2lzaW9uX2lkIjoiZGVjLTAwMDEiLCJyZWNlaXB0X2RpZ2VzdCI6InNoYTI1NjphYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiIiwiZGVsaXZlcnlfc3RhdHVzIjoiZGVsaXZlcmVkX2Fja2VkIiwic2lua19raW5kIjoiaHR0cCIsIm9ic2VydmVkX2F0IjoiMjAyNi0wMy0wMVQwMDowMDowMC4wMDBaIn0|k1LXu3RpO1r6sQEfZtLMpS48AG5ZQvr7IwnOUD11gfdJMvRPXP8wUfa_tNA6fka61_u5ycG7Mb6dBvHNkMO_DQ",
+      "keys": "retired_registry",
+      "expected": {
+        "valid": true,
+        "status": "MON_ATTEST_RETIRED_KEY_VALID_AT_ISSUE"
+      }
+    },
+    {
+      "name": "MON-A-MALFORMED",
+      "token": "cr.monitor.attest.v1|k|only-three",
+      "keys": "registry",
+      "expected": {
+        "valid": false,
+        "status": "MON_ATTEST_MALFORMED",
+        "reason": "malformed_structure"
+      }
+    },
+    {
+      "name": "MON-A-UNBOUND",
+      "token": "cr.monitor.attest.v1|mon-test-k1|eyJ2IjoiY3IubW9uaXRvci5hdHRlc3QudjEiLCJraWQiOiJtb24tdGVzdC1rMSIsImRlY2lzaW9uX2lkIjoiZGVjLTAwMDEiLCJyZWNlaXB0X2RpZ2VzdCI6InNoYTI1NjphYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiIiwiZGVsaXZlcnlfc3RhdHVzIjoiZGVsaXZlcmVkX2Fja2VkIiwic2lua19raW5kIjoiaHR0cCIsIm9ic2VydmVkX2F0IjoiMjAyNi0wMy0wMVQwMDowMDowMC4wMDBaIn0|n6HIE4e-uzt1CdPWYeJFccrbeao0nN0QgLLhNSh9qKszzRLQHhkWkeio9llLo-Yy-uuVjF7yZZLcC1dLzXthCw",
+      "keys": "registry",
+      "flags": {
+        "decision_id": "dec-somewhere-else"
+      },
+      "expected": {
+        "valid": false,
+        "status": "MON_ATTEST_UNBOUND",
+        "reason": "decision_id_mismatch"
+      }
+    },
+    {
+      "name": "MON-A-NOT-DELIVERED",
+      "token": "cr.monitor.attest.v1|mon-test-k1|eyJ2IjoiY3IubW9uaXRvci5hdHRlc3QudjEiLCJraWQiOiJtb24tdGVzdC1rMSIsImRlY2lzaW9uX2lkIjoiZGVjLTAwMDEiLCJyZWNlaXB0X2RpZ2VzdCI6InNoYTI1NjphYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiIiwiZGVsaXZlcnlfc3RhdHVzIjoibm90X2RlbGl2ZXJlZCIsInNpbmtfa2luZCI6Imh0dHAiLCJvYnNlcnZlZF9hdCI6IjIwMjYtMDMtMDFUMDA6MDA6MDAuMDAwWiJ9|Rayt8a4_Chb6RNlJB_IPrq23vQJ2F469_14OvZ5KcUMG2asrUVqN3Xv00kFhUhKjFltC7BIZ-UuGQtF9FQBSAQ",
+      "keys": "registry",
+      "expected": {
+        "valid": true,
+        "status": "MON_ATTEST_VALID"
+      }
+    },
+    {
+      "name": "MON-A-MISMATCH-RECEIPT",
+      "note": "INTENTIONALLY NON-MATCHING: verified against a different receipt_digest than this attestation binds. It must never be \"fixed\" to match — it exists to prove the attestation->receipt binding is actually checked.",
+      "token": "cr.monitor.attest.v1|mon-test-k1|eyJ2IjoiY3IubW9uaXRvci5hdHRlc3QudjEiLCJraWQiOiJtb24tdGVzdC1rMSIsImRlY2lzaW9uX2lkIjoiZGVjLTAwMDEiLCJyZWNlaXB0X2RpZ2VzdCI6InNoYTI1NjphYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiIiwiZGVsaXZlcnlfc3RhdHVzIjoiZGVsaXZlcmVkX2Fja2VkIiwic2lua19raW5kIjoiaHR0cCIsIm9ic2VydmVkX2F0IjoiMjAyNi0wMy0wMVQwMDowMDowMC4wMDBaIn0|n6HIE4e-uzt1CdPWYeJFccrbeao0nN0QgLLhNSh9qKszzRLQHhkWkeio9llLo-Yy-uuVjF7yZZLcC1dLzXthCw",
+      "keys": "registry",
+      "flags": {
+        "receipt_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "expected": {
+        "valid": false,
+        "status": "MON_ATTEST_UNBOUND",
+        "reason": "receipt_digest_mismatch"
+      }
+    }
+  ]
+}

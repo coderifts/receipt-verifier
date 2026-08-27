@@ -6,7 +6,21 @@
 #
 # No network: every check runs offline with the embedded public key (--key).
 #
-set -u
+# 1134: `pipefail` joins `-u`. `-e` was TRIED AND REVERTED, measured rather than assumed.
+#
+# WHY -e CANNOT GO HERE. This harness deliberately runs commands that are EXPECTED to exit
+# non-zero — every negative vector (tampered_fp, neg-chain, the MALFORMED classes) is a case where
+# verify.js correctly exits 1 — and it captures those codes to compare js against py:
+#     out_js="$(node verify.js "$token" ... )"; code_js=$?
+# There are 14 such capture sites. Under `set -e` the first negative vector aborts the run: the
+# measured result was an exit at `valid_v3_empty_reg`, four checks in, with 61 checks never
+# reaching the comparison. Making -e work would mean appending `|| true` to all 14, which converts
+# an explicit exit-code comparison into a silenced one — the opposite of what this gate is for.
+#
+# `pipefail` is kept: it costs nothing here and closes the pipe-swallowing case if one is ever
+# added. The original concern stands and is NOT closed by this line: a future check written
+# without an explicit `if` would still fail silently. Every check today is if-guarded.
+set -uo pipefail
 cd "$(dirname "$0")/.."
 
 VECTORS="test/vectors.json"
@@ -504,6 +518,80 @@ else
   fails=$((fails + 1))
 fi
 
+
+MON_VECTORS="test/monitor-vectors.json"
+echo
+echo "== cr.monitor.attest.v1 vectors (verify-monitor.js == verify_monitor.py) =="
+if [ ! -f "$MON_VECTORS" ]; then
+  echo "FAIL  $MON_VECTORS missing — run: node test/gen-monitor-vectors.js"
+  fails=$((fails + 1))
+else
+  MON_KEYS="$(mktemp -t rv_mkeys.XXXXXX)"
+  mn="$(node -e "process.stdout.write(String(require('./$MON_VECTORS').vectors.length))")"
+  for i in $(seq 0 $((mn - 1))); do
+    name="$(node -e "process.stdout.write(require('./$MON_VECTORS').vectors[$i].name)")"
+    token="$(node -e "process.stdout.write(require('./$MON_VECTORS').vectors[$i].token)")"
+    ev="$(node -e "process.stdout.write(String(require('./$MON_VECTORS').vectors[$i].expected.valid))")"
+    er="$(node -e "const r=require('./$MON_VECTORS').vectors[$i].expected.reason; process.stdout.write(r||'')")"
+    es="$(node -e "process.stdout.write(require('./$MON_VECTORS').vectors[$i].expected.status||'')")"
+    keys_mode="$(node -e "process.stdout.write(require('./$MON_VECTORS').vectors[$i].keys||'')")"
+    checks=$((checks + 1))
+
+    if [ "$keys_mode" = "retired_registry" ]; then
+      node -e "process.stdout.write(JSON.stringify(require('./$MON_VECTORS').retired_registry))" > "$MON_KEYS"
+    elif [ "$keys_mode" = "empty" ]; then
+      node -e "process.stdout.write(JSON.stringify(require('./$MON_VECTORS').empty_registry))" > "$MON_KEYS"
+    else
+      node -e "process.stdout.write(JSON.stringify(require('./$MON_VECTORS').registry))" > "$MON_KEYS"
+    fi
+    extra=(--keys "$MON_KEYS")
+    did="$(node -e "const f=require('./$MON_VECTORS').vectors[$i].flags||{}; process.stdout.write(f.decision_id||'')")"
+    rdigest="$(node -e "const f=require('./$MON_VECTORS').vectors[$i].flags||{}; process.stdout.write(f.receipt_digest||'')")"
+    [ -n "$did" ] && extra+=(--decision-id "$did")
+    [ -n "$rdigest" ] && extra+=(--receipt-digest "$rdigest")
+
+    out_js="$(node verify-monitor.js "$token" "${extra[@]}" 2>/dev/null)"; code_js=$?
+    out_py="$("$PYTHON" verify_monitor.py "$token" "${extra[@]}" 2>/dev/null)"; code_py=$?
+    mok=1
+    if [ "$out_js" != "$out_py" ]; then
+      echo "FAIL  $name: JS/PY OUTPUT DIFFER"
+      echo "  js: $out_js"
+      echo "  py: $out_py"
+      mok=0
+    fi
+    if [ "$code_js" != "$code_py" ]; then
+      echo "FAIL  $name: exit codes differ (js=$code_js py=$code_py)"
+      mok=0
+    fi
+    got_valid="$(jsonfield "$out_js" valid)"
+    got_reason="$(jsonfield "$out_js" reason)"
+    got_status="$(jsonfield "$out_js" status)"
+    [ "$got_valid" = "$ev" ] || { echo "FAIL  $name: valid expected=$ev got=$got_valid"; mok=0; }
+    [ "$got_status" = "$es" ] || { echo "FAIL  $name: status expected=$es got=$got_status"; mok=0; }
+    if [ -n "$er" ] && [ "$got_reason" != "$er" ]; then
+      echo "FAIL  $name: reason expected=$er got=$got_reason"
+      mok=0
+    fi
+    want_code=1; [ "$ev" = "true" ] && want_code=0
+    if [ "$code_js" != "$want_code" ]; then
+      echo "FAIL  $name: exit code expected=$want_code got=$code_js"
+      mok=0
+    fi
+    if [ "$mok" = "1" ]; then
+      echo "ok    $name  (js==py; status=$got_status)"
+    else
+      fails=$((fails + 1))
+    fi
+  done
+  rm -f "$MON_KEYS"
+fi
+checks=$((checks + 1))
+if node test/cross-check-monitor.js; then
+  echo "ok    cross-check-monitor (js == app kernel on MON-A-*)"
+else
+  echo "FAIL  cross-check-monitor"
+  fails=$((fails + 1))
+fi
 echo
 echo "checks=$checks fails=$fails"
 [ "$fails" = "0" ] && { echo "ALL PASS"; exit 0; } || { echo "FAILURES: $fails"; exit 1; }

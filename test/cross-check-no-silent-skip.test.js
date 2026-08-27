@@ -19,10 +19,37 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const HARNESSES = ['cross-check-grant', 'cross-check-attest', 'cross-check-toolset'];
+// DISCOVERED, not listed. A hand-maintained list is the same defect one level up: the next
+// harness gets added, nobody adds it here, and it is never checked for the silent-skip shape --
+// the guard would still print all-green while covering a subset. MEASURED 2026-08-27: this list
+// said grant/attest/toolset while cross-check-monitor.js existed unguarded.
+// `.test.js` is EXCLUDED deliberately: this file is itself named cross-check-*.js, and without
+// the exclusion the loops below spawn this file, which spawns itself, without limit. Measured the
+// hard way.
+const HARNESSES = fs.readdirSync(__dirname)
+  .filter((f) => /^cross-check-.*\.js$/.test(f) && !/\.test\.js$/.test(f))
+  .map((f) => f.replace(/\.js$/, ''))
+  .sort();
+
+// An empty or shrunken glob would make every `for (const h of HARNESSES)` loop below pass
+// vacuously -- zero iterations, zero assertions, all green. Pin the floor and the membership.
+describe('the guard actually covers every harness', () => {
+  it('discovers at least the four known cross-checks', () => {
+    assert.ok(HARNESSES.length >= 4,
+      `discovered only ${HARNESSES.length} harnesses (${HARNESSES.join(', ')}) -- `
+      + 'a shrunken glob makes every loop in this file iterate zero times and pass vacuously');
+  });
+  it('covers each envelope that has an app kernel', () => {
+    for (const want of ['grant', 'attest', 'toolset', 'monitor']) {
+      assert.ok(HARNESSES.includes(`cross-check-${want}`),
+        `cross-check-${want} is not covered by the silent-skip guard`);
+    }
+  });
+});
 
 const runWith = (harness, appDir) => spawnSync(
   process.execPath,
