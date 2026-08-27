@@ -265,6 +265,25 @@ function nonceOf(obj) {
  * @param {number} [opts.now]
  */
 function verifyExecutionAttestation(token, opts = {}) {
+  // ── 1128: A THIRD ARGUMENT IS A CALLER ERROR, AND IT USED TO BE SILENT ──────────────────────
+  //
+  // This function is 2-ary while verifyReceipt and verifyExecutionGrant are 3-ary
+  // (token, ctx, opts). A caller following their shape puts `intended` in a third argument, it is
+  // dropped, `wantsCross` at the cross-check below stays false, and a MISMATCHED attestation
+  // returns ATTEST_VALID. Measured: the same vector returns ATTEST_UNBOUND/receipt_digest_mismatch
+  // when `intended` is passed correctly, and ATTEST_VALID when passed third — a fail-open at the
+  // caller boundary, which cost one wrong run before it was noticed.
+  //
+  // The arity is NOT changed here: that is breaking and belongs to a versioned wave. What is
+  // closed is the SILENCE. Python needs no equivalent — `verify_execution_attestation(token, opts)`
+  // already raises TypeError on an extra positional, measured 2026-08-27.
+  if (arguments.length > 2) {
+    throw new Error(
+      'verifyExecutionAttestation(token, opts) — pass intended via opts.intended. '
+      + `Received ${arguments.length} arguments; the third would be ignored and the cross-check `
+      + 'would silently not run, grading a mismatched attestation ATTEST_VALID.',
+    );
+  }
   const parsed = parseAttestToken(token);
   if (!parsed.ok) {
     return fail(parsed.status, parsed.reason, parsed.payload);

@@ -75,10 +75,10 @@ const CEILING = 'A complete bundle proves the chain we minted is internally cons
  * rather than a gap in the holder's setup, and the result says which kind of absence it is.
  */
 const SLOTS = Object.freeze([
-  { key: 'receipt', verify: verifyReceipt, executor: false },
-  { key: 'execution_grant', verify: verifyExecutionGrant, executor: false },
-  { key: 'toolset_declaration', verify: verifyToolsetAttestation, executor: false },
-  { key: 'commit_attestation', verify: verifyExecutionAttestation, executor: true },
+  { key: 'receipt', verify: verifyReceipt, arity: 3, executor: false },
+  { key: 'execution_grant', verify: verifyExecutionGrant, arity: 3, executor: false },
+  { key: 'toolset_declaration', verify: verifyToolsetAttestation, arity: 2, executor: false },
+  { key: 'commit_attestation', verify: verifyExecutionAttestation, arity: 2, executor: true },
   { key: 'nonce_commitment', verify: null, executor: true },
   { key: 'merge_evidence', verify: null, executor: true },
   { key: 'deploy_attestation', verify: null, executor: true },
@@ -177,7 +177,25 @@ function verifyBundle(bundle, ctx = {}, opts = {}) {
     let r;
     const over = perSlot[def.key] || {};
     try {
-      r = def.verify(token, over.ctx || ctx, over.opts || opts);
+      // ── 1128: THE VERIFIERS DO NOT SHARE AN ARITY, so the dispatch cannot either ──────────
+      //
+      // verifyReceipt and verifyExecutionGrant are (token, ctx, opts). verifyExecutionAttestation
+      // and verifyToolsetAttestation are (token, opts). This dispatch used to pass three arguments
+      // to all four; the 2-ary pair silently dropped the third, so per-slot material placed in
+      // `opts` never reached them — and for the attestation that means the cross-check does not
+      // run and a MISMATCHED artifact grades valid. verifyExecutionAttestation now throws on a
+      // third argument, which is what surfaced this call site.
+      //
+      // `arity` is DECLARED rather than introspected: Function.length does not count parameters
+      // with defaults, so verifyExecutionAttestation(token, opts = {}) reports 1 and
+      // verifyToolsetAttestation(token, opts) reports 2 — the same shape, two different numbers.
+      // Reading it would have been a guess dressed as a measurement.
+      //
+      // For a 2-ary verifier ctx and opts are MERGED, opts winning, so material is never dropped
+      // for having been placed in the sibling field.
+      r = def.arity === 2
+        ? def.verify(token, { ...(over.ctx || ctx), ...(over.opts || opts) })
+        : def.verify(token, over.ctx || ctx, over.opts || opts);
     } catch (err) {
       r = { valid: false, status: 'VERIFIER_THREW', reason: String(err && err.message).slice(0, 120) };
     }

@@ -262,6 +262,51 @@ JSON on stdout matches across JS and Python.
 Statuses: `ATTEST_VALID`, `ATTEST_INVALID_SIGNATURE`, `ATTEST_UNKNOWN_KEY`,
 `ATTEST_RETIRED_KEY_VALID_AT_ISSUE`, `ATTEST_MALFORMED`, `ATTEST_UNBOUND`.
 
+## Verifier signatures — they are not all the same shape
+
+The four verifiers do **not** share an arity, and the difference is easy to walk into:
+
+```js
+verifyReceipt(token, ctx, opts)               // 3 arguments
+verifyExecutionGrant(token, ctx, opts)        // 3 arguments
+verifyExecutionAttestation(token, opts)       // 2 arguments  <-- different, throws on a 3rd
+verifyToolsetAttestation(token, opts)         // 2 arguments  <-- different, throws on a 3rd
+```
+
+For the two-argument verifiers, everything goes in the **second** argument — the registry and the
+cross-check material together, so `intended` is passed as `opts.intended`:
+
+```js
+verifyExecutionAttestation(token, {
+  registry,
+  intended: { grant },        // NOT a third argument
+});
+```
+
+**Passing a third argument to either two-argument verifier now throws.** It used to be ignored,
+and the consequence was not a missing check but a wrong verdict: with `intended` dropped, the
+cross-check does not run and the artifact grades valid. Measured on both:
+
+| verifier | `intended` in `opts` | `intended` passed third |
+|---|---|---|
+| `verifyExecutionAttestation` | `ATTEST_UNBOUND / receipt_digest_mismatch` | `ATTEST_VALID` |
+| `verifyToolsetAttestation` | `TOOLSET_ATTEST_UNBOUND / declarer_mismatch` | `TOOLSET_ATTEST_VALID` |
+
+The arity itself is unchanged — altering it is breaking and belongs to a versioned release — so
+what is closed is the silence.
+
+Python needs no equivalent guard: `verify_execution_attestation(token, opts)` already raises
+`TypeError` on an extra positional argument.
+
+**JS and Python do not share a shape here.** The Python toolset verifier is keyword-based —
+`verify_toolset_attestation(token, registry, entries, intended, now_ms)` — against the JS
+`verifyToolsetAttestation(token, opts)`. That is not a fail-open (Python raises on arity errors),
+but it is a real asymmetry a cross-language caller has to know. Unifying the four shapes across
+both languages is breaking and belongs to the versioned wave, on its own line.
+
+Do not detect the shape with `Function.length`. Parameters with defaults are not counted, so
+`verifyExecutionGrant` (3-ary) and `verifyToolsetAttestation` (2-ary) both report `2`.
+
 ## CLI reference
 
 ```

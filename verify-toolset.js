@@ -258,6 +258,25 @@ function parseAttestToken(token) {
 }
 
 function verifyToolsetAttestation(token, opts) {
+  // ── 1128: A THIRD ARGUMENT IS A CALLER ERROR, AND IT USED TO BE SILENT ──────────────────────
+  //
+  // This function is 2-ary while verifyReceipt and verifyExecutionGrant are 3-ary
+  // (token, ctx, opts). A caller following their shape puts `intended` in a third argument, it is
+  // dropped, the comparison at the `intended` block below never runs, and a MISMATCHED declaration
+  // returns TOOLSET_ATTEST_VALID. Measured on TS-A-VALID with intended.declarer set to a foreign
+  // value: TOOLSET_ATTEST_UNBOUND/declarer_mismatch when passed correctly, TOOLSET_ATTEST_VALID
+  // when passed third — the same fail-open the attestation verifier had.
+  //
+  // The arity is NOT changed here: that is breaking and belongs to a versioned wave. What is
+  // closed is the SILENCE. Python needs no equivalent — verify_toolset_attestation is
+  // keyword-based and raises on an unexpected positional.
+  if (arguments.length > 2) {
+    throw new Error(
+      'verifyToolsetAttestation(token, opts) — pass intended via opts.intended. '
+      + `Received ${arguments.length} arguments; the third would be ignored and the cross-check `
+      + 'would silently not run, grading a mismatched declaration TOOLSET_ATTEST_VALID.',
+    );
+  }
   const o = opts || {};
   const parsed = parseAttestToken(token);
   if (!parsed.ok) return fail(parsed.status, parsed.reason, parsed.payload);
