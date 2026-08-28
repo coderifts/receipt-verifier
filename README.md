@@ -372,6 +372,21 @@ was signed by an honest holder, it can only invalidate. Entries without either
 field are unchanged (this verifier's reading; the app registry does not mint
 `revoked_at` on key entries yet — follow-up).
 
+## consumeAndCommit contract (EP-2 — not shipped)
+
+`test/consume-and-commit-vectors.json` pins the **contract** a future
+`consumeAndCommit(grant, state_nonce, expected_state, mutation)` service
+must satisfy: `committed` | `refused` | `indeterminate`, with error codes
+`NONCE_EXPIRED`, `NONCE_ALREADY_CONSUMED`, `NONCE_GRANT_BINDING_MISMATCH`,
+`NONCE_WRONG_EXECUTOR`, `TARGET_STATE_CONFLICT`, `PAYLOAD_HASH_MISMATCH`,
+`EXECUTION_INDETERMINATE`, `ATTESTATION_PENDING`.
+
+These are input/expected fixtures, not signed tokens. There is **no**
+`verify-consume.js` / `verify_consume.py`. The public verifier is
+stateless and cannot detect a replayed nonce. The production consumer is
+the stateful data plane (EP-2) and is not this repository. Do not treat
+the presence of the JSON file as a verifier.
+
 ## Tests
 
 ```

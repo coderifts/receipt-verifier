@@ -1,0 +1,204 @@
+{
+  "spec": "cr.nonce.consume-and-commit.v1",
+  "comment": "CONTRACT vectors for a future consumeAndCommit service (EP-2). Not signed tokens. Not a running service. No public verifier ships — these pin the outcomes a production consumer MUST produce. Do not invent a verifier from this file.",
+  "generated_by": "hand-authored (input/expected pairs, not an Ed25519 generator)",
+  "operation": "consumeAndCommit",
+  "signature": "consumeAndCommit(grant, state_nonce, expected_state, mutation) -> committed | refused | indeterminate",
+  "outcomes": ["committed", "refused", "indeterminate"],
+  "error_codes": [
+    "NONCE_EXPIRED",
+    "NONCE_ALREADY_CONSUMED",
+    "NONCE_GRANT_BINDING_MISMATCH",
+    "NONCE_WRONG_EXECUTOR",
+    "TARGET_STATE_CONFLICT",
+    "PAYLOAD_HASH_MISMATCH",
+    "EXECUTION_INDETERMINATE",
+    "ATTESTATION_PENDING"
+  ],
+  "honesty": "A green check of this file's JSON shape does not prove a nonce was consumed. The public receipt-verifier is STATELESS and cannot detect a replayed jti. Production consumeAndCommit is the stateful data plane (EP-2), not shipped.",
+  "happy": {
+    "id": "CAC-COMMITTED",
+    "input": {
+      "grant": {
+        "v": "cr.exec.v2",
+        "grant_id": "g-1",
+        "executor_id": "exec-a",
+        "target_uri": "fs://repo/openapi.yaml",
+        "after_payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nonce_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "state_nonce": "nonce-1",
+      "expected_state": "etag-1",
+      "mutation": { "after_payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+      "store": { "consumed": [], "now": "2026-08-28T12:00:00.000Z", "grant_expires_at": "2099-01-01T00:00:00.000Z", "target_state": "etag-1" }
+    },
+    "expected": { "outcome": "committed" }
+  },
+  "vectors": [
+    {
+      "id": "CAC-REPLAY",
+      "title": "replay of an already-consumed nonce",
+      "input": {
+        "grant": {
+          "v": "cr.exec.v2",
+          "grant_id": "g-1",
+          "executor_id": "exec-a",
+          "target_uri": "fs://repo/openapi.yaml",
+          "after_payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "nonce_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "state_nonce": "nonce-1",
+        "expected_state": "etag-1",
+        "mutation": { "after_payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        "store": { "consumed": ["nonce-1"], "now": "2026-08-28T12:00:00.000Z", "grant_expires_at": "2099-01-01T00:00:00.000Z", "target_state": "etag-1" }
+      },
+      "expected": { "outcome": "refused", "error": "NONCE_ALREADY_CONSUMED" }
+    },
+    {
+      "id": "CAC-EXPIRED",
+      "title": "nonce / grant past expires_at",
+      "input": {
+        "grant": {
+          "v": "cr.exec.v2",
+          "grant_id": "g-1",
+          "executor_id": "exec-a",
+          "target_uri": "fs://repo/openapi.yaml",
+          "after_payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "nonce_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "state_nonce": "nonce-1",
+        "expected_state": "etag-1",
+        "mutation": { "after_payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        "store": { "consumed": [], "now": "2026-08-28T12:00:00.000Z", "grant_expires_at": "2026-08-01T00:00:00.000Z", "target_state": "etag-1" }
+      },
+      "expected": { "outcome": "refused", "error": "NONCE_EXPIRED" }
+    },
+    {
+      "id": "CAC-BINDING-MISMATCH",
+      "title": "grant/nonce binding mismatch (nonce_hash does not cover this nonce)",
+      "input": {
+        "grant": {
+          "v": "cr.exec.v2",
+          "grant_id": "g-1",
+          "executor_id": "exec-a",
+          "target_uri": "fs://repo/openapi.yaml",
+          "after_payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "nonce_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "state_nonce": "nonce-1",
+        "expected_state": "etag-1",
+        "mutation": { "after_payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        "store": { "consumed": [], "now": "2026-08-28T12:00:00.000Z", "grant_expires_at": "2099-01-01T00:00:00.000Z", "target_state": "etag-1" }
+      },
+      "expected": { "outcome": "refused", "error": "NONCE_GRANT_BINDING_MISMATCH" }
+    },
+    {
+      "id": "CAC-WRONG-EXECUTOR",
+      "title": "caller executor_id is not the grant's executor_id",
+      "input": {
+        "grant": {
+          "v": "cr.exec.v2",
+          "grant_id": "g-1",
+          "executor_id": "exec-a",
+          "target_uri": "fs://repo/openapi.yaml",
+          "after_payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "nonce_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "state_nonce": "nonce-1",
+        "expected_state": "etag-1",
+        "mutation": { "after_payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        "caller_executor_id": "exec-other",
+        "store": { "consumed": [], "now": "2026-08-28T12:00:00.000Z", "grant_expires_at": "2099-01-01T00:00:00.000Z", "target_state": "etag-1" }
+      },
+      "expected": { "outcome": "refused", "error": "NONCE_WRONG_EXECUTOR" }
+    },
+    {
+      "id": "CAC-PAYLOAD-SWAP",
+      "title": "mutation after_payload_hash disagrees with the grant binding",
+      "input": {
+        "grant": {
+          "v": "cr.exec.v2",
+          "grant_id": "g-1",
+          "executor_id": "exec-a",
+          "target_uri": "fs://repo/openapi.yaml",
+          "after_payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "nonce_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "state_nonce": "nonce-1",
+        "expected_state": "etag-1",
+        "mutation": { "after_payload_hash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" },
+        "store": { "consumed": [], "now": "2026-08-28T12:00:00.000Z", "grant_expires_at": "2099-01-01T00:00:00.000Z", "target_state": "etag-1" }
+      },
+      "expected": { "outcome": "refused", "error": "PAYLOAD_HASH_MISMATCH" }
+    },
+    {
+      "id": "CAC-LOST-RESPONSE",
+      "title": "lost response / crash between mutate and attest — caller cannot tell committed from not",
+      "input": {
+        "grant": {
+          "v": "cr.exec.v2",
+          "grant_id": "g-1",
+          "executor_id": "exec-a",
+          "target_uri": "fs://repo/openapi.yaml",
+          "after_payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "nonce_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "state_nonce": "nonce-1",
+        "expected_state": "etag-1",
+        "mutation": { "after_payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        "store": {
+          "consumed": [],
+          "now": "2026-08-28T12:00:00.000Z",
+          "grant_expires_at": "2099-01-01T00:00:00.000Z",
+          "target_state": "etag-1",
+          "lost_response": true
+        }
+      },
+      "expected": { "outcome": "indeterminate", "error": "EXECUTION_INDETERMINATE" }
+    },
+    {
+      "id": "CAC-TARGET-STATE-CONFLICT",
+      "title": "CAS expected_state does not match live target state",
+      "input": {
+        "grant": {
+          "v": "cr.exec.v2",
+          "grant_id": "g-1",
+          "executor_id": "exec-a",
+          "target_uri": "fs://repo/openapi.yaml",
+          "after_payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "nonce_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "state_nonce": "nonce-1",
+        "expected_state": "etag-1",
+        "mutation": { "after_payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        "store": { "consumed": [], "now": "2026-08-28T12:00:00.000Z", "grant_expires_at": "2099-01-01T00:00:00.000Z", "target_state": "etag-other" }
+      },
+      "expected": { "outcome": "refused", "error": "TARGET_STATE_CONFLICT" }
+    },
+    {
+      "id": "CAC-ATTESTATION-PENDING",
+      "title": "mutation applied; executor attestation has not arrived",
+      "input": {
+        "grant": {
+          "v": "cr.exec.v2",
+          "grant_id": "g-1",
+          "executor_id": "exec-a",
+          "target_uri": "fs://repo/openapi.yaml",
+          "after_payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "nonce_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "state_nonce": "nonce-1",
+        "expected_state": "etag-1",
+        "mutation": { "after_payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        "store": {
+          "consumed": ["nonce-1"],
+          "now": "2026-08-28T12:00:00.000Z",
+          "grant_expires_at": "2099-01-01T00:00:00.000Z",
+          "target_state": "etag-2",
+          "attestation": null
+        }
+      },
+      "expected": { "outcome": "indeterminate", "error": "ATTESTATION_PENDING" }
+    }
+  ]
+}
