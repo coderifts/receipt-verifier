@@ -33,6 +33,41 @@ class TestGrantConstants(unittest.TestCase):
         self.assertFalse(r["valid"])
         self.assertEqual(r["status"], "MALFORMED")
 
+    def test_grant_swap_each_binding_holds(self):
+        """1109 GRANT-SWAP: A's token + B's intended → GRANT_UNBOUND/target_mismatch."""
+        import json
+        from pathlib import Path
+        from cryptography.hazmat.primitives.serialization import load_pem_public_key
+
+        doc = json.loads(Path(__file__).with_name("grant-vectors.json").read_text())
+        pub = load_pem_public_key(doc["public_key_pem"].encode("utf-8"))
+        ctx = {"public_key": pub, "expected_kid": doc["kid"]}
+        by_name = {v["name"]: v for v in doc["vectors"]}
+        a, b = by_name["EG2-SWAP-A"], by_name["EG2-SWAP-B"]
+
+        def intended(v):
+            f = v.get("flags") or {}
+            return {
+                "operation": f.get("intended-operation"),
+                "target_uri": f.get("intended-target"),
+                "audience": f.get("intended-audience"),
+                "executor_id": f.get("intended-executor"),
+                "adapter_id": f.get("intended-adapter"),
+                "after_payload": f.get("after_payload"),
+                "receipt_token": f.get("receipt"),
+            }
+
+        paired = verify_execution_grant(a["token"], ctx, {"intended": intended(a)})
+        self.assertTrue(paired["valid"])
+        self.assertEqual(paired["status"], "GRANT_CURRENT")
+
+        swapped = verify_execution_grant(a["token"], ctx, {"intended": intended(b)})
+        self.assertFalse(swapped["valid"])
+        self.assertEqual(swapped["status"], "GRANT_UNBOUND")
+        self.assertEqual(swapped["reason"], "target_mismatch")
+        # Bite: pairing correctly here would make the INVALID assertion fail.
+        self.assertNotEqual(paired["status"], "GRANT_UNBOUND")
+
 
 if __name__ == "__main__":
     unittest.main()

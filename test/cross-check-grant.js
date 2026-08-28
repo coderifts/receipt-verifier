@@ -53,6 +53,7 @@ const ctx = { publicKey, expectedKid: vectors.kid };
 const CLASSES = [
   'EG-VALID', 'EG-EXPIRED', 'EG-WRONG-AUDIENCE', 'EG-SCOPE-MISMATCH', 'EG-UNBOUND-DIGEST',
   'EG2-VALID', 'EG2-TRANSFERRED-EXECUTOR', 'EG2-TARGET-MISMATCH', 'EG2-AUDIENCE-MISMATCH',
+  'EG2-SWAP-A', 'EG2-SWAP-B',
 ];
 let fails = 0;
 const rows = [];

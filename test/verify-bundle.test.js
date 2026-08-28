@@ -311,6 +311,80 @@ describe('the format refuses what it cannot fully grade', () => {
   });
 });
 
+describe('1109 GRANT-SWAP: each grant is handled BY ITS BINDING', () => {
+  const swapA = grantVectors.vectors.find((v) => v.name === 'EG2-SWAP-A');
+  const swapB = grantVectors.vectors.find((v) => v.name === 'EG2-SWAP-B');
+
+  function intendedV2(name) {
+    const f = grantVectors.vectors.find((v) => v.name === name).flags || {};
+    return {
+      operation: f['intended-operation'],
+      target_uri: f['intended-target'],
+      audience: f['intended-audience'],
+      executor_id: f['intended-executor'],
+      adapter_id: f['intended-adapter'],
+      after_payload: f.after_payload,
+      receipt_token: f.receipt,
+    };
+  }
+
+  const swapReg = (grantName) => ({
+    perSlot: {
+      receipt: {
+        ctx: { publicKey: receiptVectors.public_key_pem, expectedKid: receiptVectors.kid },
+        opts: {},
+      },
+      execution_grant: {
+        ctx: { publicKey: grantVectors.public_key_pem, expectedKid: grantVectors.kid },
+        opts: { intended: intendedV2(grantName) },
+      },
+    },
+  });
+
+  it('the correctly-paired cases are VERIFIED (A with A, B with B)', () => {
+    for (const name of ['EG2-SWAP-A', 'EG2-SWAP-B']) {
+      const tok = grantVectors.vectors.find((v) => v.name === name).token;
+      const r = verifyBundle(bundleOf({ receipt: RECEIPT, execution_grant: tok }), ctx, swapReg(name));
+      assert.equal(r.bundle, BUNDLE.VERIFIED, `${name} correctly paired: ${JSON.stringify(r.slots)}`);
+      assert.equal(r.slots.find((s) => s.slot === 'execution_grant').status, 'GRANT_CURRENT');
+    }
+  });
+
+  it("A's grant presented with B's after_payload/target is INVALID (target_mismatch)", () => {
+    // Measured (verify-grant.js:197-214): target_uri is checked before after_payload_hash,
+    // so a full swap fails as GRANT_UNBOUND / target_mismatch, never GRANT_CURRENT.
+    const r = verifyBundle(
+      bundleOf({ receipt: RECEIPT, execution_grant: swapA.token }),
+      ctx,
+      swapReg('EG2-SWAP-B'),
+    );
+    assert.equal(r.bundle, BUNDLE.INVALID, 'a swapped pair must never grade VERIFIED');
+    const g = r.slots.find((s) => s.slot === 'execution_grant');
+    assert.equal(g.state, SLOT.INVALID);
+    assert.equal(g.status, 'GRANT_UNBOUND');
+    assert.equal(g.reason, 'target_mismatch');
+  });
+
+  it('THE SWAP BITES: pairing them correctly by mistake fails the INVALID assertion', () => {
+    const swapped = verifyBundle(
+      bundleOf({ receipt: RECEIPT, execution_grant: swapA.token }),
+      ctx,
+      swapReg('EG2-SWAP-B'),
+    );
+    const correct = verifyBundle(
+      bundleOf({ receipt: RECEIPT, execution_grant: swapA.token }),
+      ctx,
+      swapReg('EG2-SWAP-A'),
+    );
+    assert.equal(swapped.bundle, BUNDLE.INVALID);
+    assert.equal(correct.bundle, BUNDLE.VERIFIED);
+    // If the test above had used swapReg('EG2-SWAP-A') — pairing correctly by mistake —
+    // `assert.equal(r.bundle, BUNDLE.INVALID)` would fail: VERIFIED !== INVALID.
+    assert.notEqual(correct.bundle, BUNDLE.INVALID);
+    assert.notEqual(swapA.token, swapB.token, 'two concurrent operations mint two different grants');
+  });
+});
+
 describe('the honest line travels with every result', () => {
   it('the ceiling is on the result, not only in the docs', () => {
     for (const b of [bundleOf({}), bundleOf({ receipt: RECEIPT, execution_grant: GRANT_OK })]) {

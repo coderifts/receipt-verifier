@@ -25,6 +25,32 @@ class TestAttestConstants(unittest.TestCase):
         self.assertFalse(r["valid"])
         self.assertEqual(r["status"], "ATTEST_MALFORMED")
 
+    def test_host_claimed_commit_label(self):
+        """1109 HOST-CLAIMED-COMMIT: class=host_claimed → weaker label, never authorized_and_committed."""
+        import json
+        from pathlib import Path
+
+        doc = json.loads(Path(__file__).with_name("attest-vectors.json").read_text())
+        by_name = {v["name"]: v for v in doc["vectors"]}
+        host = by_name["EG-A-HOST-CLAIMED"]
+        execv = by_name["EG-A-EXECUTOR-ATTESTED"]
+
+        def run(v):
+            return verify_execution_attestation(
+                v["token"],
+                {"registry": doc["registry"], "intended": {"grant": (v.get("flags") or {}).get("grant")}},
+            )
+
+        h = run(host)
+        e = run(execv)
+        self.assertTrue(h["valid"])
+        self.assertEqual(h["status"], "ATTEST_VALID")
+        self.assertEqual(h["commit_label"], "authorized_and_host_reported_committed")
+        self.assertNotEqual(h["commit_label"], "authorized_and_committed")
+        self.assertEqual(e["commit_label"], "authorized_and_committed")
+        # Bite: flipping class on HOST would fail the weaker-label assertion.
+        self.assertNotEqual(h["commit_label"], e["commit_label"])
+
 
 if __name__ == "__main__":
     unittest.main()

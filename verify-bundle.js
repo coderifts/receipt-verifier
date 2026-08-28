@@ -220,7 +220,9 @@ function verifyBundleInner(bundle, ctx = {}, opts = {}) {
     let bound = false;
     try {
       const payload = JSON.parse(Buffer.from(String(grant).split('.')[0], 'base64url').toString('utf8'));
-      bound = payload.receipt_digest === receiptDigest(rec);
+      const digest = receiptDigest(rec);
+      // v1 binds receipt_digest; v2 binds receipt_hash (same sha256 of the token).
+      bound = payload.receipt_digest === digest || payload.receipt_hash === digest;
     } catch { bound = false; }
     linkage.push({
       link: 'grant_binds_receipt',

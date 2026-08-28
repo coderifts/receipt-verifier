@@ -142,8 +142,24 @@ def fail(status, reason, payload=_MISSING):
     return out
 
 
+def commit_label_from_payload(payload):
+    # 1109 / 1085. Measured: cas_evidence.class is host_claimed | executor_attested;
+    # labels authorized_and_committed vs authorized_and_host_reported_committed.
+    meta = payload.get("meta") if isinstance(payload, dict) else None
+    cls = meta.get("class") if isinstance(meta, dict) else None
+    if cls == "executor_attested":
+        return "authorized_and_committed"
+    if cls == "host_claimed":
+        return "authorized_and_host_reported_committed"
+    return None
+
+
 def ok_status(status, payload):
-    return {"valid": True, "status": status, "reason": None, "payload": payload}
+    out = {"valid": True, "status": status, "reason": None, "payload": payload}
+    label = commit_label_from_payload(payload)
+    if label:
+        out["commit_label"] = label
+    return out
 
 
 def _parse_iso_ms(ts):

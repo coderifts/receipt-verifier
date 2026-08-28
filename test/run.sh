@@ -345,6 +345,59 @@ else
       fails=$((fails + 1))
     fi
   done
+
+  echo
+  echo "== 1109 GRANT-SWAP (EG2-SWAP-A token + EG2-SWAP-B intended) =="
+  checks=$((checks + 1))
+  swap_tok="$(node -e "process.stdout.write(require('./$GRANT_VECTORS').vectors.find(v=>v.name==='EG2-SWAP-A').token)")"
+  node -e "process.stdout.write(JSON.stringify(require('./$GRANT_VECTORS').registry))" > "$GRANT_KEYS"
+  extra=(--key "$GRANT_PEM" --kid "$GRANT_KID")
+  op="$(node -e "const v=require('./$GRANT_VECTORS').vectors.find(x=>x.name==='EG2-SWAP-B'); process.stdout.write((v.flags||{})['intended-operation']||'')")"
+  tgt="$(node -e "const v=require('./$GRANT_VECTORS').vectors.find(x=>x.name==='EG2-SWAP-B'); process.stdout.write((v.flags||{})['intended-target']||'')")"
+  aud="$(node -e "const v=require('./$GRANT_VECTORS').vectors.find(x=>x.name==='EG2-SWAP-B'); process.stdout.write((v.flags||{})['intended-audience']||'')")"
+  rec="$(node -e "const v=require('./$GRANT_VECTORS').vectors.find(x=>x.name==='EG2-SWAP-B'); process.stdout.write((v.flags||{}).receipt||'')")"
+  after="$(node -e "const v=require('./$GRANT_VECTORS').vectors.find(x=>x.name==='EG2-SWAP-B'); process.stdout.write((v.flags||{}).after_payload==null?'':String(v.flags.after_payload))")"
+  execid="$(node -e "const v=require('./$GRANT_VECTORS').vectors.find(x=>x.name==='EG2-SWAP-B'); process.stdout.write((v.flags||{})['intended-executor']||'')")"
+  adp="$(node -e "const v=require('./$GRANT_VECTORS').vectors.find(x=>x.name==='EG2-SWAP-B'); process.stdout.write((v.flags||{})['intended-adapter']||'')")"
+  [ -n "$op" ] && extra+=(--intended-operation "$op")
+  [ -n "$tgt" ] && extra+=(--intended-target "$tgt")
+  [ -n "$aud" ] && extra+=(--intended-audience "$aud")
+  [ -n "$execid" ] && extra+=(--intended-executor "$execid")
+  [ -n "$adp" ] && extra+=(--intended-adapter "$adp")
+  [ -n "$rec" ] && extra+=(--receipt "$rec")
+  if [ -n "$after" ]; then
+    printf '%s' "$after" > "$GRANT_AFTER"
+    extra+=(--intended-after-file "$GRANT_AFTER")
+  fi
+  out_js="$(node verify-grant.js "$swap_tok" "${extra[@]}" 2>/dev/null)"; code_js=$?
+  out_py="$("$PYTHON" verify_grant.py "$swap_tok" "${extra[@]}" 2>/dev/null)"; code_py=$?
+  sok=1
+  if [ "$out_js" != "$out_py" ]; then
+    echo "FAIL  EG2-SWAP-A-as-B: JS/PY OUTPUT DIFFER"
+    echo "  js: $out_js"
+    echo "  py: $out_py"
+    sok=0
+  fi
+  [ "$code_js" = "$code_py" ] || { echo "FAIL  EG2-SWAP-A-as-B: exit codes differ (js=$code_js py=$code_py)"; sok=0; }
+  [ "$(jsonfield "$out_js" valid)" = "false" ] || { echo "FAIL  EG2-SWAP-A-as-B: valid expected=false got=$(jsonfield "$out_js" valid)"; sok=0; }
+  [ "$(jsonfield "$out_js" status)" = "GRANT_UNBOUND" ] || { echo "FAIL  EG2-SWAP-A-as-B: status=$(jsonfield "$out_js" status)"; sok=0; }
+  [ "$(jsonfield "$out_js" reason)" = "target_mismatch" ] || { echo "FAIL  EG2-SWAP-A-as-B: reason=$(jsonfield "$out_js" reason)"; sok=0; }
+  [ "$code_js" = "1" ] || { echo "FAIL  EG2-SWAP-A-as-B: exit expected=1 got=$code_js"; sok=0; }
+  if [ "$sok" = "1" ]; then
+    echo "ok    EG2-SWAP-A-as-B  (js==py; GRANT_UNBOUND/target_mismatch)"
+  else
+    fails=$((fails + 1))
+  fi
+fi
+
+echo
+echo "== verify-bundle.test.js (GRANT-SWAP composition) =="
+checks=$((checks + 1))
+if node --test test/verify-bundle.test.js; then
+  echo "ok    verify-bundle.test.js"
+else
+  echo "FAIL  verify-bundle.test.js"
+  fails=$((fails + 1))
 fi
 
 echo
@@ -426,6 +479,18 @@ else
       echo "FAIL  $name: reason expected=$er got=$got_reason"
       aok=0
     fi
+    el="$(node -e "process.stdout.write(require('./$ATTEST_VECTORS').vectors[$i].expected.commit_label||'')")"
+    if [ -n "$el" ]; then
+      got_label="$(jsonfield "$out_js" commit_label)"
+      if [ "$got_label" != "$el" ]; then
+        echo "FAIL  $name: commit_label expected=$el got=$got_label"
+        aok=0
+      fi
+      if [ "$el" = "authorized_and_host_reported_committed" ] && [ "$got_label" = "authorized_and_committed" ]; then
+        echo "FAIL  $name: host-claimed path must not carry authorized_and_committed"
+        aok=0
+      fi
+    fi
     want_code=1; [ "$ev" = "true" ] && want_code=0
     if [ "$code_js" != "$want_code" ]; then
       echo "FAIL  $name: exit code expected=$want_code got=$code_js"
@@ -441,6 +506,13 @@ fi
 
 echo
 echo "== require-attest-smoke + test_attest.py + app-kernel cross-check =="
+checks=$((checks + 1))
+if node --test test/verify-attest.test.js; then
+  echo "ok    verify-attest.test.js"
+else
+  echo "FAIL  verify-attest.test.js"
+  fails=$((fails + 1))
+fi
 checks=$((checks + 1))
 if node test/require-attest-smoke.js; then
   echo "ok    require-attest-smoke"

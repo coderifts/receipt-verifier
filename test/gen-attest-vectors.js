@@ -78,6 +78,7 @@ function issue(over = {}) {
     committed_at: over.committed_at || COMMITTED,
   };
   if (over.state_nonce) body.state_nonce = over.state_nonce;
+  if (over.meta && typeof over.meta === 'object') body.meta = over.meta;
   const sig = crypto.sign(null, Buffer.from(signingInput(body), 'utf8'), privateKey);
   return [ENVELOPE_TAG, body.executor_kid, b64url(Buffer.from(JSON.stringify(body), 'utf8')), b64url(sig)].join('|');
 }
@@ -200,6 +201,32 @@ const vectors = [
     expected: { valid: false, status: 'ATTEST_UNBOUND', reason: 'scope_hash_mismatch' },
     keys: 'registry',
     flags: { grant: fakeGrant(JTI, { scope_hash: `sha256:${'22'.repeat(32)}` }) },
+  },
+  {
+    // 1109 HOST-CLAIMED-COMMIT. Measured class lives on cas-attestation.v1
+    // `cas_evidence.class` = `host_claimed` | `executor_attested` (guard cas-attestation.ts:134).
+    // cr.exec.attest.v1 has no top-level class (unknown_field); meta is already in the signed
+    // preimage, so the class is bound here. Verifier surfaces commit_label from meta.class.
+    name: 'EG-A-HOST-CLAIMED',
+    token: issue({ meta: { class: 'host_claimed' } }),
+    expected: {
+      valid: true,
+      status: 'ATTEST_VALID',
+      commit_label: 'authorized_and_host_reported_committed',
+    },
+    keys: 'registry',
+    flags: { grant: REAL_GRANT_TOKEN },
+  },
+  {
+    name: 'EG-A-EXECUTOR-ATTESTED',
+    token: issue({ meta: { class: 'executor_attested' } }),
+    expected: {
+      valid: true,
+      status: 'ATTEST_VALID',
+      commit_label: 'authorized_and_committed',
+    },
+    keys: 'registry',
+    flags: { grant: REAL_GRANT_TOKEN },
   },
 ];
 

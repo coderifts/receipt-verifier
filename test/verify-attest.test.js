@@ -83,6 +83,46 @@ describe('the two-argument shape still cross-checks — the guard closed nothing
   });
 });
 
+describe('1109 HOST-CLAIMED-COMMIT: class controls the surfaced label', () => {
+  const HOST = attestVectors.vectors.find((v) => v.name === 'EG-A-HOST-CLAIMED');
+  const EXEC = attestVectors.vectors.find((v) => v.name === 'EG-A-EXECUTOR-ATTESTED');
+
+  function verifyNamed(v) {
+    return verifyExecutionAttestation(v.token, {
+      registry: attestVectors.registry,
+      intended: { grant: (v.flags || {}).grant },
+    });
+  }
+
+  it('class=host_claimed surfaces authorized_and_host_reported_committed, never authorized_and_committed', () => {
+    const r = verifyNamed(HOST);
+    assert.equal(r.valid, true);
+    assert.equal(r.status, 'ATTEST_VALID');
+    assert.equal(r.commit_label, 'authorized_and_host_reported_committed');
+    assert.notEqual(r.commit_label, 'authorized_and_committed');
+    assert.equal(HOST.token.includes('authorized_and_committed'), false);
+  });
+
+  it('class=executor_attested surfaces authorized_and_committed', () => {
+    const r = verifyNamed(EXEC);
+    assert.equal(r.valid, true);
+    assert.equal(r.status, 'ATTEST_VALID');
+    assert.equal(r.commit_label, 'authorized_and_committed');
+  });
+
+  it('THE LABEL BITES: flipping the class fails the label assertion', () => {
+    const host = verifyNamed(HOST);
+    const exec = verifyNamed(EXEC);
+    assert.notEqual(host.commit_label, exec.commit_label);
+    // If HOST had class=executor_attested, `assert.equal(r.commit_label,
+    // 'authorized_and_host_reported_committed')` would fail.
+    assert.equal(host.payload.meta.class, 'host_claimed');
+    assert.equal(exec.payload.meta.class, 'executor_attested');
+    const flippedHost = verifyNamed({ ...HOST, token: EXEC.token, flags: EXEC.flags });
+    assert.notEqual(flippedHost.commit_label, 'authorized_and_host_reported_committed');
+  });
+});
+
 describe('verifyToolsetAttestation carries the SAME guard (1128 completion)', () => {
   const TS_VALID = toolsetVectors.vectors.find((v) => v.id === 'TS-A-VALID');
   const base = { registry: toolsetVectors.registry, entries: toolsetVectors.entries };

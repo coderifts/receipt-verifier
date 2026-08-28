@@ -118,8 +118,22 @@ function fail(status, reason, payload) {
   return { valid: false, status, reason, payload };
 }
 
+function commitLabelFromPayload(payload) {
+  // 1109 / 1085. Measured names: cas_evidence.class is host_claimed | executor_attested
+  // (not "host_reported"); labels authorized_and_committed vs
+  // authorized_and_host_reported_committed. meta is the signed slot that can carry class
+  // without breaking the cr.exec.attest.v1 allowlist.
+  const cls = payload && payload.meta && payload.meta.class;
+  if (cls === 'executor_attested') return 'authorized_and_committed';
+  if (cls === 'host_claimed') return 'authorized_and_host_reported_committed';
+  return undefined;
+}
+
 function okStatus(status, payload) {
-  return { valid: true, status, reason: null, payload };
+  const out = { valid: true, status, reason: null, payload };
+  const label = commitLabelFromPayload(payload);
+  if (label) out.commit_label = label;
+  return out;
 }
 
 function isIssueTimeWithinKeyWindow(ts, keyMeta) {
