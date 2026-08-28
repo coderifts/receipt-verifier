@@ -137,7 +137,7 @@ def resolve_entry(ctx, payload):
         return entry
     if ctx.get("expected_kid") is not None and kid != ctx["expected_kid"]:
         return None
-    return {"public_key": ctx["public_key"], "status": None, "retired_at": None, "compromised_at": None}
+    return {"public_key": ctx["public_key"], "status": None, "retired_at": None, "revoked_at": None, "compromised_at": None}
 
 
 def _parse_iso(ts):
@@ -163,6 +163,18 @@ def derive_status(payload, entry, opts):
     # REVOKED_KEY / REVOKED_KEY_UNDECIDABLE) is a separate change across eight verifiers.
     if entry.get("status") not in ("active", "retired", "revoked", None):
         return "UNKNOWN_KEY_STATUS"
+    # 1079 B — OPTIONAL timestamps, additive. Absent both fields → continue as before.
+    # Signing time is payload.ts (receipts have no iat). revoked_at kills history;
+    # retired_at only rejects ts >= retired_at.
+    revoked_at = entry.get("revoked_at")
+    if isinstance(revoked_at, str) and revoked_at:
+        return "KEY_REVOKED"
+    retired_at = entry.get("retired_at")
+    if isinstance(retired_at, str) and retired_at and payload.get("ts"):
+        issued = _parse_iso(payload.get("ts"))
+        retired = _parse_iso(retired_at)
+        if issued is not None and retired is not None and issued >= retired:
+            return "KEY_RETIRED_AFTER_SIGNING"
     # REVOKED — RECEIPT_FORMAT.md 7.1 (normative); mirrors verify.js deriveStatus exactly.
     # Both outcomes are valid:false. UNDECIDABLE is not a softer valid.
     if entry.get("status") == "revoked":
@@ -253,6 +265,10 @@ def _verify_receipt(token, ctx, opts=None):
 
     # 7. taxonomy status
     status = derive_status(payload, entry, opts)
+    if status == "KEY_REVOKED":
+        return {"valid": False, "status": status, "reason": "KEY_REVOKED", "payload": payload}
+    if status == "KEY_RETIRED_AFTER_SIGNING":
+        return {"valid": False, "status": status, "reason": "KEY_RETIRED_AFTER_SIGNING", "payload": payload}
     if status == "INVALID_SIGNATURE":
         return {"valid": False, "status": status, "reason": "retired_key_after_issue", "payload": payload}
     valid = status in ("VERIFIED_CURRENT", "RETIRED_KEY_VALID_AT_ISSUE")
@@ -318,6 +334,7 @@ def keyring_from_document(doc, source):
             "public_key": key_from_pem(k["public_key_pem"]),
             "status": k.get("status"),
             "retired_at": k.get("retired_at"),
+            "revoked_at": k.get("revoked_at"),
             # Carried through for the revoked rule (RECEIPT_FORMAT 7.1). Dropping it makes the
             # rule inert: every revoked key would return UNDECIDABLE regardless of ts.
             "compromised_at": k.get("compromised_at"),

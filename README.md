@@ -341,7 +341,7 @@ python3 verify.py "$RECEIPT" --envelope decision.json
 Error reasons (signature/structure failures; see RECEIPT_FORMAT.md section 6):
 `malformed_structure`, `bad_json`, `unknown_kid`, `signature_error`,
 `signature_mismatch`, `delimiter_in_field`, `body_hash_mismatch`,
-`retired_key_after_issue`.
+`retired_key_after_issue`, `KEY_REVOKED`, `KEY_RETIRED_AFTER_SIGNING`.
 
 Live `status` values include `VERIFIED_CURRENT` and, for v4 when
 `expires_at + 30s` is in the past, `VERIFIED_EXPIRED` (signature authentic but
@@ -361,6 +361,16 @@ A single pinned `--key`, or `--fetch` of the legacy
 `/api/v1/attestation/public-key` body, still sees only the active kid —
 receipts signed under a previous kid then fail as `unknown_kid`. `--keys`
 remains the explicit registry pin (URL or file).
+
+## Key lifecycle
+
+`retired_at` is planned rotation: a receipt whose `ts` predates it still
+verifies; `ts >= retired_at` is `KEY_RETIRED_AFTER_SIGNING`. `revoked_at` is
+compromise: every receipt under that key is `KEY_REVOKED`, including those
+signed before the timestamp — revocation cannot retroactively prove a receipt
+was signed by an honest holder, it can only invalidate. Entries without either
+field are unchanged (this verifier's reading; the app registry does not mint
+`revoked_at` on key entries yet — follow-up).
 
 ## Tests
 

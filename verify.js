@@ -113,7 +113,7 @@ function resolveEntry(ctx, payload) {
     return entry; // { publicKey, status, retired_at }
   }
   if (ctx.expectedKid !== null && payload.kid !== ctx.expectedKid) return null;
-  return { publicKey: ctx.publicKey, status: null, retired_at: null, compromised_at: null };
+  return { publicKey: ctx.publicKey, status: null, retired_at: null, revoked_at: null, compromised_at: null };
 }
 
 /**
@@ -144,6 +144,22 @@ function deriveStatus(payload, entry, opts) {
   const KNOWN_STATUSES = new Set(['active', 'retired', 'revoked', null, undefined]);
   if (!KNOWN_STATUSES.has(entry.status)) {
     return 'UNKNOWN_KEY_STATUS';
+  }
+  // 1079 B — OPTIONAL timestamps, additive. Absent both fields → this function continues
+  // exactly as before. Signing time is payload.ts (receipts have no iat).
+  // revoked_at = compromise: EVERY receipt under the key is invalid, including those
+  // whose ts predates revoked_at (the attacker chooses ts).
+  // retired_at = planned rotation: ts < retired_at stays on the existing path;
+  // ts >= retired_at is KEY_RETIRED_AFTER_SIGNING.
+  if (typeof entry.revoked_at === 'string' && entry.revoked_at.length > 0) {
+    return 'KEY_REVOKED';
+  }
+  if (typeof entry.retired_at === 'string' && entry.retired_at.length > 0 && payload.ts) {
+    const issued = Date.parse(payload.ts);
+    const retired = Date.parse(entry.retired_at);
+    if (Number.isFinite(issued) && Number.isFinite(retired) && issued >= retired) {
+      return 'KEY_RETIRED_AFTER_SIGNING';
+    }
   }
   // REVOKED — RECEIPT_FORMAT.md §7.1 (normative). The attacker chooses ts, so no timestamp may
   // rehabilitate a revoked key's signature: BOTH outcomes are valid:false. UNDECIDABLE is not a
@@ -246,6 +262,12 @@ function verifyReceiptInner(token, ctx, opts = {}) {
 
   // 7. taxonomy status (freshness / retirement / dormant field checks).
   const status = deriveStatus(payload, entry, opts);
+  if (status === 'KEY_REVOKED') {
+    return { valid: false, status, reason: 'KEY_REVOKED', payload };
+  }
+  if (status === 'KEY_RETIRED_AFTER_SIGNING') {
+    return { valid: false, status, reason: 'KEY_RETIRED_AFTER_SIGNING', payload };
+  }
   if (status === 'INVALID_SIGNATURE') {
     return { valid: false, status, reason: 'retired_key_after_issue', payload };
   }
@@ -317,6 +339,7 @@ function keyringFromDocument(doc, source) {
       publicKey: keyFromPem(k.public_key_pem),
       status: k.status || null,
       retired_at: k.retired_at || null,
+      revoked_at: k.revoked_at || null,
       compromised_at: k.compromised_at || null,
     });
   }

@@ -62,7 +62,7 @@ describe('an unrecognised key status fails closed (both languages)', () => {
       // never valid, whatever the timestamp says.
       const out = run(bin, [script, RECEIPT, '--keys', registryWith('revoked', { revoked_at: '2026-08-26T00:00:00Z' })]);
       assert.equal(out.valid, false, 'a revoked key must never be valid');
-      assert.ok(['REVOKED_KEY', 'REVOKED_KEY_UNDECIDABLE'].includes(out.status), out.status);
+      assert.ok(['KEY_REVOKED', 'REVOKED_KEY', 'REVOKED_KEY_UNDECIDABLE'].includes(out.status), out.status);
     });
 
     it(`${label}: any future status is rejected too, not just "revoked"`, () => {

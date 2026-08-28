@@ -246,6 +246,55 @@ const vectors = {
     expected_ok: { valid: true, status: 'VERIFIED_CURRENT' },
     expected_tampered: { valid: false, status: 'INVALID_SIGNATURE', reason: 'body_hash_mismatch' },
   },
+  // 1079 B — timestamp lifecycle, ADDITIVE. status stays 'active' so these isolate the new
+  // fields from the existing status:'retired' / compromised_at rules. Signing time is payload.ts
+  // (receipts have no iat — verify.js:161).
+  lifecycle: {
+    note: 'OPTIONAL retired_at / revoked_at on an otherwise old-shape active entry. '
+      + 'Absent both fields → verdict identical to today. revoked_at invalidates ALL ts. '
+      + 'retired_at invalidates only ts >= retired_at.',
+    vectors: [
+      {
+        name: 'EG-NO-LIFECYCLE',
+        token: validV4,
+        registry: { keys: [{ kid: KID, public_key_pem: publicPem, status: 'active' }] },
+        expected: { valid: true, status: 'VERIFIED_CURRENT' },
+      },
+      {
+        name: 'EG-SIGNED-BEFORE-RETIREMENT',
+        token: validV4,
+        registry: {
+          keys: [{
+            kid: KID, public_key_pem: publicPem, status: 'active',
+            retired_at: '2026-08-01T00:00:00.000Z',
+          }],
+        },
+        expected: { valid: true, status: 'VERIFIED_CURRENT' },
+      },
+      {
+        name: 'EG-RETIRED-BEFORE-SIGNING',
+        token: validV4,
+        registry: {
+          keys: [{
+            kid: KID, public_key_pem: publicPem, status: 'active',
+            retired_at: '2026-07-01T00:00:00.000Z',
+          }],
+        },
+        expected: { valid: false, status: 'KEY_RETIRED_AFTER_SIGNING', reason: 'KEY_RETIRED_AFTER_SIGNING' },
+      },
+      {
+        name: 'EG-REVOKED-ANY',
+        token: validV4,
+        registry: {
+          keys: [{
+            kid: KID, public_key_pem: publicPem, status: 'active',
+            revoked_at: '2026-08-01T00:00:00.000Z',
+          }],
+        },
+        expected: { valid: false, status: 'KEY_REVOKED', reason: 'KEY_REVOKED' },
+      },
+    ],
+  },
   // retired-key rule: signed by a retired key. ts before retired_at -> RETIRED_KEY_VALID_AT_ISSUE;
   // ts at/after -> INVALID_SIGNATURE. run.sh builds a registry with active + retired entries.
   retired: {
@@ -258,7 +307,7 @@ const vectors = {
     token_valid_at_issue: retiredValidAtIssue,
     token_after_retire: retiredAfterRetire,
     expected_valid_at_issue: { valid: true, status: 'RETIRED_KEY_VALID_AT_ISSUE' },
-    expected_after_retire: { valid: false, status: 'INVALID_SIGNATURE' },
+    expected_after_retire: { valid: false, status: 'KEY_RETIRED_AFTER_SIGNING', reason: 'KEY_RETIRED_AFTER_SIGNING' },
   },
   live: LIVE,
 };

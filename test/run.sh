@@ -217,9 +217,63 @@ checks=$((checks + 1))
 oj="$(node verify.js "$tok_after" --keys "$RETIRED_KEYS" 2>/dev/null)"; cj=$?
 op="$("$PYTHON" verify.py "$tok_after" --keys "$RETIRED_KEYS" 2>/dev/null)"; cp=$?
 [ "$oj" = "$op" ] || { echo "FAIL  retired-after: JS/PY DIFFER"; echo " js:$oj"; echo " py:$op"; retired_ok=0; }
-[ "$(jsonfield "$oj" status)" = "INVALID_SIGNATURE" ] || { echo "FAIL  retired-after: status=$(jsonfield "$oj" status)"; retired_ok=0; }
+[ "$(jsonfield "$oj" status)" = "KEY_RETIRED_AFTER_SIGNING" ] || { echo "FAIL  retired-after: status=$(jsonfield "$oj" status)"; retired_ok=0; }
 [ "$cj" = "1" ] && [ "$cp" = "1" ] || { echo "FAIL  retired-after: exit (js=$cj py=$cp)"; retired_ok=0; }
 if [ "$retired_ok" = "1" ]; then echo "ok    retired  (js==py; valid-at-issue accepted; after-retire rejected)"; else fails=$((fails + 1)); fi
+
+echo
+echo "== 1079 B key lifecycle (retired_at / revoked_at, additive) =="
+LIFE_KEYS="$(mktemp -t rv_life.XXXXXX)"
+trap 'rm -f "$PEM" "$CHAIN_FILE" "$LIVE_PEM" "$KEYS_FILE" "$ENV_FILE" "$ENV_TAMPERED" "$RETIRED_KEYS" "$LIFE_KEYS"' EXIT
+ln="$(node -e "process.stdout.write(String((require('./$VECTORS').lifecycle||{vectors:[]}).vectors.length))")"
+life_ok=1
+if [ "$ln" = "0" ]; then
+  echo "FAIL  lifecycle vectors missing — run: node test/gen-vectors.js"
+  life_ok=0
+  fails=$((fails + 1))
+else
+  for i in $(seq 0 $((ln - 1))); do
+    name="$(node -e "process.stdout.write(require('./$VECTORS').lifecycle.vectors[$i].name)")"
+    token="$(node -e "process.stdout.write(require('./$VECTORS').lifecycle.vectors[$i].token)")"
+    ev="$(node -e "process.stdout.write(String(require('./$VECTORS').lifecycle.vectors[$i].expected.valid))")"
+    es="$(node -e "process.stdout.write(require('./$VECTORS').lifecycle.vectors[$i].expected.status||'')")"
+    er="$(node -e "const r=require('./$VECTORS').lifecycle.vectors[$i].expected.reason; process.stdout.write(r||'')")"
+    node -e "process.stdout.write(JSON.stringify(require('./$VECTORS').lifecycle.vectors[$i].registry))" > "$LIFE_KEYS"
+    checks=$((checks + 1))
+    out_js="$(node verify.js "$token" --keys "$LIFE_KEYS" 2>/dev/null)"; code_js=$?
+    out_py="$("$PYTHON" verify.py "$token" --keys "$LIFE_KEYS" 2>/dev/null)"; code_py=$?
+    lok=1
+    if [ "$out_js" != "$out_py" ]; then
+      echo "FAIL  $name: JS/PY OUTPUT DIFFER"
+      echo "  js: $out_js"
+      echo "  py: $out_py"
+      lok=0
+    fi
+    [ "$code_js" = "$code_py" ] || { echo "FAIL  $name: exit codes differ (js=$code_js py=$code_py)"; lok=0; }
+    [ "$(jsonfield "$out_js" valid)" = "$ev" ] || { echo "FAIL  $name: valid expected=$ev got=$(jsonfield "$out_js" valid)"; lok=0; }
+    [ "$(jsonfield "$out_js" status)" = "$es" ] || { echo "FAIL  $name: status expected=$es got=$(jsonfield "$out_js" status)"; lok=0; }
+    if [ -n "$er" ] && [ "$(jsonfield "$out_js" reason)" != "$er" ]; then
+      echo "FAIL  $name: reason expected=$er got=$(jsonfield "$out_js" reason)"
+      lok=0
+    fi
+    want_code=1; [ "$ev" = "true" ] && want_code=0
+    [ "$code_js" = "$want_code" ] || { echo "FAIL  $name: exit expected=$want_code got=$code_js"; lok=0; }
+    if [ "$lok" = "1" ]; then
+      echo "ok    $name  (js==py; status=$(jsonfield "$out_js" status))"
+    else
+      life_ok=0
+      fails=$((fails + 1))
+    fi
+  done
+fi
+checks=$((checks + 1))
+if node --test test/key-lifecycle.test.js >/dev/null; then
+  echo "ok    key-lifecycle.test.js"
+else
+  echo "FAIL  key-lifecycle.test.js"
+  fails=$((fails + 1))
+fi
+rm -f "$LIFE_KEYS"
 
 echo
 echo "== require-smoke + ID104 leeway (js) =="
