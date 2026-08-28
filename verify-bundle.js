@@ -259,3 +259,79 @@ function verifyBundle(bundle, second, third) {
 module.exports = {
   verifyBundle, assertNoGreenEmpty, BUNDLE_VERSION, SLOT, BUNDLE, SLOTS, SLOT_KEYS, CEILING,
 };
+
+// ── CLI ────────────────────────────────────────────────────────────────────
+//
+// `node verify-bundle.js <bundle.json> --slot-keys <file>` — the offline end of the chain.
+//
+// NAME: this is NOT `coderifts verify-proof-bundle`. That spelling is the future APP-CLI verb
+// (roadmap 1107) and lives in the coderifts package; nothing here provides it. What this file
+// provides is the same thing every sibling verifier provides — a `node <file>.js` entry point.
+//
+// WHY --slot-keys AND NOT --keys, which is what the five siblings take. A bundle's slots are signed
+// by DIFFERENT parties, and the four slot verifiers do not even take key material in the same
+// shape: verifyReceipt and verifyExecutionGrant read `ctx.publicKey` / `ctx.expectedKid`, while
+// verifyExecutionAttestation and verifyToolsetAttestation read `opts.registry`. A single --keys
+// registry could only serve all four by inventing a mapping from one shape to the others, and a
+// mapping invented here would be a second, undocumented contract that the library does not have.
+//
+// So this flag takes the `opts` object the library ALREADY documents (verify-bundle.js:118):
+//   { "perSlot": { "receipt": { "ctx": {...}, "opts": {...} }, "execution_grant": { ... } } }
+// passed through unchanged. The CLI adds no key handling of its own, which is why it cannot
+// silently disagree with the library about what a slot was verified against.
+const fs = require('node:fs');
+
+const USAGE =
+  'usage: node verify-bundle.js <bundle.json> --slot-keys <file> [--ctx <file>]\n'
+  + '\n'
+  + '--slot-keys is REQUIRED and is the library opts object, passed through unchanged:\n'
+  + '  { "perSlot": { "<slot>": { "ctx": {...}, "opts": {...} } } }\n'
+  + 'Slots are signed by different parties, so there is no single registry to default to and\n'
+  + 'this verifier NEVER fetches one.\n'
+  + '\n'
+  + 'Exit 0 = VERIFIED, 1 = INVALID or EMPTY, 2 = usage or load error.\n';
+
+function main(argv) {
+  const args = argv.slice(2);
+  if (args.length === 0 || args[0].startsWith('-')) {
+    process.stderr.write(USAGE);
+    process.exit(2);
+  }
+  const bundleRef = args[0];
+  let slotKeysRef = null;
+  let ctxRef = null;
+  for (let i = 1; i < args.length; i += 1) {
+    if (args[i] === '--slot-keys') { slotKeysRef = args[i + 1]; i += 1; continue; }
+    if (args[i] === '--ctx') { ctxRef = args[i + 1]; i += 1; continue; }
+    process.stderr.write(USAGE);
+    process.exit(2);
+  }
+  if (!slotKeysRef) {
+    process.stderr.write('--slot-keys is required: this verifier NEVER fetches a default key registry.\n');
+    process.exit(2);
+  }
+
+  let bundle;
+  let opts;
+  let ctx = {};
+  try {
+    bundle = JSON.parse(fs.readFileSync(bundleRef, 'utf8'));
+    opts = JSON.parse(fs.readFileSync(slotKeysRef, 'utf8'));
+    if (ctxRef) ctx = JSON.parse(fs.readFileSync(ctxRef, 'utf8'));
+  } catch (err) {
+    // A file we could not read or parse is a LOAD error (exit 2), never an INVALID bundle (exit 1).
+    // Collapsing them would let a typo in a path read as a verdict about someone's proof.
+    process.stderr.write(String((err && err.message) || err) + '\n');
+    process.exit(2);
+  }
+
+  const result = verifyBundle(bundle, ctx, opts);
+  process.stdout.write(JSON.stringify(result) + '\n');
+  // NOT `result.valid` — this verifier has no such field; its verdict is `bundle`. EMPTY is never
+  // green (assertNoGreenEmpty), so anything other than VERIFIED exits non-zero.
+  process.exit(result.bundle === BUNDLE.VERIFIED ? 0 : 1);
+}
+
+if (require.main === module) {
+  main(process.argv);
+}

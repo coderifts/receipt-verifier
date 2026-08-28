@@ -314,6 +314,8 @@ verify.py --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>]
 
 verify-attest.js <token> --keys <file|url> [--grant <token>] [--receipt-digest sha256:…]
 verify_attest.py <token> --keys <file|url> [--grant <token>] [--receipt-digest sha256:…]
+
+verify-bundle.js <bundle.json> --slot-keys <file> [--ctx <file>]
 ```
 
 - `--key <pem>`         verify against a local SPKI PEM public key (offline).
@@ -349,6 +351,44 @@ expired — `valid` is false). 30s clock-skew leeway on expiry; 0s for destructi
 operations in production when the intended context declares them (this surface
 has no destructive field, so the 30s default always applies). Full 12-status
 taxonomy: RECEIPT_FORMAT.md section 6.
+
+## Proof bundle (`verify-bundle.js`)
+
+Verifies a `cr.bundle.v1` document: several signed artifacts presented together, each graded in its
+own slot, with the whole reported as VERIFIED / INVALID / EMPTY.
+
+```bash
+node verify-bundle.js bundle.json --slot-keys slot-keys.json
+```
+
+**`--slot-keys`, not `--keys`, and the difference is not cosmetic.** The slots are signed by
+different parties, and the slot verifiers do not take key material in the same shape: `verifyReceipt`
+and `verifyExecutionGrant` read `ctx.publicKey` / `ctx.expectedKid`, while the attestation verifiers
+read `opts.registry`. There is therefore no single registry to hand the bundle. This flag takes the
+library's own `opts` object, unchanged:
+
+```json
+{
+  "perSlot": {
+    "receipt": { "ctx": { "publicKey": "-----BEGIN PUBLIC KEY-----…", "expectedKid": "2026-07-k1" }, "opts": {} },
+    "execution_grant": { "ctx": { "publicKey": "…", "expectedKid": "…" }, "opts": { "intended": { } } }
+  }
+}
+```
+
+The CLI adds no key handling of its own, so it cannot disagree with the library about what a slot
+was checked against.
+
+**Exit codes:** `0` VERIFIED · `1` INVALID or EMPTY · `2` usage or load error. A file that cannot be
+read or parsed is a load error, never a verdict about someone's proof.
+
+**Note on EMPTY:** a bundle whose only present slot is INVALID reports `EMPTY`, because the verdict
+asks "did anything verify?" first (`verify-bundle.js:239`). The exit code is `1` either way; read
+the `slots` array for what actually failed.
+
+**This is not `coderifts verify-proof-bundle`.** That spelling is the future *app*-CLI verb
+(roadmap 1107) and lives in the `coderifts` package. This repository ships no `coderifts` command
+and has no `package.json`; like every other verifier here, it is invoked as `node <file>.js`.
 
 ## Key rotation
 
