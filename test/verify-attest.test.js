@@ -191,16 +191,47 @@ describe('vector provenance is honest (1127c)', () => {
   const fs = require('node:fs');
   const path = require('node:path');
 
+  // ── PROVENANCE: A RESOLVABLE GENERATOR, OR AN EXPLICIT HAND-AUTHORED SENTINEL ──────────────
+  //
+  // 1157. The guard used to accept exactly one shape: a repo-relative path that resolves. That was
+  // right for every set produced by a `gen-*.js` script, and WRONG for one that honestly has no
+  // generator. consume-and-commit-vectors.json declares
+  //     "hand-authored (input/expected pairs, not an Ed25519 generator)"
+  // and its own `comment` says "CONTRACT vectors for a future consumeAndCommit service (EP-2). Not
+  // signed tokens." — measured: the file carries no public key and no signed token, so there is no
+  // generator that could exist. `path.join(...)` turned that sentence into a nonsense path, the
+  // existsSync failed, and the suite went red for telling the truth.
+  //
+  // THE FIX RECOGNISES HONESTY WITHOUT STOPPING THE CHECK. Exactly two values are accepted:
+  //   · a repo-relative path that RESOLVES ON DISK, or
+  //   · a value beginning with the literal token `hand-authored` at a word boundary.
+  // Anything else — a typo'd path, a path that exists only in another repo (the 1127c defect this
+  // whole guard exists for), an empty string, "TODO", a plausible sentence that is not the sentinel
+  // — still FAILS. The sentinel is a fixed token, not "any prose": it has to be claimed deliberately.
+  //
+  // Anchored with \b so `hand-authoredness` or `hand-authored-by-a-script` do not slip through, and
+  // the trailing parenthetical the existing file carries is the convention worth copying: a
+  // sentinel that says WHY is accountable, a bare one is only unfalsifiable.
+  const HAND_AUTHORED = /^hand-authored\b/;
+
+  /** One predicate, two call sites. A second copy is how the two would drift apart. */
+  function assertProvenance(file, gen) {
+    assert.ok(typeof gen === 'string' && gen.length > 0,
+      `${file} declares no generated_by — a generated file must say what made it`);
+    if (HAND_AUTHORED.test(gen)) return;
+    const abs = path.join(__dirname, '..', gen);
+    assert.ok(fs.existsSync(abs),
+      `${file}: generated_by names ${gen}, which is neither a path that exists in this repo nor `
+      + 'the literal `hand-authored` sentinel');
+  }
+
   it('toolset-vectors.json generated_by resolves to a script THAT EXISTS IN THIS REPO', () => {
     // THIS IS WHAT WAS FALSE BEFORE. The field named
     // `scripts/generate-toolset-attest-vectors.js`, a path that exists only in coderifts-app, and
     // the two files were byte-identical — which, with a per-run ephemeral key, is possible only if
     // one was COPIED from the other. The document claimed a provenance this repository could not
     // honour, and nothing here could regenerate it.
-    const gen = toolsetVectors.generated_by;
-    assert.ok(typeof gen === 'string' && gen.length > 0, 'a vector file must say what made it');
-    const abs = path.join(__dirname, '..', gen);
-    assert.ok(fs.existsSync(abs), `generated_by names ${gen}, which does not exist in this repo`);
+    assertProvenance('toolset-vectors.json', toolsetVectors.generated_by);
   });
 
   it('EVERY vector set names a generator that exists here', () => {
@@ -216,11 +247,7 @@ describe('vector provenance is honest (1127c)', () => {
       + 'make this loop iterate zero times and pass without checking anything');
     for (const file of SETS) {
       const doc = require(`../test/${file}`);
-      assert.ok(typeof doc.generated_by === 'string' && doc.generated_by.length > 0,
-        `${file} declares no generated_by — a generated file must say what made it`);
-      const abs = path.join(__dirname, '..', doc.generated_by);
-      assert.ok(fs.existsSync(abs),
-        `${file}: generated_by names ${doc.generated_by}, which does not exist in this repo`);
+      assertProvenance(file, doc.generated_by);
     }
   });
 
