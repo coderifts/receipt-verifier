@@ -385,6 +385,68 @@ describe('1109 GRANT-SWAP: each grant is handled BY ITS BINDING', () => {
   });
 });
 
+describe('2-ary unified form honors perSlot (1130-F2)', () => {
+  it('2-ary + perSlot key verifies that slot — not UNKNOWN_KEY (the round-trip case)', () => {
+    const r = verifyBundle(bundleOf({ receipt: RECEIPT, execution_grant: GRANT_OK }), {
+      perSlot: REG.perSlot,
+    });
+    assert.equal(r.bundle, BUNDLE.VERIFIED, JSON.stringify(r.slots));
+    const g = r.slots.find((s) => s.slot === 'execution_grant');
+    assert.notEqual(g.status, 'UNKNOWN_KEY');
+    assert.equal(g.state, SLOT.VERIFIED);
+    const rec = r.slots.find((s) => s.slot === 'receipt');
+    assert.equal(rec.state, SLOT.VERIFIED);
+  });
+
+  it('per-slot ctx overrides a DIFFERENT base ctx for that slot', () => {
+    const r = verifyBundle(bundleOf({ execution_grant: GRANT_OK }), {
+      ctx: { publicKey: receiptVectors.public_key_pem, expectedKid: receiptVectors.kid },
+      perSlot: {
+        execution_grant: {
+          ctx: { publicKey: grantVectors.public_key_pem, expectedKid: grantVectors.kid },
+          opts: { intended: grantIntended },
+        },
+      },
+    });
+    const g = r.slots.find((s) => s.slot === 'execution_grant');
+    assert.notEqual(g.status, 'UNKNOWN_KEY', JSON.stringify(g));
+    assert.equal(g.state, SLOT.VERIFIED);
+  });
+
+  it('per-slot ctx overrides base for that slot; slots with no override keep the base', () => {
+    const r = verifyBundle(bundleOf({ receipt: RECEIPT, execution_grant: GRANT_OK }), {
+      ctx: { publicKey: receiptVectors.public_key_pem, expectedKid: receiptVectors.kid },
+      perSlot: {
+        execution_grant: {
+          ctx: { publicKey: grantVectors.public_key_pem, expectedKid: grantVectors.kid },
+          opts: { intended: grantIntended },
+        },
+      },
+    });
+    assert.equal(r.slots.find((s) => s.slot === 'receipt').state, SLOT.VERIFIED, 'receipt uses base ctx');
+    assert.equal(r.slots.find((s) => s.slot === 'execution_grant').state, SLOT.VERIFIED, 'grant uses per-slot ctx');
+  });
+
+  it('3-ary form still works identically (no regression)', () => {
+    const a = verifyBundle(bundleOf({ receipt: RECEIPT, execution_grant: GRANT_OK }), ctx, REG);
+    const b = verifyBundle(bundleOf({ receipt: RECEIPT, execution_grant: GRANT_OK }), { ctx, ...REG });
+    assert.equal(a.bundle, BUNDLE.VERIFIED);
+    assert.equal(b.bundle, a.bundle);
+    assert.equal(
+      a.slots.find((s) => s.slot === 'execution_grant').status,
+      b.slots.find((s) => s.slot === 'execution_grant').status,
+    );
+  });
+
+  it('a slot with no per-slot override uses the base ctx (unchanged)', () => {
+    const r = verifyBundle(bundleOf({ receipt: RECEIPT }), {
+      ctx: { publicKey: receiptVectors.public_key_pem, expectedKid: receiptVectors.kid },
+    });
+    assert.equal(r.slots.find((s) => s.slot === 'receipt').state, SLOT.VERIFIED);
+    assert.equal(r.slots.find((s) => s.slot === 'execution_grant').state, SLOT.ABSENT);
+  });
+});
+
 describe('the honest line travels with every result', () => {
   it('the ceiling is on the result, not only in the docs', () => {
     for (const b of [bundleOf({}), bundleOf({ receipt: RECEIPT, execution_grant: GRANT_OK })]) {

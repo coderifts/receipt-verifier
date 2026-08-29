@@ -28,7 +28,9 @@ function throw1128(name, n, consequence) {
 
 function looksUnified(obj) {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
-  return obj.ctx != null || obj.intended != null || obj.envelope != null;
+  // perSlot is the bundle-dispatch unified shape: verifyBundle(bundle, { ctx, perSlot }).
+  // Without it, `{ perSlot }` was treated as a bare ctx and opts.perSlot vanished.
+  return obj.ctx != null || obj.intended != null || obj.envelope != null || obj.perSlot != null;
 }
 
 function split3ary(name, nArgs, second, third) {

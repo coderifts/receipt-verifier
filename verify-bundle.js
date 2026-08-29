@@ -116,7 +116,10 @@ function slotResult(key, state, extra = {}) {
  * bundle from this repository's own vectors showed a receipt and a grant signed under DIFFERENT
  * kids with different registries — so one shared context cannot verify a real bundle. Pass
  * `opts.perSlot = { receipt: { ctx, opts }, execution_grant: { ctx, opts } }` to override per slot;
- * anything not overridden falls back to the defaults above.
+ * anything not overridden falls back to the defaults above. Per-slot ctx/opts take PRECEDENCE
+ * over the base for that slot — including in the 2-ary unified form
+ * `verifyBundle(bundle, { ctx, perSlot })`. The 3-ary form is a deprecated wrapper and is no
+ * longer required for perSlot.
  *
  * THE KEYS NEVER COME FROM THE BUNDLE. A bundle carrying its own verification key would be
  * self-certifying, which is not verification. The caller supplies the material, exactly as every
@@ -192,13 +195,19 @@ function verifyBundleInner(bundle, ctx = {}, opts = {}) {
       // verifyToolsetAttestation(token, opts) reports 2 — the same shape, two different numbers.
       // Reading it would have been a guess dressed as a measurement.
       //
-      // For a 2-ary verifier ctx and opts are MERGED, opts winning, so material is never dropped
-      // for having been placed in the sibling field.
-      // Unified (token, { ctx, intended }) plus the measured 2-ary merge: per-slot
-      // ctx used to be spread into opts so `intended` living on ctx still cross-checks.
-      const baseCtx = over.ctx || ctx || {};
-      const baseOpts = over.opts || opts || {};
-      r = def.verify(token, { ctx: baseCtx, ...baseCtx, ...baseOpts });
+      // MERGE PRECEDENCE (1130-F2). The 2-ary unified form is
+      //   verifyBundle(bundle, { ctx, perSlot })
+      // split3ary then sets opts = that whole object, so opts.ctx is the BASE ctx.
+      // Spreading baseOpts LAST used to overwrite over.ctx with that base ctx: a grant
+      // whose key was supplied only via perSlot returned UNKNOWN_KEY. Per-slot is the
+      // more specific value and MUST win. Keys never come from the bundle; perSlot
+      // exists so the caller can supply the right key per slot in the non-deprecated form.
+      const slotCtx = over.ctx != null ? over.ctx : (ctx || {});
+      const mergedOpts = { ...(opts || {}), ...(over.opts || {}) };
+      const restOpts = { ...mergedOpts };
+      delete restOpts.perSlot;
+      delete restOpts.ctx;
+      r = def.verify(token, { ...restOpts, ...slotCtx, ctx: slotCtx });
     } catch (err) {
       r = { valid: false, status: 'VERIFIER_THREW', reason: String(err && err.message).slice(0, 120) };
     }
@@ -325,7 +334,10 @@ function main(argv) {
     process.exit(2);
   }
 
-  const result = verifyBundle(bundle, ctx, opts);
+  // 2-ary unified: perSlot now takes precedence over base ctx, so the CLI is
+  // not forced onto the deprecated 3-ary path. --slot-keys is still the library
+  // opts object, passed through; --ctx is the base ctx.
+  const result = verifyBundle(bundle, { ...opts, ctx });
   process.stdout.write(JSON.stringify(result) + '\n');
   // NOT `result.valid` — this verifier has no such field; its verdict is `bundle`. EMPTY is never
   // green (assertNoGreenEmpty), so anything other than VERIFIED exits non-zero.
