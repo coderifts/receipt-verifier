@@ -404,3 +404,141 @@ fetch. Retired-key rule is receipt-class historical
 Honesty: the attestation proves a holder of the executor key asserts this
 commit. It does **not** prove unmodified executor code, human review, live
 `GRANT_CURRENT`, or that `result_digest` is a CodeRifts fingerprint.
+
+## 9. DSSE / in-toto export (OPTIONAL)
+
+Source of truth: `to-dsse.js` (`toDSSE` / `fromDSSE`). This section documents what
+that module **does**, measured from it — not a format we intend to build.
+
+The compact forms above stay primary. This is an **export**, so a system that
+already speaks in-toto (SLSA tooling, policy engines, admission controllers) can
+accept a CodeRifts artifact without learning the compact format.
+
+### 9.1 Stable identifiers
+
+External systems key on these. They do not change without a version bump.
+
+| field | value |
+| --- | --- |
+| `payloadType` | `application/vnd.in-toto+json` |
+| Statement `_type` | `https://in-toto.io/Statement/v1` |
+| `predicateType` | `https://coderifts.com/attestations/agent-action-authorization/v1` |
+
+The same `predicateType` is advertised as `in_toto_predicate_type` in the agent
+discovery document, so a consumer can discover it before fetching anything.
+
+### 9.2 Envelope
+
+```json
+{
+  "payloadType": "application/vnd.in-toto+json",
+  "payload": "<base64 of the in-toto Statement below>",
+  "signatures": [{ "keyid": "<the artifact's kid>", "sig": "<the artifact's own signature>" }]
+}
+```
+
+`signatures` carries **exactly one** entry, and its `sig` is the compact token's
+own signature segment — copied, never recomputed. `fromDSSE` refuses an envelope
+with zero, two, or a signature-less entry rather than picking one.
+
+### 9.3 Statement
+
+```json
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [{ "name": "<compact form>", "digest": { "sha256": "<sha256 of the compact token>" } }],
+  "predicateType": "https://coderifts.com/attestations/agent-action-authorization/v1",
+  "predicate": {
+    "compact": {
+      "form": "crchain.v1" | "cr.exec.attest.v1",
+      "tag": "<envelope tag, attestation form only>",
+      "kid": "<envelope kid, attestation form only>",
+      "encoded_payload": "<the ORIGINAL base64url payload segment, verbatim>"
+    },
+    "fields": { "<the decoded payload, verbatim>": "..." },
+    "proves": "...",
+    "does_not_prove": ["...", "..."],
+    "verify_with": "..."
+  }
+}
+```
+
+The **subject is the compact token itself** — that is the artifact the envelope is
+about, and its sha256 is what a consumer pins.
+
+`predicate.fields` carries the payload's own fields **verbatim**, whatever the
+artifact signed. It is not a curated list: a curated list is where a field gets
+silently dropped and the export ends up describing a document the envelope does
+not contain.
+
+### 9.4 Why `encoded_payload` is preserved, not re-encoded
+
+`predicate.compact.encoded_payload` is the **original** base64url segment, byte
+for byte. It is not a re-serialisation of `predicate.fields`.
+
+A signature is over bytes, not over meaning. Re-encoding JSON is not byte-stable
+— key order and whitespace are free — so a rebuilt payload would fail to verify
+for a reason that has nothing to do with authenticity. Preserving the segment is
+what makes the round-trip below exact.
+
+### 9.5 Round-trip
+
+```
+fromDSSE(toDSSE(token)) === token                        (byte-exact)
+verify(fromDSSE(toDSSE(token))) === verify(token)        (identical verdict)
+```
+
+The second line holds for artifacts that FAIL verification too. A wrapper that
+quietly repaired a bad artifact would be worse than one that broke a good one.
+
+`fromDSSE` reassembles:
+
+* receipt form — `` `${encoded_payload}.${sig}` ``
+* attestation form — `` `${tag}|${kid}|${encoded_payload}|${sig}` ``
+
+### 9.6 What this proves, and what it does not
+
+> **Proves:** exactly what the compact CodeRifts artifact proves — this envelope
+> is packaging, and the signature is the artifact's own, over its own bytes.
+
+> **Does not prove:**
+> * that anything was re-verified: **no signature is checked** while building or
+>   reading this envelope;
+> * anything the compact artifact does not already establish — a standard
+>   container does not strengthen a claim.
+
+`toDSSE` deliberately does **not** verify. A known-invalid artifact wraps
+successfully, because a packaging function that also validated would invite a
+caller to read "it wrapped" as "it is good". Verification stays with
+`verify.js` / `verify-attest.js`.
+
+### 9.7 Forgery detection — the invariants an external verifier can rely on
+
+The predicate carries the payload twice: preserved bytes and decoded fields.
+Both directions of tampering are detected, by **different** mechanisms.
+
+| tampering | detected by | result |
+| --- | --- | --- |
+| a decoded `predicate.fields` value is rewritten | `fromDSSE` | throws `DsseError` with `code: 'PREDICATE_MISMATCH'` |
+| `predicate.compact.encoded_payload` is rewritten | the signature | `fromDSSE` returns the bytes; **`verify` fails** |
+| the signature is swapped for another artifact's | the signature | **`verify` fails** |
+| unknown `payloadType` / `predicateType` / compact `form` | `fromDSSE` | throws `DsseError` with `code: 'UNSUPPORTED'` |
+| missing / duplicated signature, absent `encoded_payload` | `fromDSSE` | throws `DsseError` with `code: 'MALFORMED'` |
+
+The `PREDICATE_MISMATCH` check exists because an in-toto consumer reads the
+predicate, not our base64. Without it the readable half could describe something
+the verifiable half does not contain, and a reader with no CodeRifts verifier
+would believe the readable half. The comparison is on **meaning** (stable key
+order), so non-canonical spacing in the preserved segment is not itself a
+mismatch.
+
+**An implementer's minimum:** treat `fromDSSE` as unpacking only. Nothing in this
+section establishes authenticity — run the CodeRifts verifier on the reassembled
+compact token, and take its verdict as the answer.
+
+### 9.8 Scope
+
+Phase 1 of roadmap 1224 is the format module and this specification. Publishing
+the predicate as a standalone open spec, multi-language verifiers for it, and the
+four target verifiers (GitHub merge, Kubernetes admission, API gateway, tool
+registry) are later phases and are **not** shipped.
