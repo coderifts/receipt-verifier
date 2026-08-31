@@ -262,6 +262,51 @@ JSON on stdout matches across JS and Python.
 Statuses: `ATTEST_VALID`, `ATTEST_INVALID_SIGNATURE`, `ATTEST_UNKNOWN_KEY`,
 `ATTEST_RETIRED_KEY_VALID_AT_ISSUE`, `ATTEST_MALFORMED`, `ATTEST_UNBOUND`.
 
+## DSSE / in-toto export (`to-dsse.js`)
+
+A compact receipt or execution attestation can be exported as a **DSSE envelope**
+carrying an in-toto Statement, so a system that already speaks in-toto (SLSA
+tooling, policy engines, admission controllers) can accept it without learning
+the compact format. Format freeze:
+[RECEIPT_FORMAT.md](RECEIPT_FORMAT.md) section 9.
+
+```js
+const { toDSSE, fromDSSE } = require('./to-dsse.js');
+
+const envelope = toDSSE(token);          // wrap — nothing is signed or checked here
+const back = fromDSSE(envelope);         // unwrap — byte-exact: back === token
+verifyReceipt(back, { keyring });        // the SAME verifier decides, unchanged
+```
+
+| field | value |
+| --- | --- |
+| `payloadType` | `application/vnd.in-toto+json` |
+| `predicateType` | `https://coderifts.com/attestations/agent-action-authorization/v1` |
+
+The export is **optional**; the compact form stays primary. `signatures[0].sig`
+is the artifact's own signature, copied rather than recomputed, and the predicate
+carries the original base64url payload segment verbatim — which is why the
+round-trip is byte-exact and the existing verifier accepts the result unchanged.
+
+**Honesty (verbatim class from the spec):**
+
+The DSSE envelope proves:
+
+> exactly what the compact artifact proves
+
+It does **NOT** prove:
+
+- that anything was re-verified — **no signature is checked** while building or
+  reading an envelope. `toDSSE` wraps a known-invalid artifact just as happily;
+- anything the compact artifact does not already establish — a standard
+  container does not strengthen a claim.
+
+Verification stays with `verify.js` / `verify-attest.js`. A tampered envelope is
+caught in one of two places, never silently: a rewritten decoded predicate field
+is refused by `fromDSSE` (`PREDICATE_MISMATCH`), and a rewritten payload segment
+unpacks but fails signature verification. RECEIPT_FORMAT.md section 9 states the
+full invariant table an external verifier can rely on.
+
 ## Verifier signatures — unified `(token, opts)` (1129)
 
 All seven verifiers accept **`(token, opts)`** with `opts.ctx` (keyring / publicKey / registry)
