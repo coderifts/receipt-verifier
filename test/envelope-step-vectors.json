@@ -1,0 +1,89 @@
+{
+ "generated_by": "test/gen-envelope-step-vectors.js",
+ "kid": "envstep-k1",
+ "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEARs3KUVyzvaOSxKbWQtsSHkKNQp/h/j57cVGCkA1Nmwo=\n-----END PUBLIC KEY-----\n",
+ "vectors": [
+  {
+   "name": "ENVSTEP-BLOCK-BOUND",
+   "note": "A non-allow decision whose step is bound by bh. Verifies; the step is then readable.",
+   "token": "eyJ2Ijo0LCJraWQiOiJlbnZzdGVwLWsxIiwiZnAiOiJzaGEyNTY6YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsInByZXYiOiJudWxsIiwiY2FsbGVyIjoiYnVuZGxlIiwidHMiOiIyMDI2LTA5LTAxVDAwOjAwOjAwLjAwMFoiLCJyZWciOiJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJyIiwiaXIiOiJzaGEyNTY6YmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYiIsImV4cGlyZXNfYXQiOiIyMDk5LTAxLTAxVDAwOjAwOjAwLjAwMFoiLCJiaCI6InNoYTI1NjpmZjhkYTljZDJkM2E3NzBjZDI2MmM1NWNmMTBjM2VjZDYwM2I4NzBmMmQ5ZDY4N2JjNDdjYWZiYzliYTI2NzEwIn0.In0H_3ah2wXvKKvLQscBiXc5HxCmKkAKkJevVH5AotIcoZqNO9tFeNze8ta4T4Mk3QHjvdmhTynviH9G9MTOBA",
+   "envelope": {
+    "spec_version": "decision-result.v1.1",
+    "decision": "BLOCK",
+    "execution_action": "STOP",
+    "safe_for_agent": false,
+    "decision_id": "dec_envstep",
+    "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "operation": "merge",
+    "environment": "ci",
+    "next_agent_step": {
+     "action": "revert",
+     "reason": "required_field_removed",
+     "resume_condition": "The removed required field is restored, or the change is reissued as a new version",
+     "then_call": "preflight_change_set"
+    }
+   },
+   "step_readable": true,
+   "expected_step": {
+    "action": "revert",
+    "reason": "required_field_removed",
+    "resume_condition": "The removed required field is restored, or the change is reissued as a new version",
+    "then_call": "preflight_change_set"
+   },
+   "js": {
+    "valid": true,
+    "status": "VERIFIED_CURRENT"
+   }
+  },
+  {
+   "name": "ENVSTEP-BLOCK-TAMPERED",
+   "note": "The SAME receipt with the step swapped after signing. bh no longer matches; the step must not be surfaced. This is the vector the family exists for.",
+   "token": "eyJ2Ijo0LCJraWQiOiJlbnZzdGVwLWsxIiwiZnAiOiJzaGEyNTY6YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsInByZXYiOiJudWxsIiwiY2FsbGVyIjoiYnVuZGxlIiwidHMiOiIyMDI2LTA5LTAxVDAwOjAwOjAwLjAwMFoiLCJyZWciOiJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJyIiwiaXIiOiJzaGEyNTY6YmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYiIsImV4cGlyZXNfYXQiOiIyMDk5LTAxLTAxVDAwOjAwOjAwLjAwMFoiLCJiaCI6InNoYTI1NjpmZjhkYTljZDJkM2E3NzBjZDI2MmM1NWNmMTBjM2VjZDYwM2I4NzBmMmQ5ZDY4N2JjNDdjYWZiYzliYTI2NzEwIn0.In0H_3ah2wXvKKvLQscBiXc5HxCmKkAKkJevVH5AotIcoZqNO9tFeNze8ta4T4Mk3QHjvdmhTynviH9G9MTOBA",
+   "envelope": {
+    "spec_version": "decision-result.v1.1",
+    "decision": "BLOCK",
+    "execution_action": "STOP",
+    "safe_for_agent": false,
+    "decision_id": "dec_envstep",
+    "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "operation": "merge",
+    "environment": "ci",
+    "next_agent_step": {
+     "action": "re_preflight",
+     "reason": "transient",
+     "resume_condition": "Retry immediately",
+     "then_call": "preflight_change_set"
+    }
+   },
+   "step_readable": false,
+   "expected_step": null,
+   "js": {
+    "valid": false,
+    "status": "INVALID_SIGNATURE",
+    "reason": "body_hash_mismatch"
+   }
+  },
+  {
+   "name": "ENVSTEP-ALLOW-NULL",
+   "note": "The allow class carries no step. Verifies; there is nothing to read.",
+   "token": "eyJ2Ijo0LCJraWQiOiJlbnZzdGVwLWsxIiwiZnAiOiJzaGEyNTY6YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsInByZXYiOiJudWxsIiwiY2FsbGVyIjoiYnVuZGxlIiwidHMiOiIyMDI2LTA5LTAxVDAwOjAwOjAwLjAwMFoiLCJyZWciOiJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJyIiwiaXIiOiJzaGEyNTY6YmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYiIsImV4cGlyZXNfYXQiOiIyMDk5LTAxLTAxVDAwOjAwOjAwLjAwMFoiLCJiaCI6InNoYTI1NjoxYWMzMGFkYjk5NDM5MTgxZDc2NzU4ZWY2ZmU3MzkwOWU5M2MxZTQ5N2Q5ODMyMDE0NDc2YTZkMTRlNjVjYmJmIn0.6vCZYV8edfAgDxdz9-zAzbfqNZ8ovUOnEE5ebk-Dl4ZvXYqe0ttJ_HY9kSvzpZikFIYDzA7BjBvKg1xxl4zyCw",
+   "envelope": {
+    "spec_version": "decision-result.v1.1",
+    "decision": "ALLOW",
+    "execution_action": "CONTINUE",
+    "safe_for_agent": true,
+    "decision_id": "dec_envstep_allow",
+    "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "operation": "merge",
+    "environment": "ci",
+    "next_agent_step": null
+   },
+   "step_readable": true,
+   "expected_step": null,
+   "js": {
+    "valid": true,
+    "status": "VERIFIED_CURRENT"
+   }
+  }
+ ]
+}
