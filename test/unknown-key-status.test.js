@@ -54,7 +54,7 @@ function run(bin, args) {
 }
 
 describe('an unrecognised key status fails closed (both languages)', () => {
-  for (const [label, bin, script] of [['verify.js', 'node', 'verify.js'], ['verify.py', 'python3', 'verify.py']]) {
+  for (const [label, bin, script] of [['cli.js', 'node', 'cli.js'], ['verify.py', 'python3', 'verify.py']]) {
     it(`${label}: status "revoked" is NOT accepted`, () => {
       // UPDATED DELIBERATELY when step 3 landed. This asserted UNKNOWN_KEY_STATUS, which was right
       // while 'revoked' was a status the verifier did not understand. It now DOES understand it,
@@ -88,13 +88,15 @@ describe('an unrecognised key status fails closed (both languages)', () => {
 
   it('BOTH LANGUAGES AGREE — a split fleet is the hazard this closes', () => {
     const keys = registryWith('revoked');
-    const js = run('node', ['verify.js', RECEIPT, '--keys', keys]);
+    const js = run('node', ['cli.js', RECEIPT, '--keys', keys]);
     const py = run('python3', ['verify.py', RECEIPT, '--keys', keys]);
     assert.equal(js.valid, py.valid);
     assert.equal(js.status, py.status);
   });
 
   it('THE FIX IS NOT REVOCATION, and the code says so', () => {
+    // The normative rule lives in the LIBRARY, which is what the four repos vendor.
+    // cli.js is the command; deriveStatus and its citation are in verify.js.
     const src = fs.readFileSync(path.join(ROOT, 'verify.js'), 'utf8');
     // UPDATED DELIBERATELY: this required the revocation statuses to be ABSENT, which was the
     // correct gate while only step 2 had shipped. Steps 3-5 have now landed across every public

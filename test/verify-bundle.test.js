@@ -97,13 +97,23 @@ describe('an ALL-ABSENT bundle is EMPTY, never green', () => {
     const r = verifyBundle(bundleOf({}), ctx, REG);
     for (const s of r.slots) {
       assert.equal(s.state, SLOT.ABSENT);
-      assert.ok(['requires_executor', 'not_supplied'].includes(s.absent_class));
+      assert.ok(['requires_executor', 'not_supplied', 'no_public_verifier'].includes(s.absent_class));
       assert.ok(s.note && s.note.length > 20, 'an absence without its reason is just a gap');
     }
     // The distinction that matters: an executor slot's absence is EXPECTED, not a defect.
     const commit = r.slots.find((s) => s.slot === 'commit_attestation');
     assert.equal(commit.absent_class, 'requires_executor');
     assert.match(commit.note, /expected, not a defect/);
+
+    // 1293 — THE THIRD ABSENCE. deploy_attestation now HAS a producer (capability-demo's
+    // executor seal); what is missing is a public verifier for that envelope. Reporting that as
+    // `requires_executor` told a reader nobody could produce it, which stopped being true.
+    const deploy = r.slots.find((s) => s.slot === 'deploy_attestation');
+    assert.equal(deploy.absent_class, 'no_public_verifier');
+    assert.match(deploy.note, /an executor CAN produce this slot/);
+    assert.match(deploy.note, /gap is this repository's, not the holder's/);
+    // And the two must stay distinguishable — that is the whole point of splitting them.
+    assert.notEqual(deploy.absent_class, commit.absent_class);
   });
 
   it('AN ABSENT COMMIT ATTESTATION IS NOT A FAILED ONE — the states are distinct', () => {

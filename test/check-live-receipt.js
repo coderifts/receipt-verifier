@@ -9,7 +9,7 @@
  * the verifier learns it.
  *
  * Source of the token: the CodeRifts sticky check-comment on coderifts/demo PR #4,
- * which embeds the exact `node verify.js "<token>"` command.
+ * which embeds the exact `node cli.js "<token>"` command.
  *
  * Auth: none required for the public demo repo (unauthenticated GitHub REST works,
  * 60 req/h per IP). In GitHub Actions the automatic GITHUB_TOKEN is used when
@@ -39,7 +39,7 @@ const PR = process.env.DEMO_PR || '4';
 const FETCH_URL = process.env.FETCH_URL || 'https://app.coderifts.com/api/v1/attestation/public-key';
 const TOKEN = process.env.GITHUB_TOKEN || '';
 const ROOT = path.join(__dirname, '..');
-const VERIFY_JS = path.join(ROOT, 'verify.js');
+const VERIFY_JS = path.join(ROOT, 'cli.js');
 const STICKY_MARKER = '<!-- coderifts-api-check -->';
 const TOKEN_RE = /node verify\.js "([A-Za-z0-9._-]+)"/;
 

@@ -82,7 +82,14 @@ const SLOTS = Object.freeze([
   { key: 'commit_attestation', verify: verifyExecutionAttestation, arity: 2, executor: true },
   { key: 'nonce_commitment', verify: null, executor: true },
   { key: 'merge_evidence', verify: null, executor: true },
-  { key: 'deploy_attestation', verify: null, executor: true },
+  // 1293 — A PRODUCER EXISTS FOR THIS SLOT. capability-demo's executor mints
+  // `cr.atomic.execution.attestation.v1` (demo/src/atomic.js) and binds it to the deployment id;
+  // demo/e2e-chain.js verifies one against the executor key with a forgery negative control.
+  // What does NOT exist is a PUBLIC verifier for that envelope — verify-attest.js speaks
+  // `cr.exec.attest.v1`, a different message. Those are two different absences and this module
+  // used to report them as one: `requires_executor` said "nobody can produce this", which stopped
+  // being true. `producer: true` splits them, so a reader learns the gap is a verifier gap.
+  { key: 'deploy_attestation', verify: null, executor: true, producer: true },
   { key: 'provider_evidence', verify: null, executor: true },
 ]);
 
@@ -162,12 +169,25 @@ function verifyBundleInner(bundle, ctx = {}, opts = {}) {
     const entry = given[def.key];
     const token = entry && typeof entry === 'object' ? entry.token : entry;
     if (token == null || token === '') {
+      // THREE absences, not two. `requires_executor` conflated "nothing anywhere produces this"
+      // with "something produces it, we just cannot check it here" — and a reader deciding
+      // whether a gap is theirs to close needs to know which one they are looking at.
+      const absentClass = def.producer
+        ? 'no_public_verifier'
+        : (def.executor ? 'requires_executor' : 'not_supplied');
+      const absentNote = {
+        no_public_verifier:
+          'an executor CAN produce this slot, and does; what is missing is a public verifier for '
+          + 'that envelope, so a token placed here would grade INVALID (NO_VERIFIER) rather than '
+          + 'be checked. The gap is this repository\'s, not the holder\'s',
+        requires_executor:
+          'no in-process holder can produce this today; its absence is expected, not a defect',
+        not_supplied: 'not supplied by the holder',
+      }[absentClass];
       slots.push(slotResult(def.key, SLOT.ABSENT, {
-        absent_class: def.executor ? 'requires_executor' : 'not_supplied',
+        absent_class: absentClass,
         // Stated per slot so an absent commit attestation cannot be read as a failed one.
-        note: def.executor
-          ? 'no in-process holder can produce this today; its absence is expected, not a defect'
-          : 'not supplied by the holder',
+        note: absentNote,
       }));
       continue;
     }

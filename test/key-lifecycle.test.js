@@ -32,7 +32,7 @@ describe('1079 B key lifecycle (js + py)', () => {
   assert.ok(doc.lifecycle && Array.isArray(doc.lifecycle.vectors), 'lifecycle vectors missing — run node test/gen-vectors.js');
 
   for (const v of doc.lifecycle.vectors) {
-    for (const [label, bin, script] of [['verify.js', 'node', 'verify.js'], ['verify.py', 'python3', 'verify.py']]) {
+    for (const [label, bin, script] of [['cli.js', 'node', 'cli.js'], ['verify.py', 'python3', 'verify.py']]) {
       it(`${label} ${v.name}: valid=${v.expected.valid} status=${v.expected.status}`, () => {
         const out = run(bin, script, v.token, v.registry);
         assert.equal(out.valid, v.expected.valid, `${v.name} valid`);
@@ -47,7 +47,7 @@ describe('1079 B key lifecycle (js + py)', () => {
     const keys = v.registry.keys[0];
     assert.equal(Object.prototype.hasOwnProperty.call(keys, 'retired_at'), false);
     assert.equal(Object.prototype.hasOwnProperty.call(keys, 'revoked_at'), false);
-    const js = run('node', 'verify.js', v.token, v.registry);
+    const js = run('node', 'cli.js', v.token, v.registry);
     assert.equal(js.valid, true);
     assert.equal(js.status, 'VERIFIED_CURRENT');
   });
@@ -58,7 +58,7 @@ describe('1079 B key lifecycle (js + py)', () => {
     const payload = JSON.parse(Buffer.from(bodyB64, 'base64url').toString('utf8'));
     assert.ok(Date.parse(payload.ts) < Date.parse(v.registry.keys[0].revoked_at),
       'the vector must sign BEFORE revoked_at or it does not prove retroactivity');
-    const js = run('node', 'verify.js', v.token, v.registry);
+    const js = run('node', 'cli.js', v.token, v.registry);
     assert.equal(js.status, 'KEY_REVOKED');
     assert.equal(js.valid, false);
   });

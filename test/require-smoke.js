@@ -13,7 +13,7 @@ const v = require('../verify.js');
 
 const EXPECTED = [
   'verifyReceipt', 'verifyChain', 'deriveStatus', 'resolveEntry', 'reconstructSignedInput',
-  'canonicalJson', 'loadKeyring', 'keyFromPem', 'fetchKeyInfo', 'sha256hex',
+  'canonicalJson', 'loadKeyring', 'keyFromPem', 'sha256hex',
   'expiryLeewayMs', 'isExpiredAt',
 ];
 for (const k of EXPECTED) {
@@ -57,3 +57,11 @@ assert.strictEqual(v.canonicalJson({ b: 1, a: 2 }), '{"a":2,"b":1}');
 }
 
 console.log('require-smoke: OK (module imported without running the CLI; exports present)');
+
+// THE SPLIT (1282-A'): fetchKeyInfo is the network path and belongs to the command, not to the
+// library four repositories vendor offline. Its ABSENCE here is the assertion.
+assert.equal(typeof v.fetchKeyInfo, 'undefined',
+  'fetchKeyInfo must not be on the library — it lives in cli.js');
+const cli = require('../cli.js');
+assert.equal(typeof cli.fetchKeyInfo, 'function', 'cli.js must export fetchKeyInfo');
+assert.equal(typeof cli.downgradeLegacyVerdict, 'function', 'cli.js must export the 1282-A\' rule');

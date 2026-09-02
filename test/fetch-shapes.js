@@ -10,11 +10,13 @@ const assert = require('node:assert');
 const http = require('node:http');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
-const v = require('../verify.js');
+const v = require('../cli.js');
+// DEFAULT_FETCH_URL is a LIBRARY constant (the CLI only defaults to it) — read it from there.
+const lib = require('../verify.js');
 const vectors = require('./vectors.json');
 
 assert.strictEqual(
-  v.DEFAULT_FETCH_URL,
+  lib.DEFAULT_FETCH_URL,
   'https://app.coderifts.com/.well-known/coderifts-keys.json',
   'default fetch URL is the key registry',
 );
@@ -70,9 +72,19 @@ async function main() {
       assert.strictEqual(info.kid, live.kid);
       assert.ok(info.publicKey);
       assert.strictEqual(info.keyring, undefined, 'legacy shape has no keyring');
+      assert.strictEqual(info.legacy, true, '1282-A\': the legacy shape is FLAGGED as such');
       const token = live.vectors[0].token;
-      const result = v.verifyReceipt(token, { publicKey: info.publicKey, expectedKid: info.kid });
+      // The LIBRARY still answers on the signature alone — unchanged, and that is the point of
+      // the split: verify.js behaviour is byte-identical.
+      const result = lib.verifyReceipt(token, { publicKey: info.publicKey, expectedKid: info.kid });
       assert.strictEqual(result.valid, true, 'legacy shape verifies the live receipt');
+      // 1282-A': the COMMAND refuses to report that as CURRENT, because the document it read
+      // cannot say whether the key is still trusted.
+      const downgraded = v.downgradeLegacyVerdict(result, urlOf(server));
+      assert.strictEqual(downgraded.valid, false, 'no current verdict from a status-less document');
+      assert.strictEqual(downgraded.status, 'UNKNOWN_KEY_STATUS');
+      assert.strictEqual(downgraded.reason, 'key_status_unavailable');
+      assert.ok(downgraded.key_status_unavailable.remedy.includes('registry'));
     } finally {
       await new Promise((cb) => server.close(cb));
     }
@@ -84,7 +96,7 @@ async function main() {
     const fetchUrl = urlOf(server);
     try {
       const info = await v.fetchKeyInfo(fetchUrl);
-      const result = v.verifyReceipt(vectors.retired.token_valid_at_issue, {
+      const result = lib.verifyReceipt(vectors.retired.token_valid_at_issue, {
         keyring: info.keyring,
         expectedKid: null,
       });
@@ -93,7 +105,7 @@ async function main() {
       assert.notStrictEqual(result.reason, 'unknown_kid');
 
       const cli = await runCli([
-        path.join(__dirname, '..', 'verify.js'),
+        path.join(__dirname, '..', 'cli.js'),
         vectors.retired.token_valid_at_issue,
         '--fetch', fetchUrl,
       ]);
