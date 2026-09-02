@@ -75,13 +75,88 @@ const CEILING = 'A complete bundle proves the chain we minted is internally cons
  * `executor: true` marks a slot no in-process holder can produce today. Its absence is EXPECTED
  * rather than a gap in the holder's setup, and the result says which kind of absence it is.
  */
+const { verifyAtomicExecutionAttestation } = require('./verify-atomic-attestation.js');
+
+/**
+ * Grade a provider readback — CARRIED evidence, not a signature.
+ *
+ * WHAT THIS CAN HONESTLY ASSERT OFFLINE. Nothing about the provider. The document is unsigned, so
+ * a holder who can write it can write any value in it, and no amount of checking here changes
+ * that. What a structural check CAN do is refuse a document that does not even claim what it
+ * would need to claim: a readback with no source binding, or no integration id, or no rollup
+ * state, is not weak evidence — it is a document that never asserted the thing.
+ *
+ * The class is therefore PROVIDER_READBACK, distinct from a verified signature. A reader who sees
+ * it must be able to tell, without reading this file, that nobody proved anything cryptographically.
+ *
+ * Shape from coderifts-app scripts/provider-readback.js:72-86.
+ */
+function verifyProviderReadback(evidence, opts = {}) {
+  const e = typeof evidence === 'string'
+    ? (() => { try { return JSON.parse(evidence); } catch (_) { return null; } })()
+    : evidence;
+  if (!e || typeof e !== 'object') {
+    return { valid: false, status: 'READBACK_MALFORMED', reason: 'not_an_object' };
+  }
+  if (e.provider !== 'github') {
+    return { valid: false, status: 'READBACK_MALFORMED', reason: 'unsupported_provider', observed: e.provider ?? null };
+  }
+  for (const field of ['required_check', 'rollup_state', 'observed_at']) {
+    if (typeof e[field] !== 'string' || e[field].length === 0) {
+      return { valid: false, status: 'READBACK_INCOMPLETE', reason: `missing_${field}` };
+    }
+  }
+  // A name-only requirement is the case this evidence exists to distinguish. It is reported as
+  // its own class rather than as a failure: the readback is honest, the BINDING is what is absent.
+  if (e.bound_to_source !== true) {
+    return {
+      valid: false,
+      status: 'READBACK_NOT_SOURCE_BOUND',
+      reason: e.bound_to_source === false ? 'name_only_requirement' : 'binding_not_reported',
+      required_check: e.required_check,
+    };
+  }
+  if (!Number.isInteger(e.integration_id)) {
+    return { valid: false, status: 'READBACK_INCOMPLETE', reason: 'missing_integration_id' };
+  }
+  const intended = opts.intended && typeof opts.intended === 'object' ? opts.intended : null;
+  if (intended && intended.integration_id != null && intended.integration_id !== e.integration_id) {
+    return {
+      valid: false, status: 'READBACK_UNBOUND', reason: 'integration_id_mismatch',
+      expected: intended.integration_id, observed: e.integration_id,
+    };
+  }
+  return {
+    valid: true,
+    status: 'PROVIDER_READBACK',
+    reason: null,
+    payload: {
+      provider: e.provider,
+      required_check: e.required_check,
+      integration_id: e.integration_id,
+      rollup_state: e.rollup_state,
+      observed_at: e.observed_at,
+    },
+    does_not_prove: 'anything the provider did not itself say — this document is UNSIGNED, so it '
+      + 'attests that a readback was recorded, never that the recorded values are true',
+  };
+}
+
 const SLOTS = Object.freeze([
   { key: 'receipt', verify: verifyReceipt, arity: 2, executor: false },
   { key: 'execution_grant', verify: verifyExecutionGrant, arity: 2, executor: false },
   { key: 'toolset_declaration', verify: verifyToolsetAttestation, arity: 2, executor: false },
   { key: 'commit_attestation', verify: verifyExecutionAttestation, arity: 2, executor: true },
   { key: 'nonce_commitment', verify: null, executor: true },
-  { key: 'merge_evidence', verify: null, executor: true },
+  // 1293 — PROVIDER READBACK, and it is deliberately NOT graded as a cryptographic pass.
+  // The evidence is a JSON readback of what a repository host said about a required check. It
+  // carries no signature: anyone able to write the file can write any value into it. Grading it
+  // VERIFIED beside a checked signature would put a self-asserted document and an Ed25519 proof
+  // in the same column, which is the overstatement this bundle exists to avoid.
+  //
+  // So it gets its own class, PROVIDER_READBACK: structurally checked, attributed to a provider
+  // and a timestamp, and never counted as proof of anything the provider did not itself say.
+  { key: 'merge_evidence', verify: verifyProviderReadback, arity: 2, executor: true, producer: true, carried: true },
   // 1293 — A PRODUCER EXISTS FOR THIS SLOT. capability-demo's executor mints
   // `cr.atomic.execution.attestation.v1` (demo/src/atomic.js) and binds it to the deployment id;
   // demo/e2e-chain.js verifies one against the executor key with a forgery negative control.
@@ -89,7 +164,11 @@ const SLOTS = Object.freeze([
   // `cr.exec.attest.v1`, a different message. Those are two different absences and this module
   // used to report them as one: `requires_executor` said "nobody can produce this", which stopped
   // being true. `producer: true` splits them, so a reader learns the gap is a verifier gap.
-  { key: 'deploy_attestation', verify: null, executor: true, producer: true },
+  // 1300 — THE VERIFIER GAP IS CLOSED. verify-atomic-attestation.js speaks
+  // `cr.atomic.execution.attestation.v1` — the envelope the executor actually seals — so a token
+  // placed here is now CHECKED rather than refused for want of a verifier. `executor: true`
+  // stays: no in-process holder mints this, and an absent slot is still expected absence.
+  { key: 'deploy_attestation', verify: verifyAtomicExecutionAttestation, arity: 2, executor: true, producer: true },
   { key: 'provider_evidence', verify: null, executor: true },
 ]);
 
@@ -286,6 +365,7 @@ function verifyBundle(bundle, second, third) {
 }
 
 module.exports = {
+  verifyProviderReadback,
   verifyBundle, assertNoGreenEmpty, BUNDLE_VERSION, SLOT, BUNDLE, SLOTS, SLOT_KEYS, CEILING,
 };
 

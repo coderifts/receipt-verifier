@@ -314,10 +314,21 @@ describe('the format refuses what it cannot fully grade', () => {
   });
 
   it('a slot with no public verifier cannot be counted as verified', () => {
+    // provider_evidence still has none. merge_evidence and deploy_attestation gained verifiers
+    // (1293 / 1300); this invariant is about slots that have not.
+    const r = verifyBundle(bundleOf({ provider_evidence: 'anything' }), ctx, REG);
+    const s = r.slots.find((x) => x.slot === 'provider_evidence');
+    assert.equal(s.state, SLOT.INVALID);
+    assert.equal(s.status, 'NO_VERIFIER');
+  });
+
+  it('a slot that HAS a verifier grades by that verifier, not by NO_VERIFIER', () => {
+    // Garbage in the merge slot is still INVALID — the change is that it now says WHY.
     const r = verifyBundle(bundleOf({ merge_evidence: 'anything' }), ctx, REG);
     const s = r.slots.find((x) => x.slot === 'merge_evidence');
     assert.equal(s.state, SLOT.INVALID);
-    assert.equal(s.status, 'NO_VERIFIER');
+    assert.notEqual(s.status, 'NO_VERIFIER');
+    assert.equal(s.status, 'READBACK_MALFORMED');
   });
 });
 
@@ -483,5 +494,77 @@ describe('the honest line travels with every result', () => {
       assert.equal(code.includes(banned), false,
         `verify-bundle.js contains ${banned} — it must compose the existing verifiers, not re-implement them`);
     }
+  });
+});
+
+// ── 1293 / 1300 — the two slots that gained verifiers ────────────────────────────────────────
+describe('merge_evidence — PROVIDER_READBACK is its own class, not a crypto pass', () => {
+  const { verifyBundle: vb } = require('../verify-bundle.js');
+  const READBACK = {
+    provider: 'github',
+    required_check: 'CodeRifts / contract-gate (Action)',
+    bound_to_source: true,
+    integration_id: 15368,
+    rollup_state: 'blocked',
+    observed_at: '2026-09-02T07:50:17.040Z',
+  };
+  const grade = (ev) => {
+    const r = vb(bundleOf({ merge_evidence: ev }), ctx, REG);
+    return r.slots.find((x) => x.slot === 'merge_evidence');
+  };
+
+  it('a complete, source-bound readback grades PROVIDER_READBACK', () => {
+    const s = grade(JSON.stringify(READBACK));
+    assert.equal(s.status, 'PROVIDER_READBACK');
+  });
+
+  it('and that status is NOT the one a verified signature gets', () => {
+    // The whole point of the separate class: a reader must be able to tell an unsigned readback
+    // from a checked signature without reading the implementation.
+    const receiptSlot = vb(bundleOf({}), ctx, REG).slots.find((x) => x.slot === 'receipt');
+    assert.notEqual('PROVIDER_READBACK', receiptSlot.status);
+  });
+
+  it('a name-only requirement gets its OWN class — honest readback, absent binding', () => {
+    const s = grade(JSON.stringify({ ...READBACK, bound_to_source: false, integration_id: null }));
+    assert.equal(s.status, 'READBACK_NOT_SOURCE_BOUND');
+    assert.equal(s.state, SLOT.INVALID);
+  });
+
+  it('a readback that does not report the binding is not read as unbound', () => {
+    const s = grade(JSON.stringify({ ...READBACK, bound_to_source: null, integration_id: null }));
+    assert.equal(s.status, 'READBACK_NOT_SOURCE_BOUND');
+  });
+
+  for (const field of ['required_check', 'rollup_state', 'observed_at']) {
+    it(`a readback missing ${field} is incomplete, not weakly valid`, () => {
+      const s = grade(JSON.stringify({ ...READBACK, [field]: undefined }));
+      assert.equal(s.status, 'READBACK_INCOMPLETE');
+    });
+  }
+});
+
+describe('deploy_attestation — checked by the new public verifier (1300)', () => {
+  const { verifyBundle: vb } = require('../verify-bundle.js');
+  const V = require('./atomic-attest-vectors.json');
+  const valid = V.vectors.find((v) => v.name === 'ATOMIC-VALID');
+  const bad = V.vectors.find((v) => v.name === 'ATOMIC-BAD-SIGNATURE');
+
+  const grade = (token) => {
+    const r = vb(bundleOf({ deploy_attestation: token }), ctx, {
+      ...REG,
+      perSlot: { deploy_attestation: { opts: { registry: { keys: [{ kid: V.kid, public_key_pem: V.public_key_pem, status: 'active' }] } } } },
+    });
+    return r.slots.find((x) => x.slot === 'deploy_attestation');
+  };
+
+  it('a real executor seal is no longer refused for want of a verifier', () => {
+    const s = grade(valid.token);
+    assert.notEqual(s.status, 'NO_VERIFIER');
+  });
+
+  it('a forged signature over the same bytes is refused', () => {
+    const s = grade(bad.token);
+    assert.equal(s.state, SLOT.INVALID);
   });
 });
