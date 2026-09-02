@@ -641,8 +641,11 @@ else
   rm -f "$TS_KEYS" "$TS_ENT"
 fi
 checks=$((checks + 1))
+# 1127 — the harness prints its own verdict line INCLUDING which kernel it compared against
+# ([LIVE] or [RECORDED]). This wrapper used to print a fixed "js == app kernel" line regardless,
+# which is how a comparison against a recording would read as the live one.
 if node test/cross-check-toolset.js; then
-  echo "ok    cross-check-toolset (js == app kernel on TS-A-*)"
+  :
 else
   echo "FAIL  cross-check-toolset"
   fails=$((fails + 1))

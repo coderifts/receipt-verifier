@@ -51,6 +51,24 @@ describe('the guard actually covers every harness', () => {
   });
 });
 
+/**
+ * 1127 — ONE harness now has a third, honest state, and the invariant is narrowed rather than
+ * dropped.
+ *
+ * The rule 1133 installed is "an absent comparison must never be reported as a passing one." A
+ * skip broke it by asserting an agreement nobody had tested. cross-check-toolset now falls back to
+ * RECORDED kernel verdicts (test/toolset-kernel-verdicts.json), which does NOT break it: the
+ * comparison genuinely runs, against verdicts the kernel actually produced, pinned by
+ * vectors_sha256 to the tokens they describe — and the output says [RECORDED] so no reader mistakes
+ * it for the live check.
+ *
+ * The fallback is therefore held to a HARDER standard below than the plain refusal it replaces:
+ * it must refuse a fixture that does not describe these vectors, it must refuse when the fixture is
+ * gone, and it must never print the LIVE line. Anything less would be the silent skip wearing a
+ * fixture.
+ */
+const HAS_RECORDED_FALLBACK = new Set(['cross-check-toolset']);
+
 const runWith = (harness, appDir) => spawnSync(
   process.execPath,
   [path.join(__dirname, `${harness}.js`)],
@@ -58,7 +76,7 @@ const runWith = (harness, appDir) => spawnSync(
 );
 
 describe('a missing app kernel fails loud in EVERY cross-check', () => {
-  for (const h of HARNESSES) {
+  for (const h of HARNESSES.filter((x) => !HAS_RECORDED_FALLBACK.has(x))) {
     it(`${h} exits NON-ZERO when the checkout is absent`, () => {
       const r = runWith(h, '/nonexistent-app-checkout');
       assert.notEqual(r.status, 0,
@@ -74,6 +92,10 @@ describe('a missing app kernel fails loud in EVERY cross-check', () => {
         'an error without a remedy makes the next person guess');
     });
 
+  }
+
+  // EVERY harness, fallback included — the word must never appear as an outcome.
+  for (const h of HARNESSES) {
     it(`${h} does not print the word "skip" as an outcome`, () => {
       // The old line was `… — skip` on stdout with exit 0. If that shape ever returns, run.sh
       // starts printing a green "ok" for a comparison that did not happen.
@@ -100,3 +122,104 @@ describe('the successful path is unchanged', () => {
     });
   }
 });
+
+describe('1127 — the RECORDED fallback is held to a harder standard than the refusal it replaces',
+  () => {
+    const H = 'cross-check-toolset';
+    const FIXTURE = path.join(__dirname, 'toolset-kernel-verdicts.json');
+    const VECTORS = path.join(__dirname, 'toolset-vectors.json');
+
+    it('runs the comparison without the app and says which kernel it compared against', () => {
+      const r = runWith(H, '/nonexistent-app-checkout');
+      assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+      assert.match(r.stdout, /\[RECORDED/, 'the mode must be on the success line');
+      assert.match(r.stdout, /weaker than LIVE/, 'a weaker check must say so where it is read');
+      assert.match(r.stdout, /public==kernel==/, 'the per-vector comparison must actually run');
+    });
+
+    it('NEVER prints the LIVE line when the checkout is absent', () => {
+      const r = runWith(H, '/nonexistent-app-checkout');
+      assert.equal(/\[LIVE\]/.test(r.stdout), false,
+        'a recorded comparison reported as the live one is the 1133 defect with extra steps');
+    });
+
+    it('the live run prints LIVE, so the two are never confused', () => {
+      const r = spawnSync(process.execPath, [path.join(__dirname, `${H}.js`)], { encoding: 'utf8' });
+      if (r.status === 1 && /app kernel not found/.test(r.stderr)) return; // no local checkout
+      assert.equal(r.status, 0, r.stderr);
+      assert.match(r.stdout, /\[LIVE\]/);
+    });
+
+    it('REFUSES a fixture that does not describe these vectors', () => {
+      // The binding that stops this from being theatre. Recorded verdicts are about specific
+      // tokens; the vectors carry an ephemeral key, so a regeneration changes every one of them.
+      const original = fs.readFileSync(FIXTURE, 'utf8');
+      const doc = JSON.parse(original);
+      doc.vectors_sha256 = 'sha256:' + '0'.repeat(64);
+      fs.writeFileSync(FIXTURE, `${JSON.stringify(doc, null, 2)}\n`);
+      try {
+        const r = runWith(H, '/nonexistent-app-checkout');
+        assert.equal(r.status, 1, 'a fixture describing other tokens must not be compared against');
+        assert.match(`${r.stdout}${r.stderr}`, /do not describe these vectors/);
+        assert.match(`${r.stdout}${r.stderr}`, /gen-toolset-kernel-verdicts/, 'name the remedy');
+      } finally {
+        fs.writeFileSync(FIXTURE, original);
+      }
+    });
+
+    it('REFUSES when the fixture is gone — no checkout and no recording is still a refusal', () => {
+      const original = fs.readFileSync(FIXTURE, 'utf8');
+      fs.rmSync(FIXTURE);
+      try {
+        const r = runWith(H, '/nonexistent-app-checkout');
+        assert.equal(r.status, 1);
+        assert.match(`${r.stderr}`, /no recorded verdicts/);
+        assert.match(`${r.stderr}`, /reporting a comparison that did not happen is worse/);
+      } finally {
+        fs.writeFileSync(FIXTURE, original);
+      }
+    });
+
+    it('a vector with no recorded verdict FAILS rather than passing unexamined', () => {
+      // Otherwise adding a vector silently shrinks what CI compares.
+      const original = fs.readFileSync(FIXTURE, 'utf8');
+      const doc = JSON.parse(original);
+      doc.verdicts = doc.verdicts.slice(1);
+      fs.writeFileSync(FIXTURE, `${JSON.stringify(doc, null, 2)}\n`);
+      try {
+        const r = runWith(H, '/nonexistent-app-checkout');
+        assert.equal(r.status, 1, 'a missing recording must not be silently skipped');
+        assert.match(r.stdout, /NO_RECORDED_VERDICT_FOR_/);
+      } finally {
+        fs.writeFileSync(FIXTURE, original);
+      }
+    });
+
+    it('the LIVE run catches a STALE recording, so drift cannot be carried into CI', () => {
+      const r0 = spawnSync(process.execPath, [path.join(__dirname, `${H}.js`)], { encoding: 'utf8' });
+      if (r0.status === 1 && /app kernel not found/.test(r0.stderr)) return; // no local checkout
+      const original = fs.readFileSync(FIXTURE, 'utf8');
+      const doc = JSON.parse(original);
+      doc.kernel_sha256 = 'sha256:' + 'f'.repeat(64);
+      fs.writeFileSync(FIXTURE, `${JSON.stringify(doc, null, 2)}\n`);
+      try {
+        const r = spawnSync(process.execPath, [path.join(__dirname, `${H}.js`)], { encoding: 'utf8' });
+        assert.equal(r.status, 1);
+        assert.match(r.stdout, /STALE/);
+      } finally {
+        fs.writeFileSync(FIXTURE, original);
+      }
+    });
+
+    it('the recorded vectors_sha256 describes the vectors file as it stands', () => {
+      const { sha256 } = require('./gen-toolset-kernel-verdicts.js');
+      const rec = JSON.parse(fs.readFileSync(FIXTURE, 'utf8'));
+      assert.equal(rec.vectors_sha256, sha256(fs.readFileSync(VECTORS)));
+    });
+
+    it('the fixture states what it does NOT prove', () => {
+      const rec = JSON.parse(fs.readFileSync(FIXTURE, 'utf8'));
+      assert.match(rec.does_not_prove, /as it stands now/);
+      assert.match(rec.proves, /AS OF/);
+    });
+  });
