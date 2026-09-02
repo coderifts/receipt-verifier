@@ -1,0 +1,151 @@
+{
+ "generated_by": "test/gen-atomic-attest-vectors.js",
+ "minted_by": "capability-demo demo/src/atomic.js (encodeAtomicExecutionAttestation + signPreimage)",
+ "kid": "atomic-vec-k1",
+ "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEANJxHjzFY3/lcNnGmmab8PqNIZ3zIep7yWD3+VriQKUg=\n-----END PUBLIC KEY-----\n",
+ "vectors": [
+  {
+   "name": "ATOMIC-VALID",
+   "note": "A real seal from the producer, every bound field matching.",
+   "token": "cr.atomic.execution.attestation.v1|atomic-vec-k1|Y3IuZ2F0ZS5wcmVpbWFnZS52MXxqdGktYXRvbWljLTF8ZGVwLWF0b21pYy0xfHNoYTI1NjphYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhfC9hcnRpY2xlcy83|WltkzQvfpf1DBpo00zlhCEwb8g-jQo0WpD1v5lAs6zztfsbV-Ic0OCBnBaT6x8VKN4jnVXqDhFqrx66j2ma_Ag",
+   "intended": {
+    "jti": "jti-atomic-1",
+    "deployment_id": "dep-atomic-1",
+    "mutation_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "target_id": "/articles/7"
+   },
+   "expected": {
+    "valid": true,
+    "status": "ATOMIC_ATTEST_VALID"
+   }
+  },
+  {
+   "name": "ATOMIC-UNBOUND-JTI",
+   "note": "Signed for a different grant.",
+   "token": "cr.atomic.execution.attestation.v1|atomic-vec-k1|Y3IuZ2F0ZS5wcmVpbWFnZS52MXxqdGktb3RoZXJ8ZGVwLWF0b21pYy0xfHNoYTI1NjphYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhfC9hcnRpY2xlcy83|CNMAWUmZ4X7xI5P9kmHOgTkZCe7InEBv2kw0fFvJFMaiSc4z-qJ4lQAURdfvxqCBwv1XbtYxK8OtE6A5k6njDw",
+   "intended": {
+    "jti": "jti-atomic-1",
+    "deployment_id": "dep-atomic-1",
+    "mutation_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "target_id": "/articles/7"
+   },
+   "expected": {
+    "valid": false,
+    "status": "ATOMIC_ATTEST_UNBOUND",
+    "reason": "grant_jti_mismatch"
+   }
+  },
+  {
+   "name": "ATOMIC-UNBOUND-DEPLOYMENT",
+   "note": "Signed under a different deployment id.",
+   "token": "cr.atomic.execution.attestation.v1|atomic-vec-k1|Y3IuZ2F0ZS5wcmVpbWFnZS52MXxqdGktYXRvbWljLTF8ZGVwLW90aGVyfHNoYTI1NjphYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhfC9hcnRpY2xlcy83|ghNlrrBHt9nmkXMiOwCCZ6mN7m7dgVQ_0RyAq8A9L2x59Gj-DrZGJaNBpvbOkFi1nuBspvmg2ajYBlSL2cW9AA",
+   "intended": {
+    "jti": "jti-atomic-1",
+    "deployment_id": "dep-atomic-1",
+    "mutation_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "target_id": "/articles/7"
+   },
+   "expected": {
+    "valid": false,
+    "status": "ATOMIC_ATTEST_UNBOUND",
+    "reason": "deployment_id_mismatch"
+   }
+  },
+  {
+   "name": "ATOMIC-UNBOUND-DIGEST",
+   "note": "Signed over a different mutation.",
+   "token": "cr.atomic.execution.attestation.v1|atomic-vec-k1|Y3IuZ2F0ZS5wcmVpbWFnZS52MXxqdGktYXRvbWljLTF8ZGVwLWF0b21pYy0xfHNoYTI1NjpiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJifC9hcnRpY2xlcy83|jkJlKnDlzUELrTWX1NsPpXZ3Eua-Gh9YkvZlJeetzSyctcoKclUysCFpjFTD6K4lFHRCwEe_jkKRJ3wsy3u3BQ",
+   "intended": {
+    "jti": "jti-atomic-1",
+    "deployment_id": "dep-atomic-1",
+    "mutation_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "target_id": "/articles/7"
+   },
+   "expected": {
+    "valid": false,
+    "status": "ATOMIC_ATTEST_UNBOUND",
+    "reason": "mutation_digest_mismatch"
+   }
+  },
+  {
+   "name": "ATOMIC-UNBOUND-TARGET",
+   "note": "Signed for a different target — the resource-swap case.",
+   "token": "cr.atomic.execution.attestation.v1|atomic-vec-k1|Y3IuZ2F0ZS5wcmVpbWFnZS52MXxqdGktYXRvbWljLTF8ZGVwLWF0b21pYy0xfHNoYTI1NjphYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhfC9hcnRpY2xlcy85|IvrCcafvJm_2BwWaymscCaGQJ_kDAoWUVvU8YbOJ-PJsVO99m8yGwSBdiB3MpvCSRXcRM5ZOV2lAm_0WU99QAg",
+   "intended": {
+    "jti": "jti-atomic-1",
+    "deployment_id": "dep-atomic-1",
+    "mutation_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "target_id": "/articles/7"
+   },
+   "expected": {
+    "valid": false,
+    "status": "ATOMIC_ATTEST_UNBOUND",
+    "reason": "target_id_mismatch"
+   }
+  },
+  {
+   "name": "ATOMIC-BAD-SIGNATURE",
+   "note": "Correct preimage, signature from another key.",
+   "token": "cr.atomic.execution.attestation.v1|atomic-vec-k1|Y3IuZ2F0ZS5wcmVpbWFnZS52MXxqdGktYXRvbWljLTF8ZGVwLWF0b21pYy0xfHNoYTI1NjphYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhfC9hcnRpY2xlcy83|GmCOR0w2nOcuH6GKoLbEMp1vDBCzeDl87eOnpA5yrJx_lbCVNWJmRZ3t6dvMXjtDXcW60YZkr-ynUOK0x8Y0Cg",
+   "intended": {
+    "jti": "jti-atomic-1",
+    "deployment_id": "dep-atomic-1",
+    "mutation_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "target_id": "/articles/7"
+   },
+   "expected": {
+    "valid": false,
+    "status": "ATOMIC_ATTEST_INVALID_SIGNATURE",
+    "reason": "signature_mismatch"
+   }
+  },
+  {
+   "name": "ATOMIC-UNKNOWN-KID",
+   "note": "A kid the registry does not carry.",
+   "token": "cr.atomic.execution.attestation.v1|nobody-knows-me|Y3IuZ2F0ZS5wcmVpbWFnZS52MXxqdGktYXRvbWljLTF8ZGVwLWF0b21pYy0xfHNoYTI1NjphYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhfC9hcnRpY2xlcy83|WltkzQvfpf1DBpo00zlhCEwb8g-jQo0WpD1v5lAs6zztfsbV-Ic0OCBnBaT6x8VKN4jnVXqDhFqrx66j2ma_Ag",
+   "intended": {
+    "jti": "jti-atomic-1",
+    "deployment_id": "dep-atomic-1",
+    "mutation_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "target_id": "/articles/7"
+   },
+   "expected": {
+    "valid": false,
+    "status": "ATOMIC_ATTEST_UNKNOWN_KEY",
+    "reason": "unknown_kid"
+   }
+  },
+  {
+   "name": "ATOMIC-MALFORMED",
+   "note": "Three segments where four are required.",
+   "token": "cr.atomic.execution.attestation.v1|k|only-three",
+   "intended": {
+    "jti": "jti-atomic-1",
+    "deployment_id": "dep-atomic-1",
+    "mutation_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "target_id": "/articles/7"
+   },
+   "expected": {
+    "valid": false,
+    "status": "ATOMIC_ATTEST_MALFORMED",
+    "reason": "malformed_structure"
+   }
+  },
+  {
+   "name": "ATOMIC-WRONG-ENVELOPE",
+   "note": "A cr.exec.attest.v1-shaped token must not verify here.",
+   "token": "cr.exec.attest.v1|atomic-vec-k1|Y3IuZ2F0ZS5wcmVpbWFnZS52MXxqdGktYXRvbWljLTF8ZGVwLWF0b21pYy0xfHNoYTI1NjphYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhfC9hcnRpY2xlcy83|WltkzQvfpf1DBpo00zlhCEwb8g-jQo0WpD1v5lAs6zztfsbV-Ic0OCBnBaT6x8VKN4jnVXqDhFqrx66j2ma_Ag",
+   "intended": {
+    "jti": "jti-atomic-1",
+    "deployment_id": "dep-atomic-1",
+    "mutation_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "target_id": "/articles/7"
+   },
+   "expected": {
+    "valid": false,
+    "status": "ATOMIC_ATTEST_MALFORMED",
+    "reason": "malformed_structure"
+   }
+  }
+ ]
+}
