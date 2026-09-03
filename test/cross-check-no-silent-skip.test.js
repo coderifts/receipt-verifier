@@ -110,15 +110,38 @@ describe('a missing app kernel fails loud in EVERY cross-check', () => {
   });
 });
 
+/**
+ * Is a LIVE app kernel reachable?
+ *
+ * MEASURED (1331): the stderr guard `/app kernel not found/` does NOT catch cross-check-toolset,
+ * because that harness has a RECORDED fallback — with no checkout it exits 0 and prints
+ * `[RECORDED …]` instead of failing. So three tests below asserted live-kernel text against a
+ * RECORDED run and failed on the public HEAD, where no checkout exists. The mode is on the success
+ * line by design (1127); read it there rather than inferring it from an error that never comes.
+ */
+function liveKernel(harness) {
+  const r = spawnSync(process.execPath, [path.join(__dirname, `${harness}.js`)], { encoding: 'utf8' });
+  return {
+    ...r,
+    live: r.status === 0 && /\[LIVE\]|agree with app kernel(?! verdicts)/.test(r.stdout),
+    recorded: /\[RECORDED/.test(r.stdout),
+  };
+}
+
 describe('the successful path is unchanged', () => {
   for (const h of HARNESSES) {
     it(`${h} still exits 0 and reports agreement when the checkout is present`, () => {
-      const r = spawnSync(process.execPath, [path.join(__dirname, `${h}.js`)], { encoding: 'utf8' });
+      const r = liveKernel(h);
       // Skipped only if the developer genuinely has no app checkout — in which case the guard
       // above is the thing under test and this assertion cannot be meaningful.
       if (r.status === 1 && /app kernel not found/.test(r.stderr)) return;
       assert.equal(r.status, 0, r.stderr);
-      assert.match(r.stdout, /agree with app kernel/);
+      // BOTH modes are a success; they are not the same success. A RECORDED run agrees with a
+      // kernel pinned at a revision, and its own line says so. Demanding the LIVE wording here is
+      // what made this red on the public HEAD, where no checkout exists.
+      assert.match(r.stdout, /agree with (app kernel|RECORDED app-kernel verdicts)/);
+      if (r.recorded) assert.match(r.stdout, /weaker than LIVE/,
+        'a RECORDED run must say it is the weaker of the two');
     });
   }
 });
@@ -143,11 +166,16 @@ describe('1127 — the RECORDED fallback is held to a harder standard than the r
         'a recorded comparison reported as the live one is the 1133 defect with extra steps');
     });
 
-    it('the live run prints LIVE, so the two are never confused', () => {
-      const r = spawnSync(process.execPath, [path.join(__dirname, `${H}.js`)], { encoding: 'utf8' });
+    it('the run NAMES its mode, and the two are never confused', () => {
+      // The property is that the mode is always stated — not that it is always LIVE. On the public
+      // HEAD there is no checkout, so this harness runs RECORDED, and demanding [LIVE] here made a
+      // correct RECORDED run look like a failure.
+      const r = liveKernel(H);
       if (r.status === 1 && /app kernel not found/.test(r.stderr)) return; // no local checkout
       assert.equal(r.status, 0, r.stderr);
-      assert.match(r.stdout, /\[LIVE\]/);
+      assert.match(r.stdout, /\[LIVE\]|\[RECORDED/, 'the success line does not name the mode');
+      // And never both: a line claiming each would tell a reader nothing.
+      assert.equal(/\[LIVE\]/.test(r.stdout) && /\[RECORDED/.test(r.stdout), false);
     });
 
     it('REFUSES a fixture that does not describe these vectors', () => {
@@ -196,8 +224,12 @@ describe('1127 — the RECORDED fallback is held to a harder standard than the r
     });
 
     it('the LIVE run catches a STALE recording, so drift cannot be carried into CI', () => {
-      const r0 = spawnSync(process.execPath, [path.join(__dirname, `${H}.js`)], { encoding: 'utf8' });
-      if (r0.status === 1 && /app kernel not found/.test(r0.stderr)) return; // no local checkout
+      // REQUIRES A LIVE KERNEL, and now says so. Poisoning kernel_sha256 and expecting STALE only
+      // means something when there is a real kernel to disagree with it; in RECORDED mode the
+      // poisoned value IS the only kernel, so nothing can detect the drift. Running this without a
+      // checkout asserted a comparison that was not happening — the 1331 defect.
+      const r0 = liveKernel(H);
+      if (!r0.live) return;   // RECORDED or absent: this test has nothing to compare against
       const original = fs.readFileSync(FIXTURE, 'utf8');
       const doc = JSON.parse(original);
       doc.kernel_sha256 = 'sha256:' + 'f'.repeat(64);
