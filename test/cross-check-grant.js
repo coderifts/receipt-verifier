@@ -9,8 +9,9 @@
  * path — retired-key is compared js/py only (run.sh). This script pins the
  * ephemeral public key and compares status/valid/reason on EG-*.
  *
- * Exit 0 if app kernel is missing (do not fail a standalone clone) OR if every
- * class agrees. Exit 1 on disagreement.
+ * LIVE when the app checkout exists; RECORDED (weaker, named) in CI where it does not.
+ * Exit 1 on disagreement, on a missing recording, or on a recording that does not
+ * describe these vectors. Never skip.
  */
 
 const fs = require('node:fs');
@@ -20,35 +21,43 @@ const crypto = require('node:crypto');
 
 const vectors = require('./grant-vectors.json');
 const { verifyExecutionGrant } = require('../verify-grant.js');
+const { loadRecorded } = require('./gen-kernel-verdicts');
 
 const APP = process.env.CODERIFTS_APP_DIR
   ? path.join(process.env.CODERIFTS_APP_DIR, 'src', 'verdict-core', 'execution-grant.js')
   : path.join(os.homedir(), 'coderifts-app', 'src', 'verdict-core', 'execution-grant.js');
 
-// ── 1133: A MISSING APP CHECKOUT FAILS LOUD, IT DOES NOT SKIP ────────────────────────────────
-//
-// This used to print "— skip" and exit 0. run.sh checks the exit code explicitly, so a skip did
-// not become a swallowed failure — it became something worse: run.sh printed
-//   ok    cross-check-grant (js == app kernel on ...)
-// a green line asserting an agreement that was never tested. MEASURED 2026-08-27: the CI workflow
-// (.github/workflows/verify-live-receipt.yml) checks out THIS repository only and never the app,
-// so $HOME/coderifts-app does not exist there and this comparison has never actually run in CI.
-//
-// Same rule the app applies to its own vendored-sync gate: a missing checkout fails loud, never
-// skips. An absent comparison must not be reported as a passing one.
-if (!fs.existsSync(APP)) {
-  console.error(
-    `cross-check-grant: app kernel not found at ${APP}; set CODERIFTS_APP_DIR to a `
-    + 'coderifts-app checkout, or clone it at $HOME/coderifts-app. Refusing to skip: this harness '
-    + 'is the only place the public verifier is compared against the app kernel, and reporting a '
-    + 'comparison that did not happen is worse than not having one.',
-  );
-  process.exit(1);
-}
-
-const app = require(APP);
 const publicKey = crypto.createPublicKey(vectors.public_key_pem);
 const ctx = { publicKey, expectedKid: vectors.kid };
+
+let mode;
+let kernelVerify;
+if (fs.existsSync(APP)) {
+  mode = 'LIVE';
+  // eslint-disable-next-line import/no-dynamic-require, global-require
+  const app = require(APP);
+  kernelVerify = (token, intended) => app.verifyExecutionGrant(token, { publicKey, intended });
+  const { FAMILIES } = require('./gen-kernel-verdicts');
+  const want = FAMILIES.grant().text;
+  const have = fs.existsSync(path.join(__dirname, 'grant-kernel-verdicts.json'))
+    ? fs.readFileSync(path.join(__dirname, 'grant-kernel-verdicts.json'), 'utf8') : '';
+  if (have !== want) {
+    console.log('FAIL  grant-kernel-verdicts.json is STALE — regenerate: node test/gen-kernel-verdicts.js --family grant');
+    process.exit(1);
+  }
+} else {
+  let rec;
+  try {
+    rec = loadRecorded('grant', path.join(__dirname, 'grant-vectors.json'));
+  } catch (e) {
+    console.error(e.message);
+    process.exit(1);
+  }
+  mode = 'RECORDED';
+  kernelVerify = (_token, _intended, name) => rec.byName.get(name)
+    || { valid: null, status: `NO_RECORDED_VERDICT_FOR_${name}`, reason: null };
+  console.log(`ok    recorded-verdicts  kernel ${rec.rec.kernel_sha256.slice(0, 19)}… over the pinned vectors`);
+}
 
 const CLASSES = [
   'EG-VALID', 'EG-EXPIRED', 'EG-WRONG-AUDIENCE', 'EG-SCOPE-MISMATCH', 'EG-UNBOUND-DIGEST',
@@ -79,7 +88,7 @@ for (const name of CLASSES) {
   if (f.receipt) intended.receipt_token = f.receipt;
 
   const pub = verifyExecutionGrant(v.token, ctx, { intended });
-  const ref = app.verifyExecutionGrant(v.token, { publicKey, intended });
+  const ref = kernelVerify(v.token, intended, name);
   const agree = pub.status === ref.status && pub.valid === ref.valid
     && (pub.reason || null) === (ref.reason || null)
     && pub.status === v.expected.status
@@ -99,5 +108,13 @@ for (const name of CLASSES) {
   }
 }
 
-console.log(`cross-check-grant: ${CLASSES.length - fails}/${CLASSES.length} agree with app kernel at ${APP}`);
-process.exit(fails === 0 ? 0 : 1);
+if (fails > 0) {
+  console.log(`cross-check-grant: ${fails} disagreement(s) [${mode}]`);
+  process.exit(1);
+}
+if (mode === 'LIVE') {
+  console.log(`cross-check-grant: ${CLASSES.length}/${CLASSES.length} agree with app kernel at ${APP} [LIVE]`);
+} else {
+  console.log(`cross-check-grant: ${CLASSES.length}/${CLASSES.length} agree with RECORDED app-kernel verdicts [RECORDED — weaker than LIVE]`);
+}
+process.exit(0);

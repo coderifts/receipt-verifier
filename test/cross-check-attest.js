@@ -5,8 +5,8 @@
  * Cross-check EG-A-* classes: public verify-attest.js vs the app kernel
  * (coderifts-app/src/verdict-core/execution-attestation.js) when that checkout exists.
  *
- * Exit 0 if app kernel is missing (do not fail a standalone clone) OR if every
- * class agrees. Exit 1 on disagreement.
+ * LIVE when the app checkout exists; RECORDED (weaker, named) in CI where it does not.
+ * Exit 1 on disagreement or a missing/stale recording. Never skip.
  */
 
 const fs = require('node:fs');
@@ -15,33 +15,39 @@ const os = require('node:os');
 
 const vectors = require('./attest-vectors.json');
 const { verifyExecutionAttestation } = require('../verify-attest.js');
+const { loadRecorded, FAMILIES } = require('./gen-kernel-verdicts');
 
 const APP = process.env.CODERIFTS_APP_DIR
   ? path.join(process.env.CODERIFTS_APP_DIR, 'src', 'verdict-core', 'execution-attestation.js')
   : path.join(os.homedir(), 'coderifts-app', 'src', 'verdict-core', 'execution-attestation.js');
 
-// ── 1133: A MISSING APP CHECKOUT FAILS LOUD, IT DOES NOT SKIP ────────────────────────────────
-//
-// This used to print "— skip" and exit 0. run.sh checks the exit code explicitly, so a skip did
-// not become a swallowed failure — it became something worse: run.sh printed
-//   ok    cross-check-attest (js == app kernel on ...)
-// a green line asserting an agreement that was never tested. MEASURED 2026-08-27: the CI workflow
-// (.github/workflows/verify-live-receipt.yml) checks out THIS repository only and never the app,
-// so $HOME/coderifts-app does not exist there and this comparison has never actually run in CI.
-//
-// Same rule the app applies to its own vendored-sync gate: a missing checkout fails loud, never
-// skips. An absent comparison must not be reported as a passing one.
-if (!fs.existsSync(APP)) {
-  console.error(
-    `cross-check-attest: app kernel not found at ${APP}; set CODERIFTS_APP_DIR to a `
-    + 'coderifts-app checkout, or clone it at $HOME/coderifts-app. Refusing to skip: this harness '
-    + 'is the only place the public verifier is compared against the app kernel, and reporting a '
-    + 'comparison that did not happen is worse than not having one.',
-  );
-  process.exit(1);
+let mode;
+let kernelVerify;
+if (fs.existsSync(APP)) {
+  mode = 'LIVE';
+  // eslint-disable-next-line import/no-dynamic-require, global-require
+  const app = require(APP);
+  kernelVerify = (token, opts) => app.verifyExecutionAttestation(token, opts);
+  const want = FAMILIES.attest().text;
+  const fix = path.join(__dirname, 'attest-kernel-verdicts.json');
+  const have = fs.existsSync(fix) ? fs.readFileSync(fix, 'utf8') : '';
+  if (have !== want) {
+    console.log('FAIL  attest-kernel-verdicts.json is STALE — regenerate: node test/gen-kernel-verdicts.js --family attest');
+    process.exit(1);
+  }
+} else {
+  let rec;
+  try {
+    rec = loadRecorded('attest', path.join(__dirname, 'attest-vectors.json'));
+  } catch (e) {
+    console.error(e.message);
+    process.exit(1);
+  }
+  mode = 'RECORDED';
+  kernelVerify = (_token, _opts, name) => rec.byName.get(name)
+    || { valid: null, status: `NO_RECORDED_VERDICT_FOR_${name}`, reason: null };
+  console.log(`ok    recorded-verdicts  kernel ${rec.rec.kernel_sha256.slice(0, 19)}… over the pinned vectors`);
 }
-
-const app = require(APP);
 
 function registryFor(v) {
   if (v.keys === 'empty') return vectors.empty_registry;
@@ -65,7 +71,7 @@ for (const v of vectors.vectors) {
   const intended = intendedFor(v);
   const opts = { registry, ...(intended ? { intended } : {}) };
   const pub = verifyExecutionAttestation(v.token, opts);
-  const ref = app.verifyExecutionAttestation(v.token, opts);
+  const ref = kernelVerify(v.token, opts, v.name);
   const agree = pub.status === ref.status && pub.valid === ref.valid
     && (pub.reason || null) === (ref.reason || null)
     && pub.status === v.expected.status
@@ -78,5 +84,13 @@ for (const v of vectors.vectors) {
   }
 }
 
-console.log(`cross-check-attest: ${names.length - fails}/${names.length} agree with app kernel at ${APP}`);
-process.exit(fails === 0 ? 0 : 1);
+if (fails > 0) {
+  console.log(`cross-check-attest: ${fails} disagreement(s) [${mode}]`);
+  process.exit(1);
+}
+if (mode === 'LIVE') {
+  console.log(`cross-check-attest: ${names.length}/${names.length} agree with app kernel at ${APP} [LIVE]`);
+} else {
+  console.log(`cross-check-attest: ${names.length}/${names.length} agree with RECORDED app-kernel verdicts [RECORDED — weaker than LIVE]`);
+}
+process.exit(0);

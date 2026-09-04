@@ -14,44 +14,46 @@ const os = require('node:os');
 
 const vectors = require('./monitor-vectors.json');
 const { verifyMonitoringAttestation } = require('../verify-monitor.js');
+const { loadRecorded, FAMILIES } = require('./gen-kernel-verdicts');
 
 const APP = process.env.CODERIFTS_APP_DIR
   ? path.join(process.env.CODERIFTS_APP_DIR, 'src', 'verdict-core', 'monitoring-attestation.js')
   : path.join(os.homedir(), 'coderifts-app', 'src', 'verdict-core', 'monitoring-attestation.js');
 
-// ── 1133: A MISSING APP CHECKOUT FAILS LOUD, IT DOES NOT SKIP ────────────────────────────────
-//
-// Written this way from the first commit rather than retrofitted. A skip here would not be a
-// swallowed failure — run.sh checks the exit code — it would be something worse: run.sh would
-// print
-//   ok    cross-check-monitor (js == app kernel on ...)
-// a green line asserting an agreement that was never tested. MEASURED 2026-08-27: the CI workflow
-// (.github/workflows/verify-live-receipt.yml) checks out THIS repository only and never the app,
-// so $HOME/coderifts-app does not exist there and this comparison does not run in CI.
-//
-// An absent comparison must not be reported as a passing one.
-if (!fs.existsSync(APP)) {
-  console.error(
-    `cross-check-monitor: app kernel not found at ${APP}; set CODERIFTS_APP_DIR to a `
-    + 'coderifts-app checkout, or clone it at $HOME/coderifts-app. Refusing to skip: this harness '
-    + 'is the only place the public monitoring verifier is compared against the app kernel, and '
-    + 'reporting a comparison that did not happen is worse than not having one.',
-  );
-  process.exit(1);
-}
-
-const app = require(APP);
-
-// If the app kernel ever stops exporting the entry point, that is a rename or a removal — either
-// way the comparison cannot run, and `undefined is not a function` further down would read as a
-// crash of unclear origin. Name it here instead.
-if (typeof app.verifyMonitoringAttestation !== 'function') {
-  console.error(
-    `cross-check-monitor: ${APP} exists but exports no verifyMonitoringAttestation `
-    + `(exports: ${Object.keys(app).join(', ') || 'none'}). The kernel entry point was renamed or `
-    + 'removed; this comparison cannot run and must not be reported as passing.',
-  );
-  process.exit(1);
+let mode;
+let kernelVerify;
+if (fs.existsSync(APP)) {
+  mode = 'LIVE';
+  // eslint-disable-next-line import/no-dynamic-require, global-require
+  const app = require(APP);
+  if (typeof app.verifyMonitoringAttestation !== 'function') {
+    console.error(
+      `cross-check-monitor: ${APP} exists but exports no verifyMonitoringAttestation `
+      + `(exports: ${Object.keys(app).join(', ') || 'none'}). The kernel entry point was renamed or `
+      + 'removed; this comparison cannot run and must not be reported as passing.',
+    );
+    process.exit(1);
+  }
+  kernelVerify = (token, opts) => app.verifyMonitoringAttestation(token, opts);
+  const want = FAMILIES.monitor().text;
+  const fix = path.join(__dirname, 'monitor-kernel-verdicts.json');
+  const have = fs.existsSync(fix) ? fs.readFileSync(fix, 'utf8') : '';
+  if (have !== want) {
+    console.log('FAIL  monitor-kernel-verdicts.json is STALE — regenerate: node test/gen-kernel-verdicts.js --family monitor');
+    process.exit(1);
+  }
+} else {
+  let rec;
+  try {
+    rec = loadRecorded('monitor', path.join(__dirname, 'monitor-vectors.json'));
+  } catch (e) {
+    console.error(e.message);
+    process.exit(1);
+  }
+  mode = 'RECORDED';
+  kernelVerify = (_token, _opts, name) => rec.byName.get(name)
+    || { valid: null, status: `NO_RECORDED_VERDICT_FOR_${name}`, reason: null };
+  console.log(`ok    recorded-verdicts  kernel ${rec.rec.kernel_sha256.slice(0, 19)}… over the pinned vectors`);
 }
 
 function registryFor(v) {
@@ -76,7 +78,7 @@ for (const v of vectors.vectors) {
   const intended = intendedFor(v);
   const opts = { registry, ...(intended ? { intended } : {}) };
   const pub = verifyMonitoringAttestation(v.token, opts);
-  const ref = app.verifyMonitoringAttestation(v.token, opts);
+  const ref = kernelVerify(v.token, opts, v.name);
   const agree = pub.status === ref.status && pub.valid === ref.valid
     && (pub.reason || null) === (ref.reason || null)
     && pub.status === v.expected.status
@@ -89,5 +91,13 @@ for (const v of vectors.vectors) {
   }
 }
 
-console.log(`cross-check-monitor: ${names.length - fails}/${names.length} agree with app kernel at ${APP}`);
-process.exit(fails === 0 ? 0 : 1);
+if (fails > 0) {
+  console.log(`cross-check-monitor: ${fails} disagreement(s) [${mode}]`);
+  process.exit(1);
+}
+if (mode === 'LIVE') {
+  console.log(`cross-check-monitor: ${names.length}/${names.length} agree with app kernel at ${APP} [LIVE]`);
+} else {
+  console.log(`cross-check-monitor: ${names.length}/${names.length} agree with RECORDED app-kernel verdicts [RECORDED — weaker than LIVE]`);
+}
+process.exit(0);

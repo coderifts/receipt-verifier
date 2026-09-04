@@ -67,7 +67,9 @@ describe('the guard actually covers every harness', () => {
  * gone, and it must never print the LIVE line. Anything less would be the silent skip wearing a
  * fixture.
  */
-const HAS_RECORDED_FALLBACK = new Set(['cross-check-toolset']);
+const HAS_RECORDED_FALLBACK = new Set([
+  'cross-check-toolset', 'cross-check-grant', 'cross-check-attest', 'cross-check-monitor',
+]);
 
 const runWith = (harness, appDir) => spawnSync(
   process.execPath,
@@ -105,8 +107,16 @@ describe('a missing app kernel fails loud in EVERY cross-check', () => {
   }
 
   it('the refusal explains WHY skipping is worse than having no harness', () => {
-    const r = runWith('cross-check-grant', '/nonexistent-app-checkout');
-    assert.match(`${r.stderr}`, /reporting a comparison that did not happen is worse/);
+    const fixture = path.join(__dirname, 'grant-kernel-verdicts.json');
+    const original = fs.readFileSync(fixture, 'utf8');
+    fs.rmSync(fixture);
+    try {
+      const r = runWith('cross-check-grant', '/nonexistent-app-checkout');
+      assert.equal(r.status, 1);
+      assert.match(`${r.stderr}`, /reporting a comparison that did not happen is worse/);
+    } finally {
+      fs.writeFileSync(fixture, original);
+    }
   });
 });
 
