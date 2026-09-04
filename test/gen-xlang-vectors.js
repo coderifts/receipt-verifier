@@ -20,6 +20,11 @@
  *   node test/gen-xlang-vectors.js > xlang-vectors.json
  *   node test/gen-xlang-vectors.js --out <path>
  *
+ * This repository does NOT commit xlang-vectors.json (ephemeral key → bytes are a
+ * run artifact). Sibling copies live under test/fixtures/ (contract-gate,
+ * gateway-verifier, k8s-admission) and coderifts-python-verifier/tests/.
+ * Hashing a missing path here as empty is sha256("") = e3b0c442… — not a pin.
+ *
  * The `dsse` block is REGENERATED from this run's VALID token, not carried
  * forward: the key is ephemeral, so a carried envelope would wrap a token signed
  * by a key this corpus no longer publishes, and every consumer asserting
