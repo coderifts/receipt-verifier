@@ -286,6 +286,16 @@ else
 fi
 
 echo
+echo "== 1355-default vendored keys + network trap (js+py) =="
+checks=$((checks + 1))
+if node --test test/offline-network-trap.test.js; then
+  echo "ok    offline-network-trap.test.js"
+else
+  echo "FAIL  offline-network-trap.test.js"
+  fails=$((fails + 1))
+fi
+
+echo
 echo "== ID131 default-fetch dual-shape (js) =="
 checks=$((checks + 1))
 if node test/fetch-shapes.js; then

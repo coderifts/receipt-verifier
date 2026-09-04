@@ -11,13 +11,18 @@
  * their offline verifiers must never take.
  *
  * Usage:
- *   node cli.js <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
- *   node cli.js --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
+ *   node cli.js <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]
+ *   node cli.js --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]
+ *
+ * ── 1355-default: VENDORED KEYS ARE THE DEFAULT; THE NETWORK IS OPT-IN ──────────────────────
+ *
+ * With no --key/--keys/--fetch/--refresh-keys, keys are loaded from the pinned snapshot at
+ * keys/coderifts-keys.json (offline). A CA pins roots locally; this command does the same.
+ * Live discovery is opt-in: --refresh-keys (well-known URL) or --keys <url> / --fetch <url>.
  *
  * ── 1282-A': THE LEGACY SINGLE-KEY BODY CANNOT SUPPORT A CURRENT VERDICT ────────────────────
  *
- * With no --key/--keys, keys are fetched from the well-known endpoint. That endpoint may answer
- * with either shape:
+ * --fetch / --refresh-keys may answer with either shape:
  *
  *   registry  { keys: [{ kid, public_key_pem, status, valid_from, retired_at, revoked_at }] }
  *   legacy    { kid, public_key_pem }                       (/api/v1/attestation/public-key)
@@ -40,6 +45,7 @@
  */
 
 const fs = require('fs');
+const path = require('path');
 const {
   verifyReceipt,
   verifyChain,
@@ -49,6 +55,9 @@ const {
   pickActiveFromKeyring,
   DEFAULT_FETCH_URL,
 } = require('./verify');
+
+/** Pinned well-known snapshot shipped with the package. Default verify is offline against this file. */
+const VENDORED_KEYS_PATH = path.join(__dirname, 'keys', 'coderifts-keys.json');
 
 /**
  * Fetch a key document. Accepts BOTH shapes:
@@ -102,7 +111,7 @@ function downgradeLegacyVerdict(result, source) {
 // ---------------------------------------------------------------------------
 
 function parseArgs(argv) {
-  const opts = { receipt: null, chainFile: null, keyFile: null, keysSource: null, kid: null, fetchUrl: null, envelopeFile: null, audience: null, environment: null };
+  const opts = { receipt: null, chainFile: null, keyFile: null, keysSource: null, kid: null, fetchUrl: null, refreshKeys: false, envelopeFile: null, audience: null, environment: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--chain') opts.chainFile = argv[++i];
@@ -110,6 +119,7 @@ function parseArgs(argv) {
     else if (a === '--keys') opts.keysSource = argv[++i];
     else if (a === '--kid') opts.kid = argv[++i];
     else if (a === '--fetch') opts.fetchUrl = argv[++i];
+    else if (a === '--refresh-keys') opts.refreshKeys = true;
     else if (a === '--envelope') opts.envelopeFile = argv[++i];
     else if (a === '--audience') opts.audience = argv[++i];
     else if (a === '--environment') opts.environment = argv[++i];
@@ -119,12 +129,15 @@ function parseArgs(argv) {
     else throw new Error(`unexpected argument: ${a}`);
   }
   if (opts.keyFile && opts.keysSource) throw new Error('--key and --keys are mutually exclusive');
+  if (opts.refreshKeys && (opts.keyFile || opts.keysSource)) {
+    throw new Error('--refresh-keys is mutually exclusive with --key and --keys');
+  }
   return opts;
 }
 
 const USAGE =
-  'usage: node cli.js <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]\n' +
-  '       node cli.js --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]\n';
+  'usage: node cli.js <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]\n' +
+  '       node cli.js --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]\n';
 
 function fail(msg) {
   process.stderr.write(`${msg}\n${USAGE}`);
@@ -159,12 +172,14 @@ async function main() {
     if (opts.keysSource) {
       // Registry mode: resolve each receipt's key by its kid. --kid stays an
       // optional additional guard (null => accept any kid present in the registry).
+      // A URL here is the opt-in network path; a file is offline.
       const keyring = await loadKeyring(opts.keysSource);
       ctx = { keyring, expectedKid: opts.kid };
     } else if (opts.keyFile) {
       const pem = fs.readFileSync(opts.keyFile, 'utf8');
       ctx = { publicKey: keyFromPem(pem), expectedKid: opts.kid };
-    } else {
+    } else if (opts.refreshKeys || opts.fetchUrl) {
+      // Opt-in live discovery. --refresh-keys hits the well-known URL; --fetch overrides it.
       const info = await fetchKeyInfo(opts.fetchUrl || DEFAULT_FETCH_URL);
       if (info.keyring) {
         // Registry shape: resolve each receipt by kid (retired window included).
@@ -174,6 +189,10 @@ async function main() {
         ctx = { publicKey: info.publicKey, expectedKid: opts.kid || info.kid };
         legacyKeySource = info.source || opts.fetchUrl || DEFAULT_FETCH_URL;
       }
+    } else {
+      // Default: vendored snapshot, no network. A CA pins roots locally.
+      const keyring = await loadKeyring(VENDORED_KEYS_PATH);
+      ctx = { keyring, expectedKid: opts.kid };
     }
   } catch (e) {
     return fail(`could not load public key: ${e.message}`);
@@ -223,4 +242,4 @@ if (require.main === module) {
   main().catch((e) => fail(e.message));
 }
 
-module.exports = { fetchKeyInfo, downgradeLegacyVerdict, parseArgs, main, USAGE };
+module.exports = { fetchKeyInfo, downgradeLegacyVerdict, parseArgs, main, USAGE, VENDORED_KEYS_PATH };

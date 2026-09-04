@@ -1,10 +1,10 @@
 /**
  * ITEM A — the stranger-machine proof.
  *
- * The library verifyReceipt (and CLI --key / --keys <file>) must verify a real
- * receipt with ZERO network. A verifier that needs app.coderifts.com is SaaS,
- * not a CA. Default CLI without --key/--keys DOES fetch the well-known registry
- * (cli.js fetchKeyInfo); that path is out of this trap — pin the key.
+ * The library verifyReceipt (and CLI --key / --keys <file> / the vendored
+ * default) must verify a real receipt with ZERO network. A verifier that needs
+ * app.coderifts.com is SaaS, not a CA. Live fetch is opt-in: --refresh-keys,
+ * --fetch <url>, or --keys <url>.
  *
  * Named ceiling (unchanged): this verifier is stateless and cannot detect a
  * replayed nonce (README consumeAndCommit; no jti store).
@@ -154,6 +154,87 @@ runpy.run_path(${JSON.stringify(path.join(ROOT, 'verify.py'))}, run_name="__main
     } finally {
       fs.rmSync(pem, { force: true });
     }
+  });
+});
+
+describe('1355-default — vendored keys, network is opt-in', () => {
+  const fixtureReceipt = fs.readFileSync(path.join(ROOT, 'test', 'fixtures-receipt.txt'), 'utf8').trim();
+  const preload = path.join(__dirname, 'network-trap-preload.js');
+
+  it('vendored snapshot sha256 matches the sidecar', () => {
+    const { VENDORED_KEYS_PATH } = require('../cli');
+    const crypto = require('node:crypto');
+    const body = fs.readFileSync(VENDORED_KEYS_PATH);
+    const got = crypto.createHash('sha256').update(body).digest('hex');
+    const sidecar = fs.readFileSync(`${VENDORED_KEYS_PATH}.sha256`, 'utf8').trim().split(/\s+/)[0];
+    assert.equal(got, sidecar);
+    assert.equal(got, 'bfe0c898cda3c3a4c8141726d0adb4cdb7eb9762de6264e430eff6469b90422e');
+  });
+
+  it('BITES JS: default verify with network trapped PASSES against the vendored key', () => {
+    const out = execFileSync(
+      process.execPath,
+      ['-r', preload, path.join(ROOT, 'cli.js'), fixtureReceipt],
+      { cwd: ROOT, encoding: 'utf8' },
+    );
+    const r = JSON.parse(out);
+    assert.equal(r.valid, true);
+    assert.equal(r.status, 'VERIFIED_CURRENT');
+    assert.equal(r.payload.kid, '2026-07-k1');
+  });
+
+  it('BITES JS: --refresh-keys with the trap FAILS at the fetch', () => {
+    let err;
+    try {
+      execFileSync(
+        process.execPath,
+        ['-r', preload, path.join(ROOT, 'cli.js'), fixtureReceipt, '--refresh-keys'],
+        { cwd: ROOT, encoding: 'utf8' },
+      );
+    } catch (e) {
+      err = e;
+    }
+    assert.ok(err, '--refresh-keys must fail when the network is trapped');
+    const combined = `${err.stderr || ''}\n${err.stdout || ''}\n${err.message || ''}`;
+    assert.match(combined, /NETWORK_TRAP|could not load public key/);
+    assert.notEqual(err.status, 0);
+  });
+
+  it('BITES PY: default verify with urlopen trapped PASSES against the vendored key', () => {
+    const py = `
+import json, runpy, sys, urllib.request
+def boom(*a, **k):
+    raise RuntimeError("NETWORK_TRAP:urllib")
+urllib.request.urlopen = boom
+sys.argv = ["verify.py", ${JSON.stringify(fixtureReceipt)}]
+runpy.run_path(${JSON.stringify(path.join(ROOT, 'verify.py'))}, run_name="__main__")
+`;
+    const out = execFileSync('python3', ['-c', py], { cwd: ROOT, encoding: 'utf8' });
+    const r = JSON.parse(out.trim().split('\n').pop());
+    assert.equal(r.valid, true);
+    assert.equal(r.status, 'VERIFIED_CURRENT');
+    assert.equal(r.payload.kid, '2026-07-k1');
+  });
+
+  it('BITES PY: --refresh-keys with urlopen trapped FAILS at the fetch', () => {
+    const py = `
+import runpy, sys, urllib.request
+def boom(*a, **k):
+    raise RuntimeError("NETWORK_TRAP:urllib")
+urllib.request.urlopen = boom
+sys.argv = ["verify.py", ${JSON.stringify(fixtureReceipt)}, "--refresh-keys"]
+runpy.run_path(${JSON.stringify(path.join(ROOT, 'verify.py'))}, run_name="__main__")
+`;
+    let err;
+    try {
+      execFileSync('python3', ['-c', py], { cwd: ROOT, encoding: 'utf8' });
+    } catch (e) {
+      err = e;
+    }
+    assert.ok(err, 'python --refresh-keys must fail when urlopen is trapped');
+    const combined = `${err.stderr || ''}\n${err.stdout || ''}\n${err.message || ''}`;
+    assert.match(combined, /NETWORK_TRAP|could not load public key/);
+    assert.notEqual(err.status, 0);
   });
 });
 

@@ -5,12 +5,14 @@ Verify the receipt yourself — offline, no live CodeRifts API call needed.
 The reference format is frozen in ./RECEIPT_FORMAT.md.
 
 Usage:
-  python3 verify.py <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
+  python3 verify.py <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]
                     [--envelope <file>] [--audience <a>] [--environment <e>]
-  python3 verify.py --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
+  python3 verify.py --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]
 
-Key discovery: with no --key/--keys, keys are fetched from
-  https://app.coderifts.com/.well-known/coderifts-keys.json  (override with --fetch <url>).
+Key discovery: with no --key/--keys/--fetch/--refresh-keys, keys are loaded from the
+vendored snapshot at keys/coderifts-keys.json (offline). Live fetch is opt-in
+(--refresh-keys hits https://app.coderifts.com/.well-known/coderifts-keys.json;
+override with --fetch <url>; --keys <url> is also a network path).
 The fetch-and-resolve path accepts BOTH the registry array (active + retired)
 and the legacy single-key body from /api/v1/attestation/public-key.
 --keys resolves each receipt's key by kid from a registry
@@ -29,6 +31,7 @@ import base64
 import hashlib
 import json
 import math
+import os
 import sys
 import urllib.request
 from datetime import datetime, timezone
@@ -38,6 +41,7 @@ from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 DEFAULT_FETCH_URL = "https://app.coderifts.com/.well-known/coderifts-keys.json"
+VENDORED_KEYS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "keys", "coderifts-keys.json")
 SIGNING_PREFIX = "crchain.v1"
 MAX_SUPPORTED_V = 4
 SIGNED_FIELDS = ["kid", "fp", "prev", "caller", "ts", "reg", "ir", "expires_at", "bh"]
@@ -66,9 +70,9 @@ def is_expired_at(expires_at_ms, now_ms, context=None):
         return False
     return (float(expires_at_ms) + expiry_leeway_ms(context)) < float(now_ms)
 USAGE = (
-    "usage: python3 verify.py <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]\n"
+    "usage: python3 verify.py <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]\n"
     "                  [--envelope <file>] [--audience <a>] [--environment <e>]\n"
-    "       python3 verify.py --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]\n"
+    "       python3 verify.py --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]\n"
 )
 
 
@@ -346,7 +350,7 @@ def fetch_key_document(url):
     """Fetch a key document. Accepts BOTH shapes: registry {keys:[...]} and
     legacy {kid, public_key_pem}. Registry includes a keyring so retired kids resolve."""
     req = urllib.request.Request(url, headers={"Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310 (explicit --fetch/default only)
+    with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310 (explicit --fetch/--refresh-keys only)
         info = json.loads(resp.read().decode("utf-8"))
     keyring = keyring_from_document(info, url)
     if keyring:
@@ -376,7 +380,7 @@ def load_keyring(source):
     ({keys: [{kid, public_key_pem, status, valid_from, retired_at}]}). Active + retired both load."""
     if source.lower().startswith(("http://", "https://")):
         req = urllib.request.Request(source, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310 (explicit --keys only)
+        with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310 (explicit --keys/--fetch/--refresh-keys only)
             text = resp.read().decode("utf-8")
     else:
         with open(source, "r", encoding="utf-8") as fh:
@@ -395,8 +399,8 @@ def fail(msg):
 
 def parse_args(argv):
     opts = {"receipt": None, "chain_file": None, "key_file": None, "keys_source": None,
-            "kid": None, "fetch_url": None, "envelope_file": None, "audience": None,
-            "environment": None, "help": False}
+            "kid": None, "fetch_url": None, "refresh_keys": False, "envelope_file": None,
+            "audience": None, "environment": None, "help": False}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -415,6 +419,8 @@ def parse_args(argv):
         elif a == "--fetch":
             i += 1
             opts["fetch_url"] = argv[i] if i < len(argv) else None
+        elif a == "--refresh-keys":
+            opts["refresh_keys"] = True
         elif a == "--envelope":
             i += 1
             opts["envelope_file"] = argv[i] if i < len(argv) else None
@@ -435,6 +441,8 @@ def parse_args(argv):
         i += 1
     if opts["key_file"] and opts["keys_source"]:
         raise ValueError("--key and --keys are mutually exclusive")
+    if opts["refresh_keys"] and (opts["key_file"] or opts["keys_source"]):
+        raise ValueError("--refresh-keys is mutually exclusive with --key and --keys")
     return opts
 
 
@@ -457,12 +465,14 @@ def main():
             with open(opts["key_file"], "r", encoding="utf-8") as fh:
                 public_key = key_from_pem(fh.read())
             ctx = {"public_key": public_key, "expected_kid": opts["kid"]}
-        else:
+        elif opts["refresh_keys"] or opts["fetch_url"]:
             info = fetch_key_document(opts["fetch_url"] or DEFAULT_FETCH_URL)
             if info.get("keyring"):
                 ctx = {"keyring": info["keyring"], "expected_kid": opts["kid"]}
             else:
                 ctx = {"public_key": info["public_key"], "expected_kid": opts["kid"] or info.get("kid")}
+        else:
+            ctx = {"keyring": load_keyring(VENDORED_KEYS_PATH), "expected_kid": opts["kid"]}
     except Exception as e:
         fail("could not load public key: " + str(e))
 

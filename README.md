@@ -54,8 +54,8 @@ RECEIPT=$(curl -s -X POST https://app.coderifts.com/api/v1/action-verdict \
   -d '{"action_type":"tool_call","provenance":{"channel":"ci_manifest","issuer_trust":"trusted"},"tool":{"name":"get_customer","capabilities":["read"]},"memory":{"op":"read","namespace":"working","staleness_hours":1}}' \
   | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(JSON.parse(s).chain_receipt))")
 
-# The public key is discovered from the attestation endpoint automatically.
-node verify.js "$RECEIPT"
+# Default: vendored key snapshot (offline). --refresh-keys fetches the live registry.
+node cli.js "$RECEIPT"
 ```
 
 Output (exit code 0 = valid, 1 = invalid, 2 = usage error). The `action-verdict`
@@ -81,14 +81,17 @@ python3 verify.py "$RECEIPT"
 
 ## Offline verification (no network)
 
-Pin a public key you trust and pass it with `--key`; nothing is fetched:
+The CLI default is already offline: it verifies against the vendored snapshot
+`keys/coderifts-keys.json`. Pin a PEM with `--key`, or a local registry with
+`--keys <file>`, for the same boundary. `--keys https://…`, `--fetch`, and
+`--refresh-keys` are network calls — they are **not** offline.
 
 ```
 # Save the current public key once (or commit a PEM you have pinned).
 curl -s https://app.coderifts.com/api/v1/attestation/public-key \
   | python3 -c "import sys,json;print(json.load(sys.stdin)['public_key_pem'])" > pub.pem
 
-node verify.js "$RECEIPT" --key pub.pem --kid 2026-07-k1
+node cli.js "$RECEIPT" --key pub.pem --kid 2026-07-k1
 python3 verify.py "$RECEIPT" --key pub.pem --kid 2026-07-k1
 ```
 
@@ -108,14 +111,18 @@ checked against the SHA-256 of the token before it.
 ## Verify the live demo receipt
 
 The demo pull request (`coderifts/demo` PR #4) carries a live `v:3` receipt in its
-CodeRifts check comment. Copy that token and verify it — keys are fetched from
-the published registry automatically, so this is the one command a reader
-runs to confirm the demo verdict is genuine:
+CodeRifts check comment. Copy that token and verify it — the default uses the
+vendored key snapshot shipped in this package, so this is the one command a
+reader runs to confirm the demo verdict is genuine, **offline**:
 
 ```
-node verify.js "<paste the receipt token from the PR comment>"
-# or, fully offline against the key registry:
-node verify.js "<token>" --keys https://app.coderifts.com/.well-known/coderifts-keys.json
+node cli.js "<paste the receipt token from the PR comment>"
+# fully offline (same as the default): vendored snapshot, or pin a file/PEM
+node cli.js "<token>" --keys keys/coderifts-keys.json
+node cli.js "<token>" --key pub.pem
+# live registry (NOT offline — this is a network call):
+node cli.js "<token>" --refresh-keys
+node cli.js "<token>" --keys https://app.coderifts.com/.well-known/coderifts-keys.json
 ```
 
 Both print `{"valid":true,...}` and exit `0` for a genuine receipt.
@@ -351,11 +358,11 @@ Do not detect the shape with `Function.length`. Parameters with defaults are not
 ## CLI reference
 
 ```
-verify.js <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--envelope <file>]
-verify.js --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
+cli.js <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys] [--envelope <file>]
+cli.js --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]
 
-verify.py <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--envelope <file>]
-verify.py --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]
+verify.py <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys] [--envelope <file>]
+verify.py --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]
 
 verify-attest.js <token> --keys <file|url> [--grant <token>] [--receipt-digest sha256:…]
 verify_attest.py <token> --keys <file|url> [--grant <token>] [--receipt-digest sha256:…]
@@ -365,12 +372,18 @@ verify-bundle.js <bundle.json> --slot-keys <file> [--ctx <file>]
 
 - `--key <pem>`         verify against a local SPKI PEM public key (offline).
 - `--keys <src>`        resolve the key by `kid` from a registry (URL or file); accepts
-  active and retired keys. Mutually exclusive with `--key`.
+  active and retired keys. Mutually exclusive with `--key`. A URL is a network
+  call; a file is offline.
 - `--kid <kid>`         expected key id; mismatch yields `unknown_kid`.
-- `--fetch <url>`       key-discovery URL (default:
-  `https://app.coderifts.com/.well-known/coderifts-keys.json`), used only when
-  `--key`/`--keys` are absent. Accepts the registry array (active + retired)
-  and the legacy single-key body from `/api/v1/attestation/public-key`.
+- `--refresh-keys`      opt-in live fetch of the well-known registry. Mutually
+  exclusive with `--key`/`--keys`. This is **not** offline.
+- `--fetch <url>`       opt-in key-discovery URL (default well-known registry),
+  used only when `--key`/`--keys` are absent. Accepts the registry array
+  (active + retired) and the legacy single-key body from
+  `/api/v1/attestation/public-key`. This is **not** offline.
+- Default (no `--key`/`--keys`/`--fetch`/`--refresh-keys`): the vendored
+  snapshot `keys/coderifts-keys.json` (offline). Refresh the pin: see
+  `keys/README.md`.
 - `--envelope <file>`   (v4) path to a JSON decision-envelope file. The verifier
   recomputes the RFC 8785 (JCS) canonical body hash (with `receipt` and
   `decision_body_hash` stripped) and requires it to equal the receipt's `bh`.
@@ -439,13 +452,15 @@ and has no `package.json`; like every other verifier here, it is invoked as `nod
 
 There is a single *active* signing kid at any time. When CodeRifts rotates the
 key, the previous kid is marked `retired` (never removed) in the append-only
-registry at `/.well-known/coderifts-keys.json`. Default key discovery (no
-`--key`/`--keys`) fetches that registry, so a receipt signed under a retired
-kid resolves as `RETIRED_KEY_VALID_AT_ISSUE` when `ts` predates `retired_at`.
-A single pinned `--key`, or `--fetch` of the legacy
-`/api/v1/attestation/public-key` body, still sees only the active kid —
-receipts signed under a previous kid then fail as `unknown_kid`. `--keys`
-remains the explicit registry pin (URL or file).
+registry at `/.well-known/coderifts-keys.json`. The CLI default loads the
+**vendored snapshot** of that registry (`keys/coderifts-keys.json`) offline.
+`--refresh-keys` (or `--keys <url>` / `--fetch <url>`) fetches the live
+registry so a receipt signed under a newly-retired kid still resolves as
+`RETIRED_KEY_VALID_AT_ISSUE` when `ts` predates `retired_at`. A single pinned
+`--key`, or `--fetch` of the legacy `/api/v1/attestation/public-key` body,
+still sees only the active kid — receipts signed under a previous kid then
+fail as `unknown_kid`. `--keys <file>` remains the explicit local registry pin.
+Refresh the vendored pin with the commands in `keys/README.md`.
 
 ## Key lifecycle
 

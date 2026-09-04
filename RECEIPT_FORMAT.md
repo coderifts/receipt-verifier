@@ -380,11 +380,14 @@ GET https://app.coderifts.com/.well-known/coderifts-keys.json
 - Both verifiers accept `--keys <url|file>` to resolve by kid from this registry.
   A retired key still verifies (that is the point); an unlisted kid yields
   `unknown_kid`.
-- Default discovery (no `--key`/`--keys`) fetches this registry, so a retired
-  kid resolves as `RETIRED_KEY_VALID_AT_ISSUE` when `ts` predates `retired_at`.
-  A single pinned `--key`, or `--fetch` of the legacy single-key body, still
-  sees only the active kid — receipts signed under a previous kid then fail as
-  `unknown_kid`. Pin the `public_key_pem` active at issuance, or pass `--keys`.
+- Default discovery (no `--key`/`--keys`/`--fetch`/`--refresh-keys`) loads the
+  vendored snapshot `keys/coderifts-keys.json` (offline). `--refresh-keys` or
+  `--keys <url>` / `--fetch <url>` fetches the live registry, so a retired kid
+  not yet in the snapshot resolves as `RETIRED_KEY_VALID_AT_ISSUE` when `ts`
+  predates `retired_at`. A single pinned `--key`, or `--fetch` of the legacy
+  single-key body, still sees only the active kid — receipts signed under a
+  previous kid then fail as `unknown_kid`. Pin the `public_key_pem` active at
+  issuance, pass `--keys <file>`, or use the vendored default.
 
 ## 8. cr.exec.attest.v1 (execution attestation)
 
