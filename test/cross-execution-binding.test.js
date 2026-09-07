@@ -162,24 +162,19 @@ describe('cross-execution binding', { skip: VERIFY ? false : 'the SDK attestatio
     assert.equal(r.state, 'AUTHORIZED_AND_COMMITTED', r.shortfalls.join('; '));
   });
 
-  it('FINDING (pinned): this core REFUSES a v1 ATOMIC grant that the demo executor issues', () => {
-    // MEASURED 2026-09-07, and it is a divergence between two implementations of one format:
+  it('CLOSED (1470): this core now ACCEPTS the v1 ATOMIC grant the demo executor issues', () => {
+    // THIS ASSERTION WAS INVERTED, and the inversion is the record.
     //
-    //   capability-demo/packages/middleware/verify-grant.js  OPTIONAL_SIGNED_FIELDS =
-    //                                                        ['state_nonce', 'deployment_id']
-    //   receipt-verifier/verify-grant.js                     allowed = ['v', ...SIGNED_FIELDS]
+    // It was written to PIN a divergence: capability-demo's middleware carries
+    // OPTIONAL_SIGNED_FIELDS = ['state_nonce', 'deployment_id'], this core's allowed set was
+    // ['v', ...SIGNED_FIELDS], so a v1 ATOMIC grant read MALFORMED / unknown_field — fail-closed
+    // and wrong, in five consumers at once. The comment said the fix must be a decision rather
+    // than a discovery; 1470 made that decision, and this test failing is how it announced itself.
     //
-    // The demo's ATOMIC profile depends on `state_nonce` in a v1 grant; this core calls such a
-    // grant MALFORMED / unknown_field. Fail-CLOSED — it refuses a valid grant rather than
-    // accepting an invalid one — but every consumer that quotes this core inherits the refusal.
-    //
-    // NOT loosened here. Widening a closed set is exactly the change that must be made
-    // deliberately and re-vendored to five consumers at once, and it is the same shape as the
-    // `environment` boundary already pinned in test/v2-unknown-field-boundary.test.js. This test
-    // records the state so the fix is a decision and not a discovery.
+    // The widening is BY NAME and the closed set still closes — both halves are pinned in
+    // test/v1-atomic-optional-fields.test.js.
     const r = ask(grant({ state_nonce: 'nonce-A' }), attest({ state_nonce: 'nonce-A' }));
-    assert.equal(r.state, 'UNAUTHORIZED');
-    assert.ok(r.shortfalls.some((x) => /unknown_field/.test(x)), r.shortfalls.join('; '));
+    assert.equal(r.state, 'AUTHORIZED_AND_COMMITTED', r.shortfalls.join('; '));
   });
 
   it('THE FORMAT BOUNDS THE CHECK: cr.exec.attest.v1 is a CLOSED field set', () => {
