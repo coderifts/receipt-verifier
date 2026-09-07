@@ -1,4 +1,10 @@
-# CodeRifts chain-receipt format -- public freeze spec (crchain.v1 prefix; envelopes v1/v2/v3/v4)
+# CodeRifts signed-format spec -- public freeze (crchain.v1 prefix; envelopes v1/v2/v3/v4)
+
+Sections 1-7 specify the CHAIN RECEIPT and are FROZEN. Sections 8-13 specify the other
+signed formats this ecosystem emits: the execution attestation, the DSSE export, the
+execution grants, the correlation, the one-run evidence root, and the bare-Git
+target-state transition. Each names what it proves AND what it does not, because a
+format spec that only says what a signature covers is read as saying more than it does.
 
 This document is the public contract for the CodeRifts Ed25519 chain-receipt
 (the `chain_receipt` field on verdict responses). It is FROZEN: for a given
@@ -545,3 +551,271 @@ Phase 1 of roadmap 1224 is the format module and this specification. Publishing
 the predicate as a standalone open spec, multi-language verifiers for it, and the
 four target verifiers (GitHub merge, Kubernetes admission, API gateway, tool
 registry) are later phases and are **not** shipped.
+
+## 10. cr.exec.v1 / cr.exec.v2 (execution grants)
+
+The authorization an executor acts under. Public verifier: `verify-grant.js`
+(`verifyExecutionGrant`), and `verify_grant.py` for the v1 shape.
+
+### 10.1 cr.exec.v1 — pipe-joined signed input
+
+Token:
+
+```
+{payload_b64url}.{sig_b64url}
+```
+
+Signed bytes, a UTF-8 pipe-delimited string built from the payload's own fields:
+
+```
+crexec.v1|<kid>|<receipt_digest>|<scope_hash>|<audience>|<operation>|<target_id>|<jti>|<iat>|<exp>
+```
+
+then, **appended in this order and only when present and non-empty**:
+
+```
+|<state_nonce>|<deployment_id>
+```
+
+- The nine mandatory signed fields are `kid`, `receipt_digest`, `scope_hash`,
+  `audience`, `operation`, `target_id`, `jti`, `iat`, `exp`.
+- `state_nonce` and `deployment_id` are the OPTIONAL SIGNED fields. They are what
+  a challenge-first ATOMIC executor binds: the nonce ties the grant to one
+  observed state, the deployment id to one deployment. Absent means absent — a
+  verifier appends nothing, so a v1 grant without them signs exactly the nine.
+- `scope_hash` = `sha256:` + sha256 of `operation ⨝ target_id ⨝ after_payload`
+  joined by `\x1f` (US). It binds WHAT was authorized, not merely that something
+  was.
+- `receipt_digest` = `sha256:` + sha256 of the chain-receipt token, so a grant
+  names the decision it was issued against.
+- An unknown key in the payload is `MALFORMED/unknown_field`. The admitted set is
+  `v` + the nine + the two optional ones; nothing else.
+
+**Why the optional fields are appended rather than always present:** a verifier
+that always appended two empty segments would compute a different string than the
+issuer did for a grant that carries neither, and reject every non-ATOMIC v1 grant.
+That was a real fail-closed defect, and it is why the rule is stated as an
+ordered append and not as a fixed arity.
+
+### 10.2 cr.exec.v2 — canonical-JSON signed input
+
+Signed bytes:
+
+```
+crexec.v2|<RFC 8785 (JCS) canonical JSON of the whole payload>
+```
+
+The WHOLE body is covered, so a field cannot be added later without breaking the
+signature. Sixteen fields are required and must be non-empty strings:
+
+```
+v, kid, grant_id, receipt_hash, tenant_id, executor_id, adapter_id, operation,
+target_uri, expected_state_token, after_payload_hash, nonce_hash, policy_hash,
+audience_hash, not_before, expires_at
+```
+
+plus `max_attempts`, an integer ≥ 1. The admitted set is exactly those seventeen;
+any other key is `MALFORMED/unknown_field`.
+
+What the v2 fields bind, where v1 differed:
+
+- `after_payload_hash` is the digest of the payload BODY ALONE. v1's `scope_hash`
+  joins three facts. Computing the v1 shape for a v2 grant produces a hash the
+  grant never carried — the two vocabularies are not interchangeable.
+- `expected_state_token` names the END STATE the grant authorizes. `nonce_hash`
+  is `sha256:` of a nonce the executor minted against the state it observed, so a
+  grant minted for one state cannot be replayed after another.
+- `receipt_hash` replaces `receipt_digest`, `grant_id` replaces `jti`,
+  `not_before`/`expires_at` replace `iat`/`exp`.
+- `target_uri` is canonicalised as `scheme://rest` with no query and no fragment;
+  the scheme must be one of `fs`, `git`, `api`, `db`, `registry`, `deploy`.
+  `..`, `//` and whitespace in the rest are rejected.
+- `audience_hash` and `policy_hash` are `sha256:` digests, so neither the
+  audience string nor the policy text travels in the grant.
+
+Honesty: a `GRANT_CURRENT` verdict says a holder of the named issuer key
+authorized this operation on this target for these bytes, within this window. It
+does **not** say the operation happened, that the executor was the one named, or
+that anything was written. Those are the attestation's and the transition's
+claims, below.
+
+## 11. cr.exec.correlation.v1 (contract ⨝ observation)
+
+A bare Ed25519 signature over a field-joined preimage — NOT a token, and it has
+no envelope. Public verifier: `verify-evidence.js` (`verifyCorrelation`,
+`correlationPreimage`).
+
+Fields: `v`, `scope_hash`, `contract_commit`, `contract_path`, `readback_commit`,
+`correlation_hash`, `signature`.
+
+Signed bytes, joined by `\x1f` (US):
+
+```
+cr.exec.correlation.v1␟<scope_hash>␟<contract_commit>␟<contract_path>␟<readback_commit>
+```
+
+- `correlation_hash` = `sha256:` + sha256 of that preimage. A verifier MUST
+  rebuild the preimage from the fields and recompute it; a recorded hash nobody
+  recomputes is decoration.
+- The hash is checked BEFORE the signature, so a mutated binding field is named as
+  what it is (`CORRELATION_UNBOUND/correlation_hash_mismatch`) rather than as a
+  generic bad signature.
+- `contract_commit` and `readback_commit` must be equal. That equality is the
+  whole point: structural grading of an observation reads no commit at all, so a
+  well-formed observation of an UNRELATED commit passes every structural check.
+
+Honesty: the correlation binds a governed contract to an observation of a state.
+It does **not** establish that the observation is true, that its source was
+trustworthy, or that a provider witnessed anything. It makes the two ends
+uneditable relative to each other — nothing more.
+
+## 12. cr.evidence.root.v1 (one run, signed)
+
+Every token above authenticates on its own. None of them can say they came from
+the SAME RUN, and a set of individually-authentic tokens from two runs assembled
+into one artifact is a forgery in which nothing was forged. The root is the
+producer saying, under its own key: *I emitted exactly these bytes.*
+
+Public verifier: `evidence-root.js` (`buildEvidenceRoot`, `verifyEvidenceRoot`)
+and `verify-evidence.js` (`verifyEvidenceRootBinding`).
+
+Signed bytes:
+
+```
+crevidenceroot.v1|<RFC 8785 (JCS) canonical JSON of the whole body>
+```
+
+Body: `v`, `run_id`, `executor_kid`, `producer` (`name`, `version`, `commit`),
+`operation`, `target_uri`, `contract_commit`, `artifact_digests`, and the claims
+`grant_id`, `receipt_hash`, `scope_hash`, `policy_hash`, `state_token_hash`.
+
+`artifact_digests` has one entry per SLOT, and the slot set is closed:
+
+| slot | mandatory | signed by |
+| --- | --- | --- |
+| `chain_receipt` | yes | issuer |
+| `execution_grant` | yes | issuer |
+| `transcript_token` | yes | executor |
+| `correlation` | yes | executor |
+| `atomic_attestation` | no | executor |
+| `provider_readback` | no | — (unsigned sidecar) |
+
+- A digest is `sha256:` of the token EXACTLY AS IT TRAVELS. A string is hashed as
+  UTF-8 bytes; an object (the correlation is one) as its canonical JSON, so key
+  order in a re-serialised artifact cannot change the digest of a value nobody
+  edited.
+- Absent is `null`, never `sha256("")`. The empty-string hash is a real value and
+  would make "no token" indistinguishable from "a token that happens to be empty".
+- A MANDATORY slot recorded as `null` is refused. Deletion is the strongest tamper
+  there is, and skipping an absent slot would let it read as "not applicable".
+- The CLAIMS are also inside the tokens. Carrying them here is what lets a
+  verifier compare the two and refuse a manifest that agrees with itself but not
+  with its own evidence.
+
+`verifyEvidenceRootBinding` names its checks rather than counting them, and THE
+COUNT IS CONDITIONAL — a check that has nothing to compare against does not run,
+and it must not be reported as passing:
+
+```
+root_signature          always
+root_slot_<slot>        for each MANDATORY slot (four)
+digest_<slot>           for each slot the root records and the caller can supply
+claim_grant_id          when the root carries that claim AND the artifact carries an issuance grant
+claim_scope_hash        "
+claim_policy_hash       "
+grant_binds_receipt     "
+identity_chain          when the artifact carries continuity identities
+transcript_run_id       when the transcript's payload is readable
+run_id_artifact         always
+run_id_correlation      when the artifact carries a correlation
+contract_commit         when the root records one
+```
+
+MEASURED on the vendored end-to-end capture — all six slots, the issuance grant
+object and the continuity identities present, with the readback sidecar supplied —
+that is **19 checks**. A thinner artifact runs fewer, and that is not a weaker pass
+but a smaller one. An implementer MUST read `checks[]` rather than a count: a
+verifier that hard-codes 19, or that treats "no failures" as "everything was
+checked", will call a partial verification complete.
+
+The `provider_readback` slot is bound by the digest of a SIDECAR the artifact does
+not republish. A verifier that holds the sidecar bytes passes them in; one that
+does not cannot check that slot, and must say so rather than pass it.
+
+Honesty: the root proves the named producer emitted this SET. It does **not**
+authenticate any individual token — each still has to verify against its own
+issuer's key — and it says nothing about whether the run's claims are true.
+
+## 13. target_state_transition (bare-Git read-after-write)
+
+A block carried inside a `cr.prove.artifact.v1` transcript when the producer
+mutated a real target and had the result read back. Its observation half is a
+`cr.git.observation.v1` document.
+
+**The producer and its grader live in `capability-demo`**
+(`demo/src/git-observer.js`, `demo/src/target-state-transition.js`), not in this
+repository. This section documents the format because external verifiers read it;
+the drift-gate for it checks the sibling checkout and SKIPS LOUDLY when absent
+rather than reporting a comparison that did not run.
+
+The block carries `expected` (what the grant bound), `observation` (what a
+separate read-only process read), the grading `checks`, and `state`.
+
+States — a closed set:
+
+```
+CARRIED_UNVERIFIED   bytes arrived; nothing was read from a target
+PROVEN_BY_TRUSTED_EXECUTOR   a real read-after-write, trusted-executor scope
+PROVEN_BY_EXTERNAL_WITNESS   reserved; no producer emits it today
+NOT_RUN              the target could not be read — unproved, NOT disproved
+```
+
+`cr.git.observation.v1` fields: `v`, `target_ref`, `repo_path`,
+`repo_lineage_id`, `before_commit`, `before_source`, `observed_commit`, `commit`
+(an alias of `observed_commit` under the readback sidecar's field name),
+`contract_path`, `contract_blob_digest`, `contract_bytes_len`,
+`observation_source`, `observer_mode`, `observed_at`, `does_not_prove`.
+
+The correlations a grader re-checks:
+
+- **after_state_token** — `observation.observed_commit === expected.contract_commit`.
+  The ref carries the authorized commit.
+- **blob_digest** — the bytes at the observed commit hash to what the grant bound.
+  A commit can carry any tree, so commit-equality alone says only that the ref
+  moved to the right NAME.
+- **content_sha256** — those same bytes hash to the preflight `after_payload`.
+  Two independent sources for one value, compared rather than assumed.
+- **state_transition** — `observation.before_commit === expected.base`. A ref
+  ALREADY at the destination did not move, and a run claiming a transition must
+  show one.
+- **single_parent** — the authorized commit has exactly one parent, and it is
+  `base`. This is what stops an authorized destination arriving with unauthorized
+  company: the three checks above all pass on a merge commit too.
+- **observer_mode** / **observation_source** — the observation declares
+  `read_only` and `git-object-database`. An observation from a process that could
+  write, or from anywhere but the object database, is not this measurement.
+
+**The observer's input contract IS the security property.** It accepts exactly
+`repoPath`, `ref`, `contractPath`, `now`, and REFUSES any input naming the state
+it is about to read (`expected_commit`, `after_state_token`, `blob_digest`,
+`grant`, `attestation`, … — sixteen names). It runs eight read-only git verbs and
+no others. An observation that receives its own answer is an assertion wearing a
+measurement's name.
+
+Honesty, and this is the whole reason the state is not called `PROVEN`:
+
+```
+proof_scope           TRUSTED_EXECUTOR
+provider_witness      NOT_APPLICABLE
+externally_witnessed  false
+```
+
+The executor and the observer run on ONE MACHINE under ONE OS USER, separated by
+the target's mode bits — not by two identities, and not by any third party. What
+this raises the claim to is "a process that could not write read the target
+afterwards and found it moved", and no further. NO PULL REQUEST WAS MERGED AND NO
+PROVIDER WITNESSED ANYTHING. A reader who takes this for a GitHub merge has been
+misled; that is a different path and this is not it.
+
+`NOT_RUN` is not a refusal. It means the claim is neither established nor
+disproved, and a grader MUST NOT read it as evidence against the transition.
