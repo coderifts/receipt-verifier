@@ -114,6 +114,12 @@ function grantV2(over = {}) {
   return `${b64(b)}.${crypto.sign(null, Buffer.from(`crexec.v2|${canonicalJson(b)}`, 'utf8'), issuer.privateKey).toString('base64url')}`;
 }
 
+/**
+ * This file asks a CUSTOM question — does the grant bind to the attestation — and not "is this run
+ * authorized and committed". Since 1465 those have different answers by design: a custom authority
+ * set can be satisfied, and a satisfied custom set is NOT the global success token. The assertions
+ * below therefore read `requirements_satisfied`, which is what this file was ever measuring.
+ */
 function ask(grantToken, attestToken) {
   return verifiedExecutionBinding({
     receipt: { verified: true },
@@ -123,17 +129,18 @@ function ask(grantToken, attestToken) {
     required: ['issuer_grant', 'executor_attestation'],
   });
 }
+const SATISFIED = 'CUSTOM_REQUIREMENTS_SATISFIED';
 
 describe('cross-execution binding', { skip: VERIFY ? false : 'the SDK attestation verifier is not beside this repo' }, () => {
   it('POSITIVE CONTROL: same receipt, matching fields → AUTHORIZED_AND_COMMITTED', () => {
     // Without this the refusals below would be indistinguishable from refusing everything.
     const r = ask(grant(), attest());
-    assert.equal(r.state, 'AUTHORIZED_AND_COMMITTED', r.shortfalls.join('; '));
+    assert.equal(r.state, SATISFIED, r.shortfalls.join('; '));
   });
 
   it('REPRODUCED THEN CLOSED: a grant and an attestation from DIFFERENT receipts do not pair', () => {
     const r = ask(grant({ receipt_digest: R1 }), attest({ receipt_digest: R2 }));
-    assert.notEqual(r.state, 'AUTHORIZED_AND_COMMITTED');
+    assert.notEqual(r.state, SATISFIED);
     // COMMIT_UNPROVEN, not UNAUTHORIZED: the issuer grant is fine, and it is the attestation that
     // fails to bind. Naming the wrong authority would send a reader to the wrong fix.
     assert.equal(r.state, 'COMMIT_UNPROVEN');
@@ -152,14 +159,14 @@ describe('cross-execution binding', { skip: VERIFY ? false : 'the SDK attestatio
     assert.equal(ask(grantV2({ expected_state_token: 'nonce-A' }), attest({ state_nonce: 'nonce-B' })).state,
       'COMMIT_UNPROVEN');
     assert.equal(ask(grantV2({ expected_state_token: 'nonce-A' }), attest({ state_nonce: 'nonce-A' })).state,
-      'AUTHORIZED_AND_COMMITTED');
+      SATISFIED);
   });
 
   it('a field only ONE side states is not a mismatch — an omission is not a disagreement', () => {
     // Demanding a field the other side never carries would refuse honest pairs. This is the line
     // between binding and brittleness.
     const r = ask(grantV2({ expected_state_token: 'nonce-A' }), attest());
-    assert.equal(r.state, 'AUTHORIZED_AND_COMMITTED', r.shortfalls.join('; '));
+    assert.equal(r.state, SATISFIED, r.shortfalls.join('; '));
   });
 
   it('CLOSED (1470): this core now ACCEPTS the v1 ATOMIC grant the demo executor issues', () => {
@@ -174,7 +181,7 @@ describe('cross-execution binding', { skip: VERIFY ? false : 'the SDK attestatio
     // The widening is BY NAME and the closed set still closes — both halves are pinned in
     // test/v1-atomic-optional-fields.test.js.
     const r = ask(grant({ state_nonce: 'nonce-A' }), attest({ state_nonce: 'nonce-A' }));
-    assert.equal(r.state, 'AUTHORIZED_AND_COMMITTED', r.shortfalls.join('; '));
+    assert.equal(r.state, SATISFIED, r.shortfalls.join('; '));
   });
 
   it('THE FORMAT BOUNDS THE CHECK: cr.exec.attest.v1 is a CLOSED field set', () => {
