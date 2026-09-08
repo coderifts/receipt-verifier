@@ -614,8 +614,38 @@ target_uri, expected_state_token, after_payload_hash, nonce_hash, policy_hash,
 audience_hash, not_before, expires_at
 ```
 
-plus `max_attempts`, an integer ≥ 1. The admitted set is exactly those seventeen;
-any other key is `MALFORMED/unknown_field`.
+plus `max_attempts`, an integer ≥ 1.
+
+### 10.3 Reserved OPTIONAL fields — admitted, and read by nothing
+
+Two further keys are ADMITTED and inert:
+
+```
+call_hash                 reserved for a future tool-call binding
+executor_image_digest     reserved for a future executor-image pinning
+```
+
+The admitted set is therefore exactly those seventeen plus these two; any other key is
+`MALFORMED/unknown_field`, and that has not been loosened.
+
+**Their PRESENCE IS NOT A GATE.** A grant carrying `call_hash` is graded IDENTICALLY to one
+without it — same status, same reason, same refusals. No check reads them, no `intended` field
+compares against them, and a caller that passes one is ignored. A VERIFIER THAT READS THEIR
+PRESENCE AS AUTHORIZATION IS WRONG: nothing asserts the value is true, nothing compares it to
+anything, and whoever can mint a grant can put any string there — including an empty one, which
+verifies.
+
+They are reserved NOW because the key set is closed. Introducing a field later would make every
+deployed verifier refuse the grants that carry it, so the names are opened before the gate that
+uses them, and the gate is a separate change with its own negative fixtures.
+
+They are unsigned-by-default only in the narrow sense that no separate signature covers them: v2
+signs the canonical JSON of the WHOLE body, so a grant carrying them signs different bytes than one
+that does not and neither can be edited into the other. That binds the VALUE to the issuer. It says
+nothing about whether the value means anything.
+
+Pinned by `test/v2-reserved-inert.test.js`. The day a real gate lands, those tests should fail —
+that failure is its acceptance test.
 
 What the v2 fields bind, where v1 differed:
 
@@ -773,7 +803,9 @@ NOT_RUN              the target could not be read — unproved, NOT disproved
 `cr.git.observation.v1` fields: `v`, `target_ref`, `repo_path`,
 `repo_lineage_id`, `before_commit`, `before_source`, `observed_commit`, `commit`
 (an alias of `observed_commit` under the readback sidecar's field name),
-`contract_path`, `contract_blob_digest`, `contract_bytes_len`,
+`contract_path`, `contract_blob_digest`, `contract_bytes_len`, `changed_paths`,
+`changed_paths_error` (present only when the diff could not be taken — and an absent
+`changed_paths` is REFUSED by the grader, never skipped),
 `observation_source`, `observer_mode`, `observed_at`, `does_not_prove`.
 
 The correlations a grader re-checks:
@@ -794,12 +826,20 @@ The correlations a grader re-checks:
 - **observer_mode** / **observation_source** — the observation declares
   `read_only` and `git-object-database`. An observation from a process that could
   write, or from anywhere but the object database, is not this measurement.
+- **no_unauthorized_company** — `changed_paths`, the set of paths the move touched,
+  contains ONLY the governed contract path. MEASURED on a real target: a commit
+  carrying the authorized bytes at the governed path, with BASE as its single
+  parent, PLUS one extra file the grant never mentioned, satisfies every check
+  above. The grant authorizes a change to the governed contract; a move that also
+  changed something else is not that change. An observation that could not report
+  the paths is refused, not skipped — unknown is not clean.
 
 **The observer's input contract IS the security property.** It accepts exactly
 `repoPath`, `ref`, `contractPath`, `now`, and REFUSES any input naming the state
 it is about to read (`expected_commit`, `after_state_token`, `blob_digest`,
-`grant`, `attestation`, … — sixteen names). It runs eight read-only git verbs and
-no others. An observation that receives its own answer is an assertion wearing a
+`grant`, `attestation`, … — sixteen names). It runs 9 read-only git verbs and
+no others — `diff-tree` among them, which asks WHICH PATHS changed: a question, never an
+answer handed in. An observation that receives its own answer is an assertion wearing a
 measurement's name.
 
 Honesty, and this is the whole reason the state is not called `PROVEN`:

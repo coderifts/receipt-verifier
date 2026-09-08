@@ -390,9 +390,12 @@ describe('RECEIPT_FORMAT.md §13 documents the target-state transition', () => {
     for (const state of Object.values(STATE)) {
       assert.ok(s.includes(state), `§13 omits the state ${state}`);
     }
-    assert.ok(s.includes(`${observer.READ_ONLY_VERBS.length} read-only git verbs`)
-      || s.includes(`eight read-only git verbs`) && observer.READ_ONLY_VERBS.length === 8,
-    `§13 states the wrong number of read-only verbs (code has ${observer.READ_ONLY_VERBS.length})`);
+    // THE NUMERAL, and only the numeral. The spelled-out allowance here ("eight") was a hole:
+    // a word cannot be compared against a count, so the day a verb was added the doc kept saying
+    // eight and this line kept accepting it. It caught the drift only because the count changed
+    // AND the word no longer matched — which is luck, not a gate.
+    assert.ok(s.includes(`${observer.READ_ONLY_VERBS.length} read-only git verbs`),
+      `§13 must state the verb count as a numeral; code has ${observer.READ_ONLY_VERBS.length}`);
     for (const k of observer.ALLOWED_INPUT) {
       assert.ok(s.includes(`\`${k}\``), `§13 omits the accepted observer input ${k}`);
     }
