@@ -43,6 +43,7 @@ const crypto = require('node:crypto');
 
 const { verifyExecutionGrant } = require('./verify-grant.js');
 const { verifyEvidenceRootBinding } = require('./verify-evidence.js');
+const { verifyReceipt } = require('./verify.js');
 
 const BINDING_V = 'cr.verified-execution-binding.v1';
 
@@ -364,13 +365,65 @@ function verifiedExecutionBinding(o = {}) {
   // Left as-is deliberately: making a bare boolean insufficient would change the input shape of
   // all five consumers at once, and that belongs with the closed-profile work (1465), not
   // half-done in a round that would leave them broken. The gap is named, not narrowed in silence.
-  const receiptOk = !!(o.receipt && o.receipt.verified === true);
-  const receiptAsserted = receiptOk && !(o.receipt.token && (o.receipt.keyring || o.receipt.publicKey));
-  if (!receiptOk) shortfalls.unshift('receipt: the decision receipt did not verify');
+  // ── THE DECISION RECEIPT, VERIFIED HERE WHEN IT CAN BE ─────────────────────────────────
+  //
+  // ── THE FOURTH CALLER-BOOLEAN THIS REPOSITORY HAS MET ──────────────────────────────────
+  //
+  //   providerReadback: { signed: true }   believed because it was set        (closed)
+  //   attestation:      { present: true }  believed because it was set        (closed)
+  //   call_hash present == "tool-call bound"                                  (pre-empted)
+  //   receipt:          { verified: true } believed because it was set        (this)
+  //
+  // `receipt.verified` is the CALLER's word. With no token and no keyring, nothing was checked and
+  // this function had no way to check it — and a caller that simply set the flag reached a
+  // satisfied verdict. `receipt_caller_asserted` recorded it, which is honest reporting and not a
+  // gate: a field nobody branches on does not stop anything.
+  //
+  // Now: when a token AND a key source are supplied, THIS function verifies the receipt. When they
+  // are not, the assertion is accepted only for a CUSTOM aggregation — where the caller owns its
+  // own question — and can never reach AUTHORIZED_AND_COMMITTED, which is the word every consumer
+  // reads as the answer.
+  const rc = o.receipt || {};
+  let receiptOk = false;
+  let receiptAsserted = false;
+  let receiptDetail = 'the decision receipt did not verify';
+  const keySource = rc.keyring || rc.publicKey;
+  if (typeof rc.token === 'string' && rc.token.length > 0 && keySource) {
+    let rv;
+    try {
+      rv = verifyReceipt(rc.token, {
+        ctx: { ...(rc.keyring ? { keyring: rc.keyring } : { publicKey: rc.publicKey }),
+          expectedKid: rc.expectedKid === undefined ? null : rc.expectedKid },
+        ...(Number.isFinite(rc.now) ? { now: rc.now } : {}),
+      });
+    } catch (err) {
+      rv = { valid: false, status: 'VERIFIER_ERROR', reason: (err && err.message) || 'error' };
+    }
+    receiptOk = rv.valid === true;
+    if (!receiptOk) receiptDetail = `the decision receipt did not verify (${rv.status}: ${rv.reason})`;
+  } else if (rc.verified === true) {
+    // Accepted, and MARKED. The state machine below refuses to hand this the global name.
+    receiptOk = true;
+    receiptAsserted = true;
+  } else if (rc.token || keySource) {
+    receiptDetail = 'the receipt was supplied without '
+      + `${rc.token ? 'a keyring or public key' : 'its token'}, so it could not be verified here`;
+  } else {
+    receiptDetail = 'no decision receipt was supplied';
+  }
+  if (!receiptOk) shortfalls.unshift(`receipt: ${receiptDetail}`);
+  if (receiptAsserted) {
+    shortfalls.push('decision_receipt: `verified` was taken on the caller\'s word — no token and '
+      + 'no keyring were supplied, so nothing was checked here');
+  }
 
   // THE NAME OF SUCCESS DEPENDS ON WHO CHOSE THE SET, not on how much of it passed. A custom
   // aggregation that meets everything it asked for is satisfied — and says so in its own words.
-  let state = profile ? STATE.AUTHORIZED_AND_COMMITTED : STATE.CUSTOM_REQUIREMENTS_SATISFIED;
+  // A CALLER-ASSERTED RECEIPT CAN NEVER BE THE GLOBAL CLAIM. It is not downgraded to a failure —
+  // a custom aggregation may legitimately own that determination — but the strongest word in the
+  // vocabulary is not available to a run whose receipt nobody verified.
+  let state = (profile && !receiptAsserted)
+    ? STATE.AUTHORIZED_AND_COMMITTED : STATE.CUSTOM_REQUIREMENTS_SATISFIED;
   if (!receiptOk || (required.has(AUTHORITY.ISSUER_GRANT) && !grantOk)) state = STATE.UNAUTHORIZED;
   else if (required.has(AUTHORITY.EXECUTOR_ATTESTATION) && !attOk) state = STATE.COMMIT_UNPROVEN;
   else if (required.has(AUTHORITY.ONE_RUN_ROOT) && !authorities[AUTHORITY.ONE_RUN_ROOT].ok) {
