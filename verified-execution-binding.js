@@ -317,9 +317,31 @@ function verifiedExecutionBinding(o = {}) {
   if (!er || !er.artifact) {
     note(AUTHORITY.ONE_RUN_ROOT, false,
       'no cr.evidence.root.v1 was supplied, so these bytes are not shown to be one run');
+  } else if (typeof verifyEvidenceRootBinding !== 'function') {
+    // ── A MISSING VERIFIER IS A REFUSAL, NEVER A CRASH ───────────────────────────────────
+    //
+    // MEASURED on a consumer: agent-guard vendors an OLDER `verify-evidence.js` that does not
+    // export `verifyEvidenceRootBinding` (true on its HEAD too), so this line threw a TypeError
+    // the moment anyone passed an `evidenceRoot`. Latent there — that guard holds no root — and
+    // the SHAPE is what matters: a crash is not an answer, and a caller cannot tell "the core
+    // blew up" from "the core is unavailable" from "the binding failed".
+    //
+    // Every OTHER dependency this file has is already used unconditionally, so this is the one
+    // place a mixed vendor pin can leave a hole. Refusing here is the fail-closed answer, and it
+    // names the cause rather than reporting a generic unbound root.
+    note(AUTHORITY.ONE_RUN_ROOT, false,
+      'the evidence-root verifier is not available in this build (the vendored verify-evidence.js '
+      + 'does not export verifyEvidenceRootBinding) — the root was NOT checked, and an unchecked '
+      + 'root is refused rather than reported as unbound');
   } else {
-    const r = verifyEvidenceRootBinding(er.artifact, { executorKey: er.executorKey, sidecars: er.sidecars });
-    note(AUTHORITY.ONE_RUN_ROOT, r.ok === true, r.ok ? 'bound' : (r.failures[0] || 'unbound'));
+    let r;
+    try {
+      r = verifyEvidenceRootBinding(er.artifact, { executorKey: er.executorKey, sidecars: er.sidecars });
+    } catch (err) {
+      r = { ok: false, failures: [`the evidence-root verifier threw: ${(err && err.message) || 'error'}`] };
+    }
+    note(AUTHORITY.ONE_RUN_ROOT, r.ok === true,
+      r.ok ? 'bound' : ((r.failures && r.failures[0]) || 'unbound'));
   }
 
   // ── 4. THE PROVIDER WITNESS ────────────────────────────────────────────────────────────

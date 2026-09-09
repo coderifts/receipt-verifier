@@ -126,3 +126,57 @@ describe('the reporting field is kept honest', () => {
     assert.equal(attempted.receipt_caller_asserted, false);
   });
 });
+
+describe('a missing evidence-root verifier is a REFUSAL, not a crash', () => {
+  it('MEASURED on a real consumer: the vendored dependency can be an older revision', () => {
+    // agent-guard vendors a `verify-evidence.js` that does not export `verifyEvidenceRootBinding`
+    // — true on its HEAD too — so passing an `evidenceRoot` threw a TypeError out of the shared
+    // core. Latent there (that guard holds no root), and the SHAPE is the problem: a crash is not
+    // an answer, and a caller cannot tell "the core blew up" from "the binding failed".
+    //
+    // Every other dependency this file has is used unconditionally, so the mixed vendor pin can
+    // only leave a hole here. This is the fail-closed answer, and it names the cause.
+    const r = verifiedExecutionBinding({
+      ...base({ verified: true }),
+      evidenceRoot: { artifact: { evidence_root: {} }, executorKey: null },
+      required: [AUTHORITY.ONE_RUN_ROOT],
+    });
+    assert.equal(r.requirements_satisfied, false);
+    assert.equal(r.state, STATE.ONE_RUN_UNPROVEN);
+    // The reason must be about the ROOT, whichever way it failed — never a stack trace.
+    assert.ok(r.shortfalls.some((x) => x.startsWith('one_run_root:')), r.shortfalls.join('; '));
+  });
+
+  it('a verifier that THROWS is caught and reported, not propagated', () => {
+    // The other half of the same class: present, callable, and it blows up on the input.
+    //
+    // Injected through require.cache rather than by handing in a throwing getter — a getter fires
+    // at the `!er.artifact` guard, BEFORE the call, so that test would have proved the guard and
+    // not the catch. The realistic cause is the verifier itself failing on bytes it cannot parse.
+    const dep = require.resolve('../verify-evidence.js');
+    const self = require.resolve('../verified-execution-binding.js');
+    const savedDep = require.cache[dep];
+    const savedSelf = require.cache[self];
+    try {
+      delete require.cache[self];
+      require.cache[dep] = {
+        id: dep, filename: dep, loaded: true, exports: {
+          ...savedDep.exports,
+          verifyEvidenceRootBinding: () => { throw new Error('boom'); },
+        },
+      };
+      // eslint-disable-next-line global-require
+      const fresh = require('../verified-execution-binding.js');
+      const r = fresh.verifiedExecutionBinding({
+        ...base({ verified: true }),
+        evidenceRoot: { artifact: { evidence_root: {} }, executorKey: null },
+        required: [AUTHORITY.ONE_RUN_ROOT],
+      });
+      assert.equal(r.requirements_satisfied, false);
+      assert.ok(r.shortfalls.some((x) => x.includes('threw: boom')), r.shortfalls.join('; '));
+    } finally {
+      require.cache[dep] = savedDep;
+      require.cache[self] = savedSelf;
+    }
+  });
+});
