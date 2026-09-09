@@ -859,3 +859,58 @@ misled; that is a different path and this is not it.
 
 `NOT_RUN` is not a refusal. It means the claim is neither established nor
 disproved, and a grader MUST NOT read it as evidence against the transition.
+
+---
+
+## 14. The authority model (NORMATIVE, and it is four — not five)
+
+Every published description of this verifier should agree with the state machine in
+`verified-execution-binding.js`. Two mismatches were reported by auditors against 0.8.8; both are
+fixed here in the DOCS, because the code was already right and inventing an authority to match old
+prose would have been the wrong repair.
+
+### 14.1 There are FOUR authorities
+
+```
+issuer_grant          did CodeRifts authorize THIS change?      a signature under a pinned key
+executor_attestation  did the executor commit THAT grant?       a signature over the grant's ids
+one_run_root          are these bytes from ONE run?             cr.evidence.root.v1 digests
+provider_witness      did the provider record it?               a readback — UNSIGNED by nature
+```
+
+A **profile** fixes its own subset (`PROFILE` in `verified-execution-binding.js`), and a caller
+names a profile rather than editing what one means. `TRUSTED_EXECUTOR_INTEGRITY_V1` requires the
+first three; it deliberately requires nothing of a third party, and the name says so.
+
+### 14.2 The decision receipt is a PRECONDITION, not the fifth authority
+
+This is the mismatch worth stating plainly, because both readings sound the same until a run fails.
+
+An authority is *optional per profile*: `provider_witness` is not required by
+`TRUSTED_EXECUTOR_INTEGRITY_V1`, and a capture without one still reaches
+`AUTHORIZED_AND_COMMITTED`. The receipt is not like that. It sits ABOVE the profile:
+
+```js
+if (!receiptOk || (required.has(AUTHORITY.ISSUER_GRANT) && !grantOk)) state = STATE.UNAUTHORIZED;
+```
+
+`!receiptOk` short-circuits to `UNAUTHORIZED` **whatever the profile asked for** — no profile can
+declare the receipt optional, because no profile is consulted on that line. So:
+
+* it is a mandatory precondition of **every** global execution profile;
+* it is **not** an authority, and there is no `decision_receipt` entry in `AUTHORITY`;
+* a document that lists five authorities is describing a verifier that does not exist here.
+
+There is one more rule on the same value, and it is a separate rule: a receipt the caller merely
+*asserted* (`receipt: { verified: true }`, no token, no keyring) does not fail — it caps. The state
+becomes `CUSTOM_REQUIREMENTS_SATISFIED`, never `AUTHORIZED_AND_COMMITTED`. Precondition and cap are
+independent: a *failed* receipt is `UNAUTHORIZED`, an *unverifiable* one is a ceiling.
+
+### 14.3 `CREDENTIAL_BOUNDARY` is a conformance profile, not one of these
+
+`CREDENTIAL_BOUNDARY` and `ATOMIC_COMMIT` are **assurance profiles of `@coderifts/conformance`** —
+rows in a coverage report, graded from recorded transcripts. They are not `PROFILE` entries in this
+core, they name no authority, and this verifier never evaluates them. The words "profile" and
+"boundary" appear in both vocabularies, which is exactly why the boundary is written down: reading
+`CREDENTIAL_BOUNDARY` as a verdict-core profile would imply a credential check inside the state
+machine, and there is none.
