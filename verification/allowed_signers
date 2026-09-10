@@ -1,0 +1,32 @@
+# The signer of receipt-verifier's release tags, in OpenSSH allowed_signers format.
+#
+# ── WHY THIS FILE IS IN THE REPOSITORY ──────────────────────────────────────────────────────
+#
+# MEASURED on a machine with no signer configuration, running the command the docs recommend:
+#
+#   $ git tag -v v1.0.1
+#   Good "git" signature with ED25519 key SHA256:7yRXTm9zKGicfFpzL+7lpwFoPaoSwxAJlabB3jwxw2Y
+#   Unable to open allowed keys file "": No such file or directory
+#   No principal matched.
+#
+# The signature verifies and the command still fails, because git can confirm the BYTES were signed
+# by that key and cannot tie the key to anyone. The missing half is an identity list, and it lived
+# only in the maintainer's ~/.ssh — so the documented verification was reproducible on exactly one
+# machine.
+#
+# ── WHAT IT IS AND IS NOT ───────────────────────────────────────────────────────────────────
+#
+# A PUBLIC key, published on purpose: it is the half anyone needs to check a signature, and it
+# grants nothing. It is not a certificate and no third party attests it — a reader who wants an
+# independent binding of this key to a person should compare it against the maintainer's keys at
+# https://github.com/zsobpeter-code.keys rather than trusting this file alone.
+#
+# `namespaces="git"` restricts the key to git signatures, so a key trusted here cannot be used to
+# satisfy an unrelated ssh-signature check.
+#
+# Verify with:
+#   git -c gpg.ssh.allowedSignersFile=verification/allowed_signers tag -v v1.0.1
+# or just:
+#   ./scripts/verify-release-tag.sh v1.0.1
+
+zsobpeter@gmail.com namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAFt0XJta2d5/obwZ4W1zk7xFrlFchNpHPG4JSDWnaH+
