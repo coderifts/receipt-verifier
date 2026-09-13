@@ -728,6 +728,18 @@ else
   done
   rm -f "$MON_KEYS"
 fi
+# The documented quickstart, run the way a stranger runs it: only the files the README names,
+# in a directory that is not this one. Every other check here runs from the repo root, where
+# ./arity resolves whether or not anyone was told about it — which is why they all stayed green
+# for the sixteen days `node verify.js <token>` was broken for readers.
+checks=$((checks + 1))
+if node test/documented-quickstart.js; then
+  :
+else
+  echo "FAIL  documented-quickstart"
+  fails=$((fails + 1))
+fi
+
 checks=$((checks + 1))
 if node test/cross-check-monitor.js; then
   echo "ok    cross-check-monitor (js == app kernel on MON-A-*)"

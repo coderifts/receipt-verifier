@@ -3,8 +3,8 @@
 **Verify the receipt yourself — offline, no live CodeRifts API call needed.**
 
 Every CodeRifts verdict response can carry a signed `chain_receipt`. This repo is
-a tiny, independent verifier -- one file in Node, one in Python -- that checks a
-receipt's signature (and, optionally, a whole chain of them) against the
+a tiny, independent verifier -- a handful of dependency-free files in Node, one
+file in Python -- that checks a receipt's signature (and, optionally, a whole chain of them) against the
 published Ed25519 public key. If verification passes, the verdict provably came
 from the holder of the CodeRifts signing key and, in a chain, follows an unbroken
 link from the previous receipt. You do not have to take our word for it, and you
@@ -43,6 +43,45 @@ is verified as an opaque, signed binding (see RECEIPT_FORMAT.md section 2).
 ## Requirements
 
 - Node: >= 20 (zero dependencies; uses `node:crypto` only).
+
+### What you need on disk (Node)
+
+MEASURED 2026-09-13, by doing what a reader does: downloading the files into an
+empty directory and running the command.
+
+`verify.js` is the LIBRARY. It has not been a runnable CLI since 1129 (2026-08-28)
+split the shared arity shim out of it, and `node verify.js <token>` now fails with
+`Cannot find module './arity'` — and would print nothing even if that resolved,
+because the CLI moved to `cli.js`. Fetching `verify.js` alone and running it, which
+is what the older instructions said to do, cannot work.
+
+Four files, and the command is `node cli.js`:
+
+```
+verify.js                  the verify logic
+arity.js                   the shared (token, opts) shim, required at load time
+cli.js                     the entry point
+keys/coderifts-keys.json   the vendored key snapshot cli.js reads by default
+```
+
+The simplest way to get all four is to clone the repo. To fetch them by hand:
+
+```
+mkdir -p keys
+for f in verify.js arity.js cli.js; do
+  curl -sSO "https://raw.githubusercontent.com/coderifts/receipt-verifier/main/$f"
+done
+curl -sS -o keys/coderifts-keys.json \
+  "https://raw.githubusercontent.com/coderifts/receipt-verifier/main/keys/coderifts-keys.json"
+node cli.js "$(cat receipt.txt)"
+```
+
+Python is different and the difference is measured, not assumed: `verify.py`
+imports the arity shim INSIDE the functions that need it, so the single file still
+runs standalone. `python3 verify.py <token> --keys <url|file>` was confirmed to
+return `{"valid":true,"status":"VERIFIED_CURRENT",…}` from an empty directory with
+nothing but that one file.
+
 - Python: >= 3.10 with the `cryptography` package (`pip install cryptography`).
 
 ## Quickstart (Node)
@@ -100,7 +139,7 @@ python3 verify.py "$RECEIPT" --key pub.pem --kid 2026-07-k1
 Put one token per line, oldest first, then:
 
 ```
-node verify.js --chain receipts.txt --key pub.pem --kid 2026-07-k1
+node cli.js --chain receipts.txt --key pub.pem --kid 2026-07-k1
 python3 verify.py --chain receipts.txt --key pub.pem --kid 2026-07-k1
 ```
 
@@ -134,11 +173,11 @@ from the published append-only registry. This keeps receipts issued under a
 now-retired key verifiable:
 
 ```
-node verify.js "$RECEIPT" --keys https://app.coderifts.com/.well-known/coderifts-keys.json
+node cli.js "$RECEIPT" --keys https://app.coderifts.com/.well-known/coderifts-keys.json
 python3 verify.py "$RECEIPT" --keys https://app.coderifts.com/.well-known/coderifts-keys.json
 
 # or against a local copy of the registry:
-node verify.js "$RECEIPT" --keys coderifts-keys.json
+node cli.js "$RECEIPT" --keys coderifts-keys.json
 ```
 
 The registry is `{ "keys": [ { "kid", "public_key_pem", "status", "valid_from" } ] }`.
@@ -159,7 +198,7 @@ have the **same field set**, and neither carries the verdict. What carries the v
 
 ```bash
 # the receipt, plus the envelope it was minted for
-node verify.js "$(cat receipt.txt)" --envelope decision_result.json
+node cli.js "$(cat receipt.txt)" --envelope decision_result.json
 # -> {"valid":true,"status":"VERIFIED_CURRENT", ...}
 ```
 
@@ -394,7 +433,7 @@ Example (v4 body-hash binding — use a real envelope file from an authorize /
 bundle path; do not invent a receipt token):
 
 ```
-node verify.js "$RECEIPT" --envelope decision.json
+node cli.js "$RECEIPT" --envelope decision.json
 python3 verify.py "$RECEIPT" --envelope decision.json
 ```
 
