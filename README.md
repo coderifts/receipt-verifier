@@ -538,6 +538,44 @@ Its own README, schema (`bundle.schema.json`, `SCHEMA.md`) and conformance
 vectors (`test-vectors.json`) travel with it. `test/run.sh` at the repo root does
 not reach into `contract-verify/`; the two suites are run separately.
 
+## Copies of this core live downstream, and some of them are behind
+
+`verify.js` and its siblings are **byte-copied** into the packages that verify
+offline, each under a `VENDOR.sha256` pin naming a signed tag. That is the point
+of the pin: a copy either matches the named release or the copying repo's own
+test fails. It also means a copy does not move when this repo does — it moves
+when someone re-vendors, deliberately.
+
+**Measured 2026-09-13, and stated here rather than left for a reader to
+discover:** commit `6c2d115` corrected the comment block at the top of
+`verify.js`. The old wording said "the GitHub Action + other embedders use
+these directly" and listed `verifyChain` first; that is false for the Action,
+which calls `verifyReceipt` and never `verifyChain`. The correction names the
+actual callers instead.
+
+The downstream copies still carry the **old** comment. The difference is
+**comment-only** — 11 inserted and 3 deleted lines of JavaScript comment, no
+executable change — so every copy verifies identically to this one. What is
+wrong in them is a sentence about who calls the API, not what the API does.
+
+They are deliberately not being re-vendored for it. Doing so faithfully means a
+new signed tag here, a re-vendor and a pin rewrite in five repositories, five
+test suites, and four npm releases whose changelogs would say "vendored comment
+text". That spends four version numbers and a reader's attention on nothing
+observable. Re-vendoring *cheaply* — copying from this repo's HEAD instead of a
+tag — is worse: those pins name a **signed released tag** and tell the reader to
+run `git tag -v`, and pointing them at an untagged commit would trade a property
+a stranger can check for a comment correction.
+
+**The visible cost of waiting, so nobody debugs it twice:** two of those
+repositories (`@coderifts/sdk` and `@coderifts/conformance`) carry a test that
+compares the vendored bytes against this repo *when it is checked out beside
+them*. That test now **fails locally** for anyone with both repos on disk, and
+skips in CI, where the source is absent. It is not a broken verifier and it is
+not your working copy — it is this comment, and it clears at the next
+re-vendor. The copies pick the correction up at the next **substantive** vendor
+change, and until then this paragraph is where the discrepancy is recorded.
+
 ## License
 
 MIT.

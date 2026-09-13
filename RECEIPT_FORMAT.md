@@ -142,6 +142,44 @@ response scorer_version: 59ed151:active
 fp = sha256:b4faaacad943012438d784c8da34594538b9e5883adc341aa10b7bbfca9d921c
 ```
 
+### What the fingerprint is NOT: a durable audit identifier
+
+Read the preimage above again and notice the last term. `scorer_version` is
+**inside** the digest, so a fingerprint is an identity over *content + policy +
+the scorer that judged it* — not over the change alone. Re-run a byte-identical
+change set after the scoring configuration moves and you get a **different
+fingerprint** for the same diff.
+
+That is deliberate, and it is the useful behaviour: a value cached under an old
+scorer must not silently answer for a new one. The cost is that the fingerprint
+cannot serve as the stable handle for a decision over time — the thing you cite
+in an audit, a ticket, or a year-old incident review.
+
+**Use `decision_id` (or the receipt itself) for that.** The published
+`get_decision_details` tool takes both and treats them differently: given a
+`decision_id` it returns that decision, while given a `fingerprint` it returns —
+in its own words — *the latest matching decision*. "Latest matching" is the
+whole point: a fingerprint is a lookup key that can match more than one record
+and can stop matching the one you meant, whereas a `decision_id` names exactly
+one.
+
+A third value sits between them. `decision_semantic_hash` covers the
+**branchable core** — the decision and the explanation a caller acts on — and
+deliberately excludes the packaging: timestamps, correlation and decision ids,
+retrieval metadata, receipt tokens, and the structural analysis sections a
+replay does not carry (those are named on the response in
+`meta.omitted_sections`, not silently dropped). Scorer identity is **not** in
+that preimage, so unlike the fingerprint it does not move merely because the
+scorer did. It answers "is this the same decision, said the same way?" — which
+is a different question from both of the above.
+
+| I want to… | Use |
+| --- | --- |
+| detect that a cached verdict predates the current scorer | `verdict_fingerprint` |
+| cite one decision, later, in an audit | `decision_id`, or the receipt |
+| check a fresh and a replayed answer say the same thing | `decision_semantic_hash` |
+
+
 **Corrections this section has had to make.** Both are recorded rather than quietly
 edited, because a document that silently repairs itself teaches you its history
 cannot be trusted:
