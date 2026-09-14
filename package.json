@@ -1,0 +1,11 @@
+{
+  "name": "@coderifts/receipt-verifier",
+  "version": "1.0.2",
+  "description": "Verify a CodeRifts receipt offline: no key, no network, no call back to us.",
+  "license": "MIT",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/coderifts/receipt-verifier.git"
+  }
+}
