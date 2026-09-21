@@ -3,7 +3,8 @@
 /**
  * THE RESERVED FIELDS ARE INERT — proved, not intended.
  *
- * `call_hash` and `executor_image_digest` are admitted by the v2 verifier and read by nothing.
+ * `call_hash`, `executor_image_digest` and `applied_policy_hash` are admitted by the v2
+ * verifier and read by nothing.
  * They exist so that the gate which will eventually use them is not a breaking change: the
  * admitted key set is closed, so a field introduced later would make every deployed verifier
  * refuse the grants that carry it.
@@ -77,9 +78,10 @@ const verdict = (r) => `${r.valid}/${r.status}/${r.reason || '-'}`;
 
 const INTENDED = { operation: 'publish', target_uri: 'db://host/table', after_payload: 'the authorized bytes' };
 
-describe('the reserved names are the two the schema documents', () => {
-  it('exactly call_hash and executor_image_digest, and neither is required', () => {
-    assert.deepEqual([...V2_RESERVED_INERT].sort(), ['call_hash', 'executor_image_digest']);
+describe('the reserved names are the three the schema documents', () => {
+  it('exactly call_hash, executor_image_digest, applied_policy_hash, and none is required', () => {
+    assert.deepEqual([...V2_RESERVED_INERT].sort(),
+      ['applied_policy_hash', 'call_hash', 'executor_image_digest']);
     for (const name of V2_RESERVED_INERT) {
       assert.ok(!V2_REQUIRED_STRINGS.includes(name),
         `${name} is reserved AND required — a reserved field that is mandatory is just a field`);
@@ -111,8 +113,34 @@ describe('ZERO BEHAVIOUR CHANGE for a grant that does not carry them', () => {
   });
 });
 
+describe('applied_policy_hash is known-inert (1942 verifier-admits, not a gate)', () => {
+  it('(a) a grant without the field still verifies', () => {
+    assert.equal(verdict(ask(mint(), INTENDED)), 'true/GRANT_CURRENT/-');
+  });
+
+  it('(b) a grant carrying it verifies, and the value is not a gate', () => {
+    const withField = ask(mint({ applied_policy_hash: sha('evaluated') }), INTENDED);
+    assert.equal(verdict(withField), 'true/GRANT_CURRENT/-');
+    assert.equal(withField.payload.applied_policy_hash, sha('evaluated'));
+    // Binding is not this round: a caller that states a different applied hash is ignored.
+    assert.equal(
+      verdict(ask(mint({ applied_policy_hash: sha('evaluated') }),
+        { ...INTENDED, applied_policy_hash: sha('something else entirely') })),
+      'true/GRANT_CURRENT/-',
+    );
+  });
+
+  it('(c) a truly unknown field is still unknown_field — fail-closed is not loosened', () => {
+    assert.equal(verdict(ask(mint({ surprise: 'x' }))), 'false/MALFORMED/unknown_field');
+  });
+});
+
 describe('INERT: carrying them changes no verdict, anywhere', () => {
-  const loaded = { call_hash: sha('a tool call'), executor_image_digest: sha('an image') };
+  const loaded = {
+    call_hash: sha('a tool call'),
+    executor_image_digest: sha('an image'),
+    applied_policy_hash: sha('evaluated'),
+  };
 
   it('the same chain reaches the same verdict with and without them', () => {
     assert.equal(verdict(ask(mint(loaded), INTENDED)), verdict(ask(mint(), INTENDED)));
@@ -152,8 +180,10 @@ describe('PRESENCE IS NOT PROOF', () => {
     assert.equal(verdict(ask(token)), 'false/MALFORMED/missing_field');
   });
 
-  it('a grant for the WRONG bytes is refused even carrying both reserved fields', () => {
-    const r = ask(mint({ call_hash: sha('c'), executor_image_digest: sha('i') }),
+  it('a grant for the WRONG bytes is refused even carrying the reserved fields', () => {
+    const r = ask(mint({
+      call_hash: sha('c'), executor_image_digest: sha('i'), applied_policy_hash: sha('p'),
+    }),
       { ...INTENDED, after_payload: 'bytes nobody authorized' });
     assert.equal(r.valid, false);
     assert.equal(r.reason, 'after_payload_mismatch');
@@ -162,7 +192,11 @@ describe('PRESENCE IS NOT PROOF', () => {
   it('the values are arbitrary — nothing checks that they mean anything', () => {
     // The honest statement, asserted: an issuer can put a lie in these and the verifier cannot
     // tell, because it does not look. That is why presence must never be read as a gate.
-    const nonsense = ask(mint({ call_hash: 'not-even-a-digest', executor_image_digest: '' }), INTENDED);
+    const nonsense = ask(mint({
+      call_hash: 'not-even-a-digest',
+      executor_image_digest: '',
+      applied_policy_hash: 'also-not-a-digest',
+    }), INTENDED);
     assert.equal(nonsense.valid, true, 'a nonsense value was rejected — then it is NOT inert');
     assert.equal(nonsense.status, 'GRANT_CURRENT');
   });

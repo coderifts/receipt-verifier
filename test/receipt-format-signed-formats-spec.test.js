@@ -98,6 +98,15 @@ describe('RECEIPT_FORMAT.md §10 documents the execution grants the code verifie
     assert.match(s, /unknown_field/, '§10 does not state that an unknown key is refused');
   });
 
+  it('every V2_RESERVED_INERT name is documented in §10 as admitted and inert', () => {
+    const s = S();
+    for (const name of grant.V2_RESERVED_INERT) {
+      assert.ok(s.includes(name), `reserved inert field "${name}" is undocumented in §10`);
+    }
+    assert.match(s, /PRESENCE IS NOT A GATE/,
+      '§10 does not state that reserved-field presence is not a gate');
+  });
+
   it('the target-URI schemes are the ones canonicalizeTargetUri admits', () => {
     // Measured against the function, not against a list in the source: what an implementer needs
     // is which schemes are ACCEPTED.

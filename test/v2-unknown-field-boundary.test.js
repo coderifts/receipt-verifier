@@ -7,8 +7,10 @@
  *
  * The v2 issuer CAN write an `environment` key into the signed body
  * (coderifts-app src/verdict-core/execution-grant-v2.js, 1325: `...(environment === null ? {} : { environment })`).
- * This verifier's allowed set is `[...V2_REQUIRED_STRINGS, 'max_attempts']` and does NOT include
- * it, so such a grant would be refused MALFORMED / unknown_field — by us, about a token we issued.
+ * This verifier's allowed set is `[...V2_REQUIRED_STRINGS, 'max_attempts', ...V2_RESERVED_INERT]`
+ * and does NOT include `environment`, so such a grant would be refused MALFORMED / unknown_field
+ * — by us, about a token we issued. `applied_policy_hash` is in the reserved-inert list; this
+ * boundary is specifically `environment`, which is still unknown.
  *
  * It is LATENT, not broken. The only caller of the issuer is the authorize handler
  * (coderifts-app src/change-set.js:1336) and it does not pass `environment`; the write is

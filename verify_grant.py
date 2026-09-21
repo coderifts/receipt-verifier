@@ -54,6 +54,9 @@ V2_REQUIRED_STRINGS = [
     "operation", "target_uri", "expected_state_token", "after_payload_hash",
     "nonce_hash", "policy_hash", "audience_hash", "not_before", "expires_at",
 ]
+# Admitted, and read as NOTHING. Twin of verify-grant.js V2_RESERVED_INERT.
+# applied_policy_hash is 1942 verifier-admits: not a gate, not compared, not required.
+V2_RESERVED_INERT = ("call_hash", "executor_image_digest", "applied_policy_hash")
 TARGET_SCHEMES = ("fs", "git", "api", "db", "registry", "deploy")
 DEFAULT_FETCH_URL = "https://app.coderifts.com/api/v1/attestation/public-key"
 
@@ -173,7 +176,9 @@ def _verify_execution_grant_v2(payload, sig_b64, ctx, opts):
             return {"valid": False, "status": "MALFORMED", "reason": "missing_field", "payload": payload}
     if not isinstance(payload.get("max_attempts"), int) or payload["max_attempts"] < 1:
         return {"valid": False, "status": "MALFORMED", "reason": "bad_max_attempts", "payload": payload}
-    allowed = set(V2_REQUIRED_STRINGS + ["max_attempts"])
+    # The reserved names are ADMITTED, never inspected. A payload carrying them is graded
+    # identically to one that does not — including applied_policy_hash (1942, inert).
+    allowed = set(V2_REQUIRED_STRINGS + ["max_attempts"] + list(V2_RESERVED_INERT))
     for k in payload.keys():
         if k not in allowed:
             return {"valid": False, "status": "MALFORMED", "reason": "unknown_field", "payload": payload}

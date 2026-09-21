@@ -656,22 +656,24 @@ plus `max_attempts`, an integer ≥ 1.
 
 ### 10.3 Reserved OPTIONAL fields — admitted, and read by nothing
 
-Two further keys are ADMITTED and inert:
+Three further keys are ADMITTED and inert:
 
 ```
 call_hash                 reserved for a future tool-call binding
 executor_image_digest     reserved for a future executor-image pinning
+applied_policy_hash       reserved for the evaluated-effective-policy binding (1942); inert until that gate
 ```
 
-The admitted set is therefore exactly those seventeen plus these two; any other key is
+The admitted set is therefore exactly those seventeen plus these three; any other key is
 `MALFORMED/unknown_field`, and that has not been loosened.
 
 **Their PRESENCE IS NOT A GATE.** A grant carrying `call_hash` is graded IDENTICALLY to one
-without it — same status, same reason, same refusals. No check reads them, no `intended` field
-compares against them, and a caller that passes one is ignored. A VERIFIER THAT READS THEIR
-PRESENCE AS AUTHORIZATION IS WRONG: nothing asserts the value is true, nothing compares it to
-anything, and whoever can mint a grant can put any string there — including an empty one, which
-verifies.
+without it — same status, same reason, same refusals. Same for `applied_policy_hash`: carrying it
+does not bind the evaluator's policy, omitting it is not STOP, and an `intended.applied_policy_hash`
+is ignored. No check reads them, no `intended` field compares against them, and a caller that
+passes one is ignored. A VERIFIER THAT READS THEIR PRESENCE AS AUTHORIZATION IS WRONG: nothing
+asserts the value is true, nothing compares it to anything, and whoever can mint a grant can put
+any string there — including an empty one, which verifies.
 
 They are reserved NOW because the key set is closed. Introducing a field later would make every
 deployed verifier refuse the grants that carry it, so the names are opened before the gate that
