@@ -98,6 +98,48 @@ const allowEnvelope = () => ({
   next_agent_step: null,
 });
 
+/*
+ * 1961/III TAG 2 — `does_not_prove` UNDER THE SIGNATURE, AND THE VECTOR THAT MAKES IT MEAN
+ * SOMETHING.
+ *
+ * ⚠ WHY THE FIELD IS SIGNED RATHER THAN A SIBLING. The round before this one measured that an
+ * "unsigned sibling" is impossible on a decision envelope: `computeBodyHash` covers every key
+ * except `receipt` and `decision_body_hash`, and all three verifiers recompute it from the keys
+ * PRESENT (measured: verify.js:295-302, verify.py:265-268, coderifts_verifier/_verify.py:279-282).
+ * So the choice was never signed-vs-unsigned; it was signed-or-nothing.
+ *
+ * ⚠⚠ AND SIGNED IS THE BETTER ANSWER, WHICH IS WHAT THIS PAIR PROVES. Unsigned, our stated limits
+ * could be STRIPPED from an envelope and the remainder passed on as ours — verifying cleanly, and
+ * saying more than we said. Covered by `bh`, removing them is DETECTABLE: the recomputed hash
+ * moves and the receipt fails INVALID_SIGNATURE.
+ *
+ * The STRIPPED vector is the one the family exists for. The BOUND vector is its control: without
+ * it, "the stripped one fails" would also be satisfied by a verifier that rejects everything.
+ */
+const DOES_NOT_PROVE = Object.freeze([
+  'A decision is an authorization answer about the change set you sent. It is not an observation '
+  + 'that anything was executed, merged, deployed or published.',
+  'ALLOW means a grant may be issued. It does not mean a grant WAS consumed: single-use is a '
+  + 'property of the consuming enforcement path, not of the signed artifact.',
+]);
+
+const limitsEnvelope = (limits) => ({
+  spec_version: 'decision-result.v1.1',
+  decision: 'ALLOW',
+  execution_action: 'CONTINUE',
+  safe_for_agent: true,
+  decision_id: 'dec_dnp',
+  fingerprint: `sha256:${'a'.repeat(64)}`,
+  operation: 'merge',
+  environment: 'ci',
+  next_agent_step: null,
+  ...(limits === undefined ? {} : { does_not_prove: limits }),
+});
+
+const limitsSigned = limitsEnvelope([...DOES_NOT_PROVE]);
+/** The same receipt, with our stated limits torn off before the reader sees the envelope. */
+const limitsStripped = limitsEnvelope(undefined);
+
 // (b) is the whole point: sign the honest envelope, then hand the verifier the swapped one.
 const signedBlock = blockEnvelope(STEP);
 const tamperedBlock = blockEnvelope(SWAPPED_STEP);
@@ -117,6 +159,25 @@ const CASES = [
       + 'must not be surfaced. This is the vector the family exists for.',
     envelope: tamperedBlock,
     token: mint(signedBlock),
+    step_readable: false,
+    expected_step: null,
+  },
+  {
+    name: 'DNP-BOUND',
+    note: '1961/III — an envelope carrying does_not_prove, signed over it. Verifies: the limits '
+      + 'are part of what the receipt attests. CONTROL for DNP-STRIPPED below.',
+    envelope: limitsSigned,
+    token: mint(limitsSigned),
+    step_readable: true,
+    expected_step: null,
+  },
+  {
+    name: 'DNP-STRIPPED',
+    note: '⚠ THE POINT: the SAME receipt, with does_not_prove torn off the envelope. bh no longer '
+      + 'matches, so removing our stated limits is detectable rather than silent. An unsigned '
+      + 'sibling would have verified here and said more than we said.',
+    envelope: limitsStripped,
+    token: mint(limitsSigned),
     step_readable: false,
     expected_step: null,
   },

@@ -99,3 +99,44 @@ describe('the step is readable only when the binding verifies', () => {
     assert.equal(readStep(byName['ENVSTEP-BLOCK-BOUND']).verdict.valid, true);
   });
 });
+
+/**
+ * 1961/III TAG 2 — the limits are under the signature, and tearing them off is DETECTABLE.
+ *
+ * ⚠ THE PAIR IS THE ASSERTION. "Stripped fails" on its own would also be satisfied by a verifier
+ * that rejects everything; "bound verifies" on its own proves the field is merely tolerated. Only
+ * together do they say what we need: the limits are part of what the receipt attests.
+ */
+describe('1961/III — does_not_prove is covered by bh', () => {
+  const byName = Object.fromEntries(VECTORS.vectors.map((v) => [v.name, v]));
+
+  it('⚠ CONTROL — an envelope carrying does_not_prove verifies', () => {
+    const v = byName['DNP-BOUND'];
+    assert.ok(v, 'DNP-BOUND is missing — regenerate test/gen-envelope-step-vectors.js');
+    assert.ok(Array.isArray(v.envelope.does_not_prove) && v.envelope.does_not_prove.length > 0);
+    assert.equal(v.js.valid, true);
+    assert.equal(v.js.status, 'VERIFIED_CURRENT');
+  });
+
+  it('⚠⚠ THE POINT — the SAME receipt with does_not_prove torn off is INVALID_SIGNATURE', () => {
+    const v = byName['DNP-STRIPPED'];
+    assert.ok(v, 'DNP-STRIPPED is missing');
+    assert.equal(v.envelope.does_not_prove, undefined, 'the vector must actually be stripped');
+    assert.equal(v.js.valid, false);
+    assert.equal(v.js.status, 'INVALID_SIGNATURE');
+    assert.equal(v.js.reason, 'body_hash_mismatch');
+  });
+
+  it('⚠ the two vectors share ONE token — otherwise the pair proves nothing', () => {
+    // Different tokens would make this "a bad receipt fails", not "removing the limits is caught".
+    assert.equal(byName['DNP-BOUND'].token, byName['DNP-STRIPPED'].token);
+  });
+
+  it('⚠ and the envelopes differ ONLY in that key', () => {
+    const a = { ...byName['DNP-BOUND'].envelope };
+    const b = { ...byName['DNP-STRIPPED'].envelope };
+    delete a.does_not_prove;
+    assert.deepEqual(a, b, 'the vectors differ somewhere else — the finding would be unattributable');
+  });
+});
+

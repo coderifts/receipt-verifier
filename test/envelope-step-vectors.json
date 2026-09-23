@@ -1,12 +1,12 @@
 {
  "generated_by": "test/gen-envelope-step-vectors.js",
  "kid": "envstep-k1",
- "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEARs3KUVyzvaOSxKbWQtsSHkKNQp/h/j57cVGCkA1Nmwo=\n-----END PUBLIC KEY-----\n",
+ "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAhEVi/pM1ZsSm9HN4sayI397qjsYKyN+QJTfGqQ1+fvY=\n-----END PUBLIC KEY-----\n",
  "vectors": [
   {
    "name": "ENVSTEP-BLOCK-BOUND",
    "note": "A non-allow decision whose step is bound by bh. Verifies; the step is then readable.",
-   "token": "eyJ2Ijo0LCJraWQiOiJlbnZzdGVwLWsxIiwiZnAiOiJzaGEyNTY6YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsInByZXYiOiJudWxsIiwiY2FsbGVyIjoiYnVuZGxlIiwidHMiOiIyMDI2LTA5LTAxVDAwOjAwOjAwLjAwMFoiLCJyZWciOiJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJyIiwiaXIiOiJzaGEyNTY6YmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYiIsImV4cGlyZXNfYXQiOiIyMDk5LTAxLTAxVDAwOjAwOjAwLjAwMFoiLCJiaCI6InNoYTI1NjpmZjhkYTljZDJkM2E3NzBjZDI2MmM1NWNmMTBjM2VjZDYwM2I4NzBmMmQ5ZDY4N2JjNDdjYWZiYzliYTI2NzEwIn0.In0H_3ah2wXvKKvLQscBiXc5HxCmKkAKkJevVH5AotIcoZqNO9tFeNze8ta4T4Mk3QHjvdmhTynviH9G9MTOBA",
+   "token": "eyJ2Ijo0LCJraWQiOiJlbnZzdGVwLWsxIiwiZnAiOiJzaGEyNTY6YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsInByZXYiOiJudWxsIiwiY2FsbGVyIjoiYnVuZGxlIiwidHMiOiIyMDI2LTA5LTAxVDAwOjAwOjAwLjAwMFoiLCJyZWciOiJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJyIiwiaXIiOiJzaGEyNTY6YmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYiIsImV4cGlyZXNfYXQiOiIyMDk5LTAxLTAxVDAwOjAwOjAwLjAwMFoiLCJiaCI6InNoYTI1NjpmZjhkYTljZDJkM2E3NzBjZDI2MmM1NWNmMTBjM2VjZDYwM2I4NzBmMmQ5ZDY4N2JjNDdjYWZiYzliYTI2NzEwIn0.-8vB3j_2o7w0WRPSvsp443UcIWOkNT7ejQjw9p9ePY4opiplorEMgl56wAWw_ws9obsyBG5aHDsFqYPNaA6JCA",
    "envelope": {
     "spec_version": "decision-result.v1.1",
     "decision": "BLOCK",
@@ -38,7 +38,7 @@
   {
    "name": "ENVSTEP-BLOCK-TAMPERED",
    "note": "The SAME receipt with the step swapped after signing. bh no longer matches; the step must not be surfaced. This is the vector the family exists for.",
-   "token": "eyJ2Ijo0LCJraWQiOiJlbnZzdGVwLWsxIiwiZnAiOiJzaGEyNTY6YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsInByZXYiOiJudWxsIiwiY2FsbGVyIjoiYnVuZGxlIiwidHMiOiIyMDI2LTA5LTAxVDAwOjAwOjAwLjAwMFoiLCJyZWciOiJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJyIiwiaXIiOiJzaGEyNTY6YmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYiIsImV4cGlyZXNfYXQiOiIyMDk5LTAxLTAxVDAwOjAwOjAwLjAwMFoiLCJiaCI6InNoYTI1NjpmZjhkYTljZDJkM2E3NzBjZDI2MmM1NWNmMTBjM2VjZDYwM2I4NzBmMmQ5ZDY4N2JjNDdjYWZiYzliYTI2NzEwIn0.In0H_3ah2wXvKKvLQscBiXc5HxCmKkAKkJevVH5AotIcoZqNO9tFeNze8ta4T4Mk3QHjvdmhTynviH9G9MTOBA",
+   "token": "eyJ2Ijo0LCJraWQiOiJlbnZzdGVwLWsxIiwiZnAiOiJzaGEyNTY6YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsInByZXYiOiJudWxsIiwiY2FsbGVyIjoiYnVuZGxlIiwidHMiOiIyMDI2LTA5LTAxVDAwOjAwOjAwLjAwMFoiLCJyZWciOiJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJyIiwiaXIiOiJzaGEyNTY6YmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYiIsImV4cGlyZXNfYXQiOiIyMDk5LTAxLTAxVDAwOjAwOjAwLjAwMFoiLCJiaCI6InNoYTI1NjpmZjhkYTljZDJkM2E3NzBjZDI2MmM1NWNmMTBjM2VjZDYwM2I4NzBmMmQ5ZDY4N2JjNDdjYWZiYzliYTI2NzEwIn0.-8vB3j_2o7w0WRPSvsp443UcIWOkNT7ejQjw9p9ePY4opiplorEMgl56wAWw_ws9obsyBG5aHDsFqYPNaA6JCA",
    "envelope": {
     "spec_version": "decision-result.v1.1",
     "decision": "BLOCK",
@@ -64,9 +64,58 @@
    }
   },
   {
+   "name": "DNP-BOUND",
+   "note": "1961/III — an envelope carrying does_not_prove, signed over it. Verifies: the limits are part of what the receipt attests. CONTROL for DNP-STRIPPED below.",
+   "token": "eyJ2Ijo0LCJraWQiOiJlbnZzdGVwLWsxIiwiZnAiOiJzaGEyNTY6YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsInByZXYiOiJudWxsIiwiY2FsbGVyIjoiYnVuZGxlIiwidHMiOiIyMDI2LTA5LTAxVDAwOjAwOjAwLjAwMFoiLCJyZWciOiJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJyIiwiaXIiOiJzaGEyNTY6YmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYiIsImV4cGlyZXNfYXQiOiIyMDk5LTAxLTAxVDAwOjAwOjAwLjAwMFoiLCJiaCI6InNoYTI1Njo0ZjE3N2FjZjIyNDk3NDBlMDQwM2IzNmE0ZDJlNTdmZjY5ZWZhYTk3MzE3ZGQxY2E5ZjkxOGE5OTY0MjM3YTE4In0.-nqKh6b6w-VhelQ7wVtL2TlG56O9Byss1Oi5AQWCJGnVaas-Lug2b_AFqt8cXNOneTzw2lwjDRuKU6NqSk2_Dg",
+   "envelope": {
+    "spec_version": "decision-result.v1.1",
+    "decision": "ALLOW",
+    "execution_action": "CONTINUE",
+    "safe_for_agent": true,
+    "decision_id": "dec_dnp",
+    "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "operation": "merge",
+    "environment": "ci",
+    "next_agent_step": null,
+    "does_not_prove": [
+     "A decision is an authorization answer about the change set you sent. It is not an observation that anything was executed, merged, deployed or published.",
+     "ALLOW means a grant may be issued. It does not mean a grant WAS consumed: single-use is a property of the consuming enforcement path, not of the signed artifact."
+    ]
+   },
+   "step_readable": true,
+   "expected_step": null,
+   "js": {
+    "valid": true,
+    "status": "VERIFIED_CURRENT"
+   }
+  },
+  {
+   "name": "DNP-STRIPPED",
+   "note": "⚠ THE POINT: the SAME receipt, with does_not_prove torn off the envelope. bh no longer matches, so removing our stated limits is detectable rather than silent. An unsigned sibling would have verified here and said more than we said.",
+   "token": "eyJ2Ijo0LCJraWQiOiJlbnZzdGVwLWsxIiwiZnAiOiJzaGEyNTY6YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsInByZXYiOiJudWxsIiwiY2FsbGVyIjoiYnVuZGxlIiwidHMiOiIyMDI2LTA5LTAxVDAwOjAwOjAwLjAwMFoiLCJyZWciOiJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJyIiwiaXIiOiJzaGEyNTY6YmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYiIsImV4cGlyZXNfYXQiOiIyMDk5LTAxLTAxVDAwOjAwOjAwLjAwMFoiLCJiaCI6InNoYTI1Njo0ZjE3N2FjZjIyNDk3NDBlMDQwM2IzNmE0ZDJlNTdmZjY5ZWZhYTk3MzE3ZGQxY2E5ZjkxOGE5OTY0MjM3YTE4In0.-nqKh6b6w-VhelQ7wVtL2TlG56O9Byss1Oi5AQWCJGnVaas-Lug2b_AFqt8cXNOneTzw2lwjDRuKU6NqSk2_Dg",
+   "envelope": {
+    "spec_version": "decision-result.v1.1",
+    "decision": "ALLOW",
+    "execution_action": "CONTINUE",
+    "safe_for_agent": true,
+    "decision_id": "dec_dnp",
+    "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "operation": "merge",
+    "environment": "ci",
+    "next_agent_step": null
+   },
+   "step_readable": false,
+   "expected_step": null,
+   "js": {
+    "valid": false,
+    "status": "INVALID_SIGNATURE",
+    "reason": "body_hash_mismatch"
+   }
+  },
+  {
    "name": "ENVSTEP-ALLOW-NULL",
    "note": "The allow class carries no step. Verifies; there is nothing to read.",
-   "token": "eyJ2Ijo0LCJraWQiOiJlbnZzdGVwLWsxIiwiZnAiOiJzaGEyNTY6YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsInByZXYiOiJudWxsIiwiY2FsbGVyIjoiYnVuZGxlIiwidHMiOiIyMDI2LTA5LTAxVDAwOjAwOjAwLjAwMFoiLCJyZWciOiJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJyIiwiaXIiOiJzaGEyNTY6YmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYiIsImV4cGlyZXNfYXQiOiIyMDk5LTAxLTAxVDAwOjAwOjAwLjAwMFoiLCJiaCI6InNoYTI1NjoxYWMzMGFkYjk5NDM5MTgxZDc2NzU4ZWY2ZmU3MzkwOWU5M2MxZTQ5N2Q5ODMyMDE0NDc2YTZkMTRlNjVjYmJmIn0.6vCZYV8edfAgDxdz9-zAzbfqNZ8ovUOnEE5ebk-Dl4ZvXYqe0ttJ_HY9kSvzpZikFIYDzA7BjBvKg1xxl4zyCw",
+   "token": "eyJ2Ijo0LCJraWQiOiJlbnZzdGVwLWsxIiwiZnAiOiJzaGEyNTY6YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsInByZXYiOiJudWxsIiwiY2FsbGVyIjoiYnVuZGxlIiwidHMiOiIyMDI2LTA5LTAxVDAwOjAwOjAwLjAwMFoiLCJyZWciOiJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJyIiwiaXIiOiJzaGEyNTY6YmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYiIsImV4cGlyZXNfYXQiOiIyMDk5LTAxLTAxVDAwOjAwOjAwLjAwMFoiLCJiaCI6InNoYTI1NjoxYWMzMGFkYjk5NDM5MTgxZDc2NzU4ZWY2ZmU3MzkwOWU5M2MxZTQ5N2Q5ODMyMDE0NDc2YTZkMTRlNjVjYmJmIn0.hiVDBUR0VaOG0yEURJYpHDh3RjHPNAKfuwYiTCNPMhSc-e4DlJniyDLVgNOsjP9nFtsd3Hmk1M_2_p6uezdoBA",
    "envelope": {
     "spec_version": "decision-result.v1.1",
     "decision": "ALLOW",
