@@ -319,6 +319,31 @@ const out = {
       },
       expected: { valid: true, status: 'GRANT_CURRENT' },
     },
+    /*
+     * 1961 TAG 3 — THE OPERATION-ONLY MUTATION, which the matrix showed was missing.
+     *
+     * ⚠ `operation` is a signed field AND an input to computeScopeHash, so EG-SCOPE-MISMATCH
+     * covers it INDIRECTLY — change the operation and the scope hash moves. Indirect coverage is
+     * not the same as a vector: it proves the hash noticed, not that the verifier reports the
+     * dimension a reader should go and look at. A caller told "scope mismatch" when the actual
+     * divergence is the OPERATION is being sent to read the wrong field.
+     */
+    {
+      name: 'EG2-OPERATION-MISMATCH',
+      token: validV2,
+      flags: {
+        'intended-operation': 'delete',
+        'intended-executor': EXEC,
+        'intended-adapter': ADAPTER,
+        'intended-target': URI,
+        'intended-audience': AUD,
+      },
+      // ⚠ MEASURED, not believed. Run against verify-grant.js on 2026-09-23 BEFORE this line was
+      // written: {valid:false, status:'GRANT_UNBOUND', reason:'operation_mismatch'}. The verifier
+      // already had a dedicated reason for this dimension and no vector exercised it — so the
+      // matrix gap was real, and the fix was a vector rather than code.
+      expected: { valid: false, status: 'GRANT_UNBOUND', reason: 'operation_mismatch' },
+    },
     {
       name: 'EG2-TRANSFERRED-EXECUTOR',
       token: validV2,

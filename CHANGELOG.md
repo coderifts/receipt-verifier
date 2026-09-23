@@ -5,6 +5,49 @@ that carries them; a heading with no tag has not been published.
 
 ## Unreleased — next minor
 
+### `--from-commit <sha>` — read the receipt off a commit (1961 TAG 1)
+
+**Added.** Resolves the receipt attached to a commit and verifies it exactly as a pasted token:
+the `CodeRifts-Receipt` git trailer, or `.coderifts/receipts/<full-sha>.json`. `--repo <path>`
+points at a repository other than the working directory. The convention — both carriers, the
+precedence, and what it does not prove — is `docs/receipt-commit-binding.md`.
+
+**Why it did not exist.** Measured 2026-09-23 across `coderifts-app`, this repository and
+`coderifts-contract-gate`: zero occurrences of a receipt trailer or sidecar. `commit_observation`
+and `after_state_token` already join a receipt to a commit AT DECISION TIME, inside the guard;
+nothing answered the other direction — "given this SHA in history, which receipt authorised it".
+
+**The trailer wins, and a disagreement is REFUSED.** The trailer is covered by the commit SHA and
+the sidecar is not, so where both exist the immutable one is authoritative. Where they *disagree*,
+neither is used: silently preferring the trailer would hide exactly the tampering the precedence
+rule exists to expose.
+
+**A missing receipt is a USAGE error (exit 2), not a verdict.** "No receipt is attached" is not a
+statement about a receipt — there is none to have an opinion about — so no `valid:false` document
+is emitted. And a forged sidecar yields `INVALID_SIGNATURE`, not a false pass: the sidecar is a
+pointer, the signature is the authority.
+
+### `--json` — keep `2>&1` parseable (1961 TAG 9)
+
+**Added, and it is not what it sounds like.** stdout was ALREADY pure JSON on every verdict path,
+so a flag meaning "print JSON" would be a no-op. What it buys is a clean pair of streams: this CLI
+writes human notes to stderr (the legacy-key warning, and `receipt for <sha> via <carrier>`), and a
+caller capturing `2>&1` — which people do — gets them mixed into what they are about to parse.
+
+**It never silences an error.** Usage failures still write to stderr and still exit 2. A flag
+asking for machine-readable output must not turn a failure into a script that looks like it worked.
+
+### Cross-language corpus: one more grant mutation (1961 TAG 3)
+
+`EG2-OPERATION-MISMATCH` added to `test/gen-grant-vectors.js`. The 9×3 mutation matrix showed
+`operation` was covered only INDIRECTLY, through `EG-SCOPE-MISMATCH` (operation feeds
+`computeScopeHash`). Indirect coverage proves the hash noticed, not that the verifier names the
+dimension a reader should look at — and measured against `verify-grant.js`, it already had a
+dedicated `operation_mismatch` reason that no vector exercised. `test/grant-kernel-verdicts.json`
+regenerated as a consequence (11/11 still agree with the app kernel).
+
+Version unchanged; the next minor carries all of this.
+
 ### `REGISTRY_UNREACHABLE` is now reachable from the CLI (1961/7.2)
 
 **Added, additive.** A MANDATORY key discovery that fails — `--refresh-keys`, `--fetch <url>`, or

@@ -3,7 +3,7 @@
   "family": "grant",
   "proves": "The public verifier agrees with the app kernel AS OF kernel_sha256 below.",
   "does_not_prove": "Agreement with the app kernel as it stands now. Nothing here can see that repo.",
-  "vectors_sha256": "sha256:1da2554663e27328cac6931fb31b81302639095577a9cc338cb8a4709da23cc2",
+  "vectors_sha256": "sha256:22719b09b7b30d93aab918ad7a26ce9a97432240502204e4bd13e0d7e8077826",
   "kernel_sha256": "sha256:c91ae2533f3beaffbb8b272b47e9dfe148e1eed4ebe0f2196e29bc5cc4394eb9",
   "verdicts": [
     {

@@ -152,7 +152,7 @@ function discoveryWasMandatory(opts) {
 // ---------------------------------------------------------------------------
 
 function parseArgs(argv) {
-  const opts = { receipt: null, chainFile: null, keyFile: null, keysSource: null, kid: null, fetchUrl: null, refreshKeys: false, envelopeFile: null, audience: null, environment: null };
+  const opts = { receipt: null, chainFile: null, keyFile: null, keysSource: null, kid: null, fetchUrl: null, refreshKeys: false, envelopeFile: null, audience: null, environment: null, fromCommit: null, repo: null, json: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--chain') opts.chainFile = argv[++i];
@@ -161,6 +161,24 @@ function parseArgs(argv) {
     else if (a === '--kid') opts.kid = argv[++i];
     else if (a === '--fetch') opts.fetchUrl = argv[++i];
     else if (a === '--refresh-keys') opts.refreshKeys = true;
+    // 1961 TAG 1 — read the receipt off a commit instead of the command line.
+    else if (a === '--from-commit') opts.fromCommit = argv[++i];
+    else if (a === '--repo') opts.repo = argv[++i];
+    /*
+     * 1961 TAG 9 — `--json`: MEASURED FIRST, AND IT IS NOT WHAT IT SOUNDS LIKE.
+     *
+     * ⚠ stdout was ALREADY pure JSON on every verdict path — `--json` would be a no-op if it
+     * meant "print JSON". What it actually buys is a CLEAN PAIR OF STREAMS: this CLI writes
+     * human notes to stderr (the legacy-key warning, and `receipt for <sha> via <carrier>` from
+     * --from-commit), and a caller capturing `2>&1` — which people do — gets those notes mixed
+     * into what they are about to `JSON.parse`. `--json` silences stderr notes so the two streams
+     * can be merged safely.
+     *
+     * ⚠ IT NEVER SILENCES AN ERROR. `fail()` still writes to stderr and still exits 2: a flag
+     * asking for machine-readable output must not turn a usage error into silence, which would
+     * be a script that looks like it worked.
+     */
+    else if (a === '--json') opts.json = true;
     else if (a === '--envelope') opts.envelopeFile = argv[++i];
     else if (a === '--audience') opts.audience = argv[++i];
     else if (a === '--environment') opts.environment = argv[++i];
@@ -170,6 +188,11 @@ function parseArgs(argv) {
     else throw new Error(`unexpected argument: ${a}`);
   }
   if (opts.keyFile && opts.keysSource) throw new Error('--key and --keys are mutually exclusive');
+  // ⚠ A receipt from a commit AND a receipt on the command line is an ambiguity, not a
+  // convenience: silently preferring one would verify a token the operator did not think they
+  // were asking about.
+  if (opts.fromCommit && opts.receipt) throw new Error('--from-commit and a positional receipt are mutually exclusive');
+  if (opts.fromCommit && opts.chainFile) throw new Error('--from-commit and --chain are mutually exclusive');
   if (opts.refreshKeys && (opts.keyFile || opts.keysSource)) {
     throw new Error('--refresh-keys is mutually exclusive with --key and --keys');
   }
@@ -178,7 +201,12 @@ function parseArgs(argv) {
 
 const USAGE =
   'usage: node cli.js <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]\n' +
-  '       node cli.js --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]\n';
+  '       node cli.js --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]\n' +
+  '       node cli.js --from-commit <sha> [--repo <path>] [--key pub.pem | --keys <url|file>] [--kid <kid>]\n' +
+  '                   reads the CodeRifts-Receipt trailer or .coderifts/receipts/<sha>.json\n' +
+  '                   (docs/receipt-commit-binding.md)\n' +
+  '  --json           suppress human notes on stderr so 2>&1 stays parseable. Errors still go to\n' +
+  '                   stderr and still exit 2 — this never silences a failure.\n';
 
 function fail(msg) {
   process.stderr.write(`${msg}\n${USAGE}`);
@@ -198,6 +226,24 @@ async function main() {
   }
   // Empty string from `$(curl -s … | grep …)` on GitHub 403/rate-limit is a common silent path
   // when the homepage one-liner is used without HTTP status checks — fail honestly.
+  // 1961 TAG 1 — resolve the receipt from a commit before anything else needs it.
+  //
+  // ⚠ ANY FAILURE HERE IS A USAGE ERROR (exit 2), NOT A VERDICT. "no receipt is attached to this
+  // commit" is not a statement about a receipt — there is no receipt to have an opinion about.
+  // Emitting `valid: false` would be a verdict on a token that was never presented.
+  let fromCommitEnvelope = null;
+  if (opts.fromCommit) {
+    try {
+      const { receiptForCommit } = require('./receipt-from-commit.js');
+      const found = receiptForCommit(opts.fromCommit, { cwd: opts.repo || process.cwd() });
+      opts.receipt = found.token;
+      fromCommitEnvelope = found.envelope;
+      if (!opts.json) process.stderr.write(`receipt for ${found.sha} via ${found.carrier}\n`);
+    } catch (e) {
+      return fail(e.message);
+    }
+  }
+
   if (!opts.chainFile && (!opts.receipt || !String(opts.receipt).trim())) {
     return fail(
       'no receipt provided — if you fetched via unauthenticated GitHub comments, a 403 rate limit '
@@ -255,6 +301,10 @@ async function main() {
       return fail(`could not read --envelope: ${e.message}`);
     }
   }
+  // ⚠ An explicit --envelope WINS over a sidecar's. The operator naming a file is a stronger
+  // statement than a pointer found in the repository, and silently overriding it would make
+  // `--envelope` unreliable exactly where it matters.
+  if (!envelope && fromCommitEnvelope) envelope = fromCommitEnvelope;
   const verifyOpts = { envelope, expectedAudience: opts.audience, expectedEnvironment: opts.environment };
 
   let result;
@@ -272,7 +322,7 @@ async function main() {
   if (legacyKeySource) {
     // Non-silent: the operator learns WHY the verdict cannot be current, on stderr, so stdout
     // stays a clean JSON document for a pipe.
-    process.stderr.write(
+    if (!opts.json) process.stderr.write(
       `warning: KEY_STATUS_UNAVAILABLE — ${legacyKeySource} returned the legacy single-key body, `
       + 'which carries no keys[].status. A revoked key is indistinguishable from an active one '
       + 'here, so no CURRENT verdict is reported. Use a key registry (--keys <url|file>) for a '
