@@ -106,6 +106,47 @@ function downgradeLegacyVerdict(result, source) {
   };
 }
 
+/**
+ * 1961/7.2 — DISCOVERY FAILED IS NOT "THIS KEY IS NOT OURS".
+ *
+ * ⚠ MEASURED BEFORE WRITING THIS, and the gap is worth stating plainly: when a MANDATORY network
+ * discovery threw (`--refresh-keys`, `--fetch <url>`, or `--keys <url>`), this CLI called
+ * `fail()` — stderr text and exit 2, the same shape as a mistyped flag. A caller parsing stdout
+ * got no status at all; a caller reading only the exit code could not tell an outage from a
+ * usage error. And where a stale or empty keyring did reach the verifier, the receipt came back
+ * `UNKNOWN_KEY` — which reads as "signed by a key we do not publish", i.e. forgery-shaped, when
+ * the truth was "we could not ask".
+ *
+ * ⚠ NOTHING IS LOOSENED. Both answers were, and remain, `valid: false`. What changes is WHERE an
+ * operator is sent: to the signer, or to their own network. `REGISTRY_UNREACHABLE` is already
+ * normative in RECEIPT_FORMAT.md §7.1 — this is the code catching up with the format, not a new
+ * state being invented.
+ *
+ * ⚠ AND IT APPLIES ONLY TO THE NETWORK PATH. A missing `--key` file, an unreadable local registry
+ * file or a corrupt vendored snapshot stay `fail()`: those are operator errors, and dressing them
+ * as a registry outage would send the same operator to the wrong place in the other direction.
+ */
+function registryUnreachableVerdict(source, err) {
+  return {
+    valid: false,
+    status: 'REGISTRY_UNREACHABLE',
+    reason: 'registry_unreachable',
+    registry_unreachable: {
+      source,
+      why: `discovery was requested and could not be completed: ${err && err.message}`,
+      remedy: 'retry when the registry is reachable, or verify offline against a pinned keyring '
+        + '(--keys <file>, or the vendored snapshot with no flags). An offline verdict is a '
+        + 'verdict about the keys you pinned, not about the registry as it stands now.',
+    },
+  };
+}
+
+/** Did the operator ask for the network? A file path or the vendored default did not. */
+function discoveryWasMandatory(opts) {
+  if (opts.refreshKeys || opts.fetchUrl) return true;
+  return typeof opts.keysSource === 'string' && /^https?:\/\//i.test(opts.keysSource);
+}
+
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
@@ -195,6 +236,13 @@ async function main() {
       ctx = { keyring, expectedKid: opts.kid };
     }
   } catch (e) {
+    // ⚠ A FAILED MANDATORY DISCOVERY IS A VERDICT, NOT A USAGE ERROR. Structured status on stdout
+    // and the verdict exit code, so a machine can tell an outage from a mistyped flag.
+    if (discoveryWasMandatory(opts)) {
+      const source = opts.fetchUrl || opts.keysSource || DEFAULT_FETCH_URL;
+      process.stdout.write(JSON.stringify(registryUnreachableVerdict(source, e)) + '\n');
+      process.exit(1);
+    }
     return fail(`could not load public key: ${e.message}`);
   }
 
@@ -242,4 +290,7 @@ if (require.main === module) {
   main().catch((e) => fail(e.message));
 }
 
-module.exports = { fetchKeyInfo, downgradeLegacyVerdict, parseArgs, main, USAGE, VENDORED_KEYS_PATH };
+module.exports = {
+  fetchKeyInfo, downgradeLegacyVerdict, registryUnreachableVerdict, discoveryWasMandatory,
+  parseArgs, main, USAGE, VENDORED_KEYS_PATH,
+};

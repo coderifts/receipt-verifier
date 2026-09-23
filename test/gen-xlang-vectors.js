@@ -35,6 +35,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const { verifyReceipt, keyFromPem } = require('../verify.js');
 const { toDSSE } = require('../to-dsse.js');
+const { registryUnreachableVerdict, discoveryWasMandatory } = require('../cli.js');
 
 const SIGNING_PREFIX = 'crchain.v1';
 const KID = 'xlang-k1';
@@ -115,6 +116,59 @@ const corpus = {
 corpus.dsse = {
   valid: toDSSE(corpus.vectors.find((v) => v.name === 'VALID').token),
   bad_signature: toDSSE(corpus.vectors.find((v) => v.name === 'BAD_SIGNATURE').token),
+};
+
+/*
+ * 1961/7.2 — THE DISCOVERY BLOCK: "registry unreachable, discovery mandatory".
+ *
+ * ⚠ WHY IT IS NOT A `vectors[]` ENTRY, measured before writing it. Every entry in `vectors[]` is
+ * (token + published key state) → verdict, and every consumer runs it through verifyReceipt. This
+ * case happens EARLIER THAN THAT: there is no keyring to verify against, because discovery itself
+ * failed. Filing it as a vector would make each consumer verify a token whose key was never
+ * fetched, and they would all record UNKNOWN_KEY — which is the very conflation the case exists
+ * to separate.
+ *
+ * ⚠ SO IT IS A TOP-LEVEL BLOCK, exactly like `dsse` above, and that is what makes it ADDITIVE:
+ * `structureOf` in xlang-corpus-sync.test.js compares vector ids, key state and expected verdicts,
+ * so a copy that predates this block still matches. An older verifier simply does not run these
+ * cases — it does not fail them, and it does not silently pass them either.
+ *
+ * ⚠ AND THE NEGATIVE CONTROL IS IN THE BLOCK, not only in a test: `offline_pinned` is the same
+ * unreachable registry with discovery NOT mandatory, and it must NOT produce REGISTRY_UNREACHABLE.
+ * Without it, an implementation that answered REGISTRY_UNREACHABLE whenever the network was down —
+ * including for operators who deliberately verify offline — would pass this corpus.
+ *
+ * The expected verdicts are taken from the reference implementation in this same run, never typed
+ * out by hand.
+ */
+const UNREACHABLE = new Error('getaddrinfo ENOTFOUND registry.invalid');
+corpus.discovery = {
+  note: 'Discovery-level cases: the registry could not be read. These are NOT token verdicts — a '
+    + 'consumer that does not recognise this block must skip it, never fold it into vectors[].',
+  cases: [
+    {
+      name: 'REGISTRY_UNREACHABLE_DISCOVERY_MANDATORY',
+      why: 'The operator asked for live discovery (--refresh-keys / --fetch <url> / --keys <url>) '
+        + 'and it failed. "We could not ask" is not "this key is not ours": one sends an operator '
+        + 'to their own network, the other to the signer.',
+      invocation: { keys_source: 'https://registry.invalid/keys.json', refresh_keys: false, fetch_url: null },
+      discovery_mandatory: discoveryWasMandatory({ keysSource: 'https://registry.invalid/keys.json' }),
+      expected: (() => {
+        const v = registryUnreachableVerdict('https://registry.invalid/keys.json', UNREACHABLE);
+        return { valid: v.valid, status: v.status, reason: v.reason };
+      })(),
+    },
+    {
+      name: 'OFFLINE_PINNED_REGISTRY_UNREACHABLE_IS_NOT_A_FAILURE',
+      why: 'NEGATIVE CONTROL. The same unreachable registry, but the operator pinned a local '
+        + 'keyring. An offline verdict is a verdict about the keys you pinned; it must not be '
+        + 'downgraded because a registry nobody asked for is down.',
+      invocation: { keys_source: './keys/registry.json', refresh_keys: false, fetch_url: null },
+      discovery_mandatory: discoveryWasMandatory({ keysSource: './keys/registry.json' }),
+      expected: { valid: true, status: 'VERIFIED_CURRENT', reason: null },
+      expected_token: corpus.vectors.find((v) => v.name === 'VALID').token,
+    },
+  ],
 };
 
 const json = `${JSON.stringify(corpus, null, 1)}\n`;
