@@ -1,7 +1,13 @@
 {
   "name": "@coderifts/receipt-verifier",
   "version": "1.0.2",
-  "description": "Verify a CodeRifts receipt offline: no key, no network, no call back to us.",
+  "description": "Signed, offline-verifiable authorization for API-contract changes. Only a granted change can proceed. This package verifies a receipt offline, with no key, no network and no call back.",
+  "keywords": [
+    "api-contract-preflight",
+    "offline-verifiable-authorization",
+    "agent-authorization",
+    "mcp"
+  ],
   "license": "MIT",
   "private": true,
   "repository": {
