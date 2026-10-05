@@ -77,9 +77,33 @@ python3 -m coderifts_verifier._verify --from-commit 9f2c1ab
 ```
 
 Both read the trailer or the sidecar from the repository in the current working directory (or
-`--repo <path>`), then verify exactly as if the token had been pasted on the command line. **The
-carrier changes nothing about the verification** — same statuses, same exit codes, same offline
-default.
+`--repo <path>`), then verify exactly as if the token had been pasted on the command line — same
+statuses, same exit codes, same offline default.
+
+### The receipt must be about that commit (Node, P58, 2026-10-05)
+
+After the signature verifies, the Node verifier also checks that the receipt it found is **about**
+the commit it was asked about. Measured before: an old sidecar copied beside a force-pushed SHA
+verified `VERIFIED_CURRENT`.
+
+- **head.** The envelope (a sidecar's, or `--envelope`) is covered by the signature (v4 `bh`), so its
+  `head` is a signed fact. It must name the commit: the full SHA, or a prefix when the envelope
+  carries an abbreviation of 7–39 hex characters. Otherwise `RECEIPT_COMMIT_MISMATCH`, naming both.
+- **content** (`--contract <path>`, repeatable): the envelope names no file, so you name the contract
+  file(s). The verifier reads each at the envelope's `base` and at the commit (`git show`),
+  recomputes `artifact_digest` and compares. Otherwise `CONTENT_MISMATCH`. Without `--contract` the
+  output says `"content": "not_checked"`.
+- **A sidecar without an envelope**, or an envelope without `head`: `RECEIPT_NOT_BOUND_TO_COMMIT`.
+- **A trailer without an envelope** keeps its verdict, and stderr says what it cannot check: the
+  trailer is inside the commit, but `git commit --amend` keeps it while the files change.
+
+```bash
+node cli.js --from-commit 9f2c1ab --contract api/openapi.yaml --keys keys/coderifts-keys.json
+```
+
+The output carries `commit_binding: { status, head, content }`; on a failure `status` is the named
+code and `signature_status` keeps what the signature alone said. The Python verifier
+(`coderifts_verifier`) does not make this check yet.
 
 ## What this does not prove
 
@@ -91,6 +115,6 @@ default.
   exists".
 - **That the sidecar was written by anyone in particular.** It is an unsigned pointer. The
   signature on the receipt is the whole of the assurance.
-- **Anything about history rewriting.** A rebase drops sidecars (they key on the old SHA) and
-  carries trailers into new SHAs. Re-attaching after a rewrite is an operator step, and neither
-  carrier detects that it did not happen.
+- **Anything about history rewriting, on its own.** A rebase drops sidecars (they key on the old SHA)
+  and carries trailers into new SHAs. A sidecar copied to the new SHA is now caught by the head check
+  above (Node); a trailer carried by an amend is not, because a trailer has no envelope.

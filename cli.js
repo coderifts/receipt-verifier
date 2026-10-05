@@ -152,7 +152,7 @@ function discoveryWasMandatory(opts) {
 // ---------------------------------------------------------------------------
 
 function parseArgs(argv) {
-  const opts = { receipt: null, chainFile: null, keyFile: null, keysSource: null, kid: null, fetchUrl: null, refreshKeys: false, envelopeFile: null, audience: null, environment: null, fromCommit: null, repo: null, json: false };
+  const opts = { receipt: null, chainFile: null, keyFile: null, keysSource: null, kid: null, fetchUrl: null, refreshKeys: false, envelopeFile: null, audience: null, environment: null, fromCommit: null, repo: null, contracts: [], json: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--chain') opts.chainFile = argv[++i];
@@ -164,6 +164,8 @@ function parseArgs(argv) {
     // 1961 TAG 1 — read the receipt off a commit instead of the command line.
     else if (a === '--from-commit') opts.fromCommit = argv[++i];
     else if (a === '--repo') opts.repo = argv[++i];
+    // P58 (2026-10-05): the contract file(s) whose content the receipt's artifact_digest must match.
+    else if (a === '--contract') opts.contracts.push(argv[++i]);
     /*
      * 1961 TAG 9 — `--json`: MEASURED FIRST, AND IT IS NOT WHAT IT SOUNDS LIKE.
      *
@@ -193,6 +195,7 @@ function parseArgs(argv) {
   // were asking about.
   if (opts.fromCommit && opts.receipt) throw new Error('--from-commit and a positional receipt are mutually exclusive');
   if (opts.fromCommit && opts.chainFile) throw new Error('--from-commit and --chain are mutually exclusive');
+  if (opts.contracts.length && !opts.fromCommit) throw new Error('--contract needs --from-commit (it reads the file at that commit)');
   if (opts.refreshKeys && (opts.keyFile || opts.keysSource)) {
     throw new Error('--refresh-keys is mutually exclusive with --key and --keys');
   }
@@ -202,7 +205,7 @@ function parseArgs(argv) {
 const USAGE =
   'usage: node cli.js <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]\n' +
   '       node cli.js --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]\n' +
-  '       node cli.js --from-commit <sha> [--repo <path>] [--key pub.pem | --keys <url|file>] [--kid <kid>]\n' +
+  '       node cli.js --from-commit <sha> [--repo <path>] [--contract <path>]... [--key pub.pem | --keys <url|file>] [--kid <kid>]\n' +
   '                   reads the CodeRifts-Receipt trailer or .coderifts/receipts/<sha>.json\n' +
   '                   (docs/receipt-commit-binding.md)\n' +
   '  --json           suppress human notes on stderr so 2>&1 stays parseable. Errors still go to\n' +
@@ -232,12 +235,14 @@ async function main() {
   // commit" is not a statement about a receipt — there is no receipt to have an opinion about.
   // Emitting `valid: false` would be a verdict on a token that was never presented.
   let fromCommitEnvelope = null;
+  let fromCommitFound = null;
   if (opts.fromCommit) {
     try {
       const { receiptForCommit } = require('./receipt-from-commit.js');
       const found = receiptForCommit(opts.fromCommit, { cwd: opts.repo || process.cwd() });
       opts.receipt = found.token;
       fromCommitEnvelope = found.envelope;
+      fromCommitFound = found;
       if (!opts.json) process.stderr.write(`receipt for ${found.sha} via ${found.carrier}\n`);
     } catch (e) {
       return fail(e.message);
@@ -329,6 +334,32 @@ async function main() {
       + 'verdict that can see key status.\n',
     );
     result = downgradeLegacyVerdict(result, legacyKeySource);
+  }
+
+  // P58 (2026-10-05) — a receipt read off a commit must be ABOUT that commit (commit-binding.js).
+  // Only after a valid signature: a forged or broken receipt keeps its own verdict. The envelope
+  // checked is the one the signature covered (an explicit --envelope, else the sidecar's).
+  if (fromCommitFound && result.valid) {
+    let binding;
+    try {
+      const { checkCommitBinding } = require('./commit-binding.js');
+      binding = checkCommitBinding({
+        sha: fromCommitFound.sha,
+        carrier: fromCommitFound.carrier,
+        envelope,
+        cwd: opts.repo || process.cwd(),
+        contracts: opts.contracts,
+      });
+    } catch (e) {
+      return fail(e.message);
+    }
+    if (binding.note && !opts.json) process.stderr.write(`${binding.note}\n`);
+    if (binding.status === 'FAILED') {
+      result = { ...result, valid: false, signature_status: result.status, status: binding.code, reason: binding.reason,
+        commit_binding: { status: binding.status, head: binding.head, content: binding.content } };
+    } else if (binding.status === 'BOUND') {
+      result = { ...result, commit_binding: { status: binding.status, head: binding.head, content: binding.content } };
+    }
   }
 
   process.stdout.write(JSON.stringify(result) + '\n');

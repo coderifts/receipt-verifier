@@ -5,6 +5,18 @@ that carries them; a heading with no tag has not been published.
 
 ## Unreleased — next minor
 
+### `--from-commit`: the receipt must be about that commit (P58, 2026-10-05)
+
+**Fixed.** An old receipt's sidecar copied beside a force-pushed SHA verified `VERIFIED_CURRENT`
+(measured in CC-2 T15): nothing compared the envelope's `head` with the SHA asked about. Now, after the
+signature verifies, `--from-commit` requires the signed envelope's `head` to name that commit
+(`RECEIPT_COMMIT_MISMATCH` otherwise), and with `--contract <path>` (repeatable) recomputes
+`artifact_digest` from the file(s) at `base` and at the commit (`CONTENT_MISMATCH` otherwise). A sidecar
+without an envelope is `RECEIPT_NOT_BOUND_TO_COMMIT`. A trailer without an envelope keeps its verdict
+and says on stderr that it binds no content. The output carries `commit_binding`; on a failure
+`signature_status` keeps the signature's own verdict. `commit-binding.js`;
+`test/from-commit-p58-binding.test.js`.
+
 ### `--from-commit <sha>` — read the receipt off a commit (1961 TAG 1)
 
 **Added.** Resolves the receipt attached to a commit and verifies it exactly as a pasted token:

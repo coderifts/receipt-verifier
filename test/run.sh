@@ -747,6 +747,18 @@ else
   echo "FAIL  cross-check-monitor"
   fails=$((fails + 1))
 fi
+# P58 (2026-10-05): --from-commit, its carriers (1961 TAG 1) and its commit binding. Neither file
+# ran here before, so the CI never ran --from-commit at all.
+for t in test/from-commit-1961-tag1.test.js test/from-commit-p58-binding.test.js; do
+  checks=$((checks + 1))
+  if node --test "$t" >/dev/null; then
+    echo "ok    $(basename "$t")"
+  else
+    echo "FAIL  $(basename "$t")"
+    fails=$((fails + 1))
+  fi
+done
+
 echo
 echo "checks=$checks fails=$fails"
 [ "$fails" = "0" ] && { echo "ALL PASS"; exit 0; } || { echo "FAILURES: $fails"; exit 1; }
