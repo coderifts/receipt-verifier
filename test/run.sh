@@ -749,7 +749,11 @@ else
 fi
 # P58 (2026-10-05): --from-commit, its carriers (1961 TAG 1) and its commit binding. Neither file
 # ran here before, so the CI never ran --from-commit at all.
-for t in test/from-commit-1961-tag1.test.js test/from-commit-p58-binding.test.js; do
+# T18 (2026-10-06): the npm release check — keyring digest, version = tag, the packed tarball, and
+# the installed package (fixture + P58 repro). Here so a change that breaks the package fails CI, not
+# the release run.
+# T19 (2026-10-06): the usage text names the npm bin, not `node cli.js`.
+for t in test/from-commit-1961-tag1.test.js test/from-commit-p58-binding.test.js test/release-check.test.js test/usage-bin-name.test.js; do
   checks=$((checks + 1))
   if node --test "$t" >/dev/null; then
     echo "ok    $(basename "$t")"

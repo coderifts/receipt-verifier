@@ -1,6 +1,6 @@
 {
   "name": "@coderifts/receipt-verifier",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Signed, offline-verifiable authorization for API-contract changes. Only a granted change can proceed. This package verifies a receipt offline, with no key, no network and no call back.",
   "keywords": [
     "api-contract-preflight",
@@ -9,9 +9,53 @@
     "mcp"
   ],
   "license": "MIT",
-  "private": true,
   "repository": {
     "type": "git",
-    "url": "https://github.com/coderifts/receipt-verifier.git"
+    "url": "git+https://github.com/coderifts/receipt-verifier.git"
+  },
+  "bin": {
+    "coderifts-receipt-verifier": "cli.js"
+  },
+  "main": "verify.js",
+  "exports": {
+    ".": "./verify.js",
+    "./verify.js": "./verify.js",
+    "./arity.js": "./arity.js",
+    "./commit-binding.js": "./commit-binding.js",
+    "./evidence-root.js": "./evidence-root.js",
+    "./receipt-from-commit.js": "./receipt-from-commit.js",
+    "./to-dsse.js": "./to-dsse.js",
+    "./verified-execution-binding.js": "./verified-execution-binding.js",
+    "./verify-atomic-attestation.js": "./verify-atomic-attestation.js",
+    "./verify-attest.js": "./verify-attest.js",
+    "./verify-bundle.js": "./verify-bundle.js",
+    "./verify-evidence.js": "./verify-evidence.js",
+    "./verify-grant.js": "./verify-grant.js",
+    "./verify-monitor.js": "./verify-monitor.js",
+    "./verify-prove-transcript.js": "./verify-prove-transcript.js",
+    "./verify-toolset.js": "./verify-toolset.js",
+    "./keys/coderifts-keys.json": "./keys/coderifts-keys.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "/*.js",
+    "keys/coderifts-keys.json",
+    "keys/coderifts-keys.json.sha256",
+    "keys/README.md",
+    "docs/",
+    "RECEIPT_FORMAT.md",
+    "SECURITY.md",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "test": "bash test/run.sh",
+    "release-check": "node scripts/release-check.js"
   }
 }

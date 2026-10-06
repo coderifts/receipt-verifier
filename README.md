@@ -40,9 +40,24 @@ The exact byte format is frozen in [RECEIPT_FORMAT.md](RECEIPT_FORMAT.md).
 It does NOT recompute the verdict fingerprint `fp` from a verdict payload; `fp`
 is verified as an opaque, signed binding (see RECEIPT_FORMAT.md section 2).
 
+## Install
+
+```
+npx @coderifts/receipt-verifier "$(cat receipt.txt)"        # one-off, nothing installed globally
+npx @coderifts/receipt-verifier --from-commit <sha> --contract api/openapi.yaml
+
+npm i -g @coderifts/receipt-verifier                        # or install the command
+coderifts-receipt-verifier "$(cat receipt.txt)"
+```
+
+The command is `cli.js` (the `coderifts-receipt-verifier` bin); it reads the vendored key snapshot
+shipped in the package (`keys/coderifts-keys.json`, pinned by its `.sha256`). As a library:
+`require('@coderifts/receipt-verifier')` is `verify.js`; the other verifiers are
+`@coderifts/receipt-verifier/verify-grant.js` and so on (see `exports` in `package.json`).
+
 ## Requirements
 
-- Node: >= 20 (zero dependencies; uses `node:crypto` only).
+- Node: >= 18 (zero dependencies; uses `node:crypto` only; the suite runs on 18, 20, 22 and 24).
 
 ### What you need on disk (Node)
 
@@ -64,7 +79,8 @@ cli.js                     the entry point
 keys/coderifts-keys.json   the vendored key snapshot cli.js reads by default
 ```
 
-The simplest way to get all four is to clone the repo. To fetch them by hand:
+The simplest way to get them is the npm package (above), or a clone of the repo. `--from-commit`
+also needs `receipt-from-commit.js` and `commit-binding.js`. To fetch the four by hand:
 
 ```
 mkdir -p keys

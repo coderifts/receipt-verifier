@@ -1,0 +1,81 @@
+name: release
+
+# Publish @coderifts/receipt-verifier to npm from a signed v* tag, with npm provenance.
+#
+# Order, and why: the tests and the release check run on the TAGGED commit before anything is
+# published; the release check packs the tarball, installs it offline into an empty project and runs
+# the installed bin (the fixture receipt, and the P58 --from-commit repro). A tag whose version is not
+# package.json's, a keyring that does not match its .sha256, or a tarball without a file the CLI loads
+# stops the run before `npm publish`.
+#
+# Actions are pinned to a COMMIT SHA (the gateway-verifier convention). Each SHA was resolved from the
+# upstream API on 2026-10-06; the tag is in the trailing comment.
+#
+# Secret: NPM_TOKEN — an npm automation (or granular, publish-scoped to @coderifts/receipt-verifier)
+# token. The first publish needs it: npm trusted publishing (OIDC, no token) can only be configured for
+# a package that already exists. Provenance itself uses the id-token below, not the token.
+#
+# No `npm ci`: the package has zero dependencies and no lockfile (as gateway-verifier).
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        # engines.node >= 18: the floor is tested because that is what the declaration promises.
+        node-version: ["18", "20", "22"]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ matrix.node-version }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: cryptography (the JS/Python cross-check in test/run.sh)
+        run: python -m pip install --disable-pip-version-check cryptography
+      - name: npm test (test/run.sh)
+        run: npm test
+      - name: node --test
+        run: node --test test/*.test.js
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+      - name: the tag is annotated and signed by the release key
+        run: |
+          git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          ./scripts/verify-release-tag.sh "${GITHUB_REF_NAME}"
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      - name: release check (keyring digest, version = tag, tarball contents, installed bin, P58 repro)
+        run: node scripts/release-check.js --tag "${GITHUB_REF_NAME}"
+      - name: npm publish --provenance
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: the published version answers
+        run: |
+          for i in 1 2 3 4 5 6; do
+            v="$(npm view "@coderifts/receipt-verifier@${GITHUB_REF_NAME#v}" version 2>/dev/null || true)"
+            [ "$v" = "${GITHUB_REF_NAME#v}" ] && { echo "npm has $v"; exit 0; }
+            sleep 10
+          done
+          echo "npm does not list ${GITHUB_REF_NAME#v} yet"; exit 1

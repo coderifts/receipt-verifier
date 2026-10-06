@@ -3,7 +3,26 @@
 Versions here are the npm package `@coderifts/receipt-verifier`. Entries land before the release
 that carries them; a heading with no tag has not been published.
 
-## Unreleased — next minor
+## 1.1.0 — 2026-10-06
+
+### The usage text names the bin (T19, 2026-10-06)
+
+**Changed.** `--help` and every usage error print `coderifts-receipt-verifier …`, the command the npm
+package installs, instead of `node cli.js …`, which exists only in a clone (where it still works).
+
+### Published on npm (T18, 2026-10-06)
+
+**Added.** The package is installable: `npx @coderifts/receipt-verifier <receipt>` (or
+`npm i -g @coderifts/receipt-verifier`, then `coderifts-receipt-verifier`). Until now it was
+`"private": true` and npm answered 404 for its name, while every CodeRifts App comment printed
+`npx @coderifts/receipt-verifier` as the command to run. `package.json`: the
+`coderifts-receipt-verifier` bin (`cli.js`), `main`/`exports` for every library module and the vendored
+keyring, a `files` allowlist (no tests, no Python), `engines.node >= 18`, public with provenance.
+Published from `.github/workflows/release.yml` on a `v*` tag, after `scripts/release-check.js`:
+the keyring against its `.sha256`, the tag against the version, the packed tarball against the files
+the CLI loads, and the installed package against the fixture receipt and the P58 repro.
+`test/release-check.test.js`.
+
 
 ### `--from-commit`: the receipt must be about that commit (P58, 2026-10-05)
 

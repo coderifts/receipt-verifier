@@ -11,8 +11,9 @@
  * their offline verifiers must never take.
  *
  * Usage:
- *   node cli.js <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]
- *   node cli.js --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]
+ *   coderifts-receipt-verifier <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]
+ *   coderifts-receipt-verifier --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]
+ *   (from a clone: `node cli.js …`)
  *
  * ── 1355-default: VENDORED KEYS ARE THE DEFAULT; THE NETWORK IS OPT-IN ──────────────────────
  *
@@ -202,12 +203,14 @@ function parseArgs(argv) {
   return opts;
 }
 
+// T19 (2026-10-06): the text names the npm bin (`npx @coderifts/receipt-verifier …`); from a clone the
+// same command is `node cli.js …`.
 const USAGE =
-  'usage: node cli.js <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]\n' +
-  '       node cli.js --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]\n' +
-  '       node cli.js --from-commit <sha> [--repo <path>] [--contract <path>]... [--key pub.pem | --keys <url|file>] [--kid <kid>]\n' +
-  '                   reads the CodeRifts-Receipt trailer or .coderifts/receipts/<sha>.json\n' +
-  '                   (docs/receipt-commit-binding.md)\n' +
+  'usage: coderifts-receipt-verifier <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]\n' +
+  '       coderifts-receipt-verifier --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]\n' +
+  '       coderifts-receipt-verifier --from-commit <sha> [--repo <path>] [--contract <path>]... [--key pub.pem | --keys <url|file>] [--kid <kid>]\n' +
+  '                                  reads the CodeRifts-Receipt trailer or .coderifts/receipts/<sha>.json\n' +
+  '                                  (docs/receipt-commit-binding.md)\n' +
   '  --json           suppress human notes on stderr so 2>&1 stays parseable. Errors still go to\n' +
   '                   stderr and still exit 2 — this never silences a failure.\n';
 
