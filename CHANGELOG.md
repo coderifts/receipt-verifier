@@ -3,6 +3,16 @@
 Versions here are the npm package `@coderifts/receipt-verifier`. Entries land before the release
 that carries them; a heading with no tag has not been published.
 
+## 1.1.3 — 2026-10-12
+
+### Test-only release: the release workflow runs on a bare checkout
+
+**Changed.** Nothing at run time. `test/xlang-corpus-sync.test.js` failed on the release runner because
+a bare checkout has no sibling corpus copies; it now skips that case by name ("nothing was compared")
+and still fails when a present copy disagrees. The `v1.1.1` and `v1.1.2` tags name no npm package:
+every earlier run of the release workflow, including `v1.1.0`, stopped at its test step, and 1.1.0
+was published by hand. This version carries the 1.1.1 change below.
+
 ## 1.1.2 — 2026-10-12
 
 ### Test-only release

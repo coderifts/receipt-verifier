@@ -1,6 +1,6 @@
 {
   "name": "@coderifts/receipt-verifier",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "description": "Signed, offline-verifiable authorization for API-contract changes. Only a granted change can proceed. This package verifies a receipt offline, with no key, no network and no call back.",
   "keywords": [
     "api-contract-preflight",
