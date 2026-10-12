@@ -263,6 +263,14 @@ function verifyReceiptInner(token, ctx, opts = {}) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return { valid: false, status: 'MALFORMED', reason: 'bad_json' };
   }
+  // 1.1.1 (2026-10-12, audit-2 F6): a signed field is a string or absent — checked before the signature, so
+  // both verifiers answer alike. MEASURED: `expires_at: [...]` passed the '|' guard (string-only) and the v4
+  // expiry check (string-only), and an expired receipt verified VERIFIED_CURRENT.
+  for (const k of SIGNED_FIELDS) {
+    if (payload[k] !== undefined && typeof payload[k] !== 'string') {
+      return { valid: false, status: 'MALFORMED', reason: 'non_string_signed_field', field: k, payload };
+    }
+  }
 
   // 3. kid -- resolve the entry by kid (keyring) or gate the single key by expectedKid.
   // 1306(a): a served `{keys:[...]}` document is accepted here as well as a Map.

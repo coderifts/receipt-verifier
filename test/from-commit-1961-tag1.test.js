@@ -142,14 +142,20 @@ describe('TAG 1 · absence, and what it is not', () => {
 });
 
 describe('TAG 1 · the CLI', () => {
-  it('⚠ --from-commit verifies exactly as a pasted token does', () => {
+  // 1.1.1 / P66 (2026-10-12): the fixture is a v2 token. Pasted bare it is a signature check
+  // (VERIFIED_CURRENT); read off a commit it is used as an authorization, and v1–v3 bind no envelope
+  // and carry no expiry, so the verdict is RECEIPT_VERSION_UNSUPPORTED — with the same signature status.
+  it('⚠ --from-commit checks the same signature as a pasted token; a v<4 token is not an authorization', () => {
     const r = repo();
     const sha = commit(r, `s\n\n${TRAILER_KEY}: ${TOKEN}`);
     const viaCommit = runCli(['--from-commit', sha, '--keys', KEYS], r.dir);
     const viaPaste = runCli([TOKEN, '--keys', KEYS], r.dir);
-    assert.equal(viaCommit.code, viaPaste.code);
-    assert.deepEqual(JSON.parse(viaCommit.stdout), JSON.parse(viaPaste.stdout),
-      'the carrier changed the verdict — it must change nothing');
+    const c = JSON.parse(viaCommit.stdout);
+    const p = JSON.parse(viaPaste.stdout);
+    assert.equal(p.status, 'VERIFIED_CURRENT');
+    assert.equal(viaCommit.code, 1);
+    assert.equal(c.status, 'RECEIPT_VERSION_UNSUPPORTED');
+    assert.equal(c.signature_status, p.status, 'the carrier changed the signature check');
   });
 
   it('⚠⚠ "no receipt attached" is a USAGE error (exit 2), never a verdict', () => {
@@ -173,8 +179,10 @@ describe('TAG 1 · the CLI', () => {
     const r = repo();
     const sha = commit(r, `s\n\n${TRAILER_KEY}: ${TOKEN}`);
     const out = runCli(['--from-commit', sha, '--repo', r.dir, '--keys', KEYS], os.tmpdir());
-    assert.equal(out.code, 0);
-    assert.equal(JSON.parse(out.stdout).status, 'VERIFIED_CURRENT');
+    // the receipt was found through --repo (a verdict, not a usage error); v2 → not an authorization (1.1.1)
+    assert.equal(out.code, 1);
+    assert.equal(JSON.parse(out.stdout).status, 'RECEIPT_VERSION_UNSUPPORTED');
+    assert.equal(JSON.parse(out.stdout).signature_status, 'VERIFIED_CURRENT');
   });
 
   it('⚠⚠ a FORGED sidecar does not pass — the signature is the authority, not the pointer', () => {
@@ -205,7 +213,7 @@ describe('TAG 9 · --json, and what it deliberately does NOT silence', () => {
     const out = runCli(['--from-commit', sha, '--json', '--keys', KEYS], r.dir);
     assert.equal(out.stderr || '', '', 'a human note survived --json');
     const merged = `${out.stdout}${out.stderr || ''}`;
-    assert.equal(JSON.parse(merged).status, 'VERIFIED_CURRENT');
+    assert.equal(JSON.parse(merged).status, 'RECEIPT_VERSION_UNSUPPORTED'); // v2 fixture, 1.1.1
   });
 
   it('⚠ the VERDICT is byte-identical with and without the flag', () => {

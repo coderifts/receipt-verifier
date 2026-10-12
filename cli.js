@@ -325,6 +325,15 @@ async function main() {
     result = verifyChain(tokens, ctx, verifyOpts);
   } else {
     result = verifyReceipt(opts.receipt, ctx, verifyOpts);
+    // 1.1.1 / P66 (2026-10-12): a receipt used as an authorization — with an envelope (--envelope or a
+    // sidecar) or read off a commit — must be v4: v1–v3 bind no envelope and carry no expiry. MEASURED
+    // (audit probe p1b): a legitimately signed v1–v3 token beside a hand-written envelope was
+    // VERIFIED_CURRENT + BOUND. A bare token with no envelope is still a signature check only.
+    const v = result && result.payload && result.payload.v;
+    if ((envelope || fromCommitFound) && result && result.valid && result.payload && v !== 4) {
+      result = { ...result, valid: false, signature_status: result.status, status: 'RECEIPT_VERSION_UNSUPPORTED',
+        reason: `receipt version v${v} binds no envelope and carries no expiry; only a v4 receipt is accepted with an envelope or --from-commit` };
+    }
   }
 
   if (legacyKeySource) {

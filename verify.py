@@ -234,6 +234,10 @@ def _verify_receipt(token, ctx, opts=None):
         return {"valid": False, "status": "MALFORMED", "reason": "bad_json"}
     if not isinstance(payload, dict):
         return {"valid": False, "status": "MALFORMED", "reason": "bad_json"}
+    # 1.1.1 (2026-10-12): a signed field is a string or absent, checked before the signature (parity with verify.js).
+    for k in SIGNED_FIELDS:
+        if k in payload and not isinstance(payload[k], str):
+            return {"valid": False, "status": "MALFORMED", "reason": "non_string_signed_field", "field": k, "payload": payload}
 
     # 3. kid
     entry = resolve_entry(ctx, payload)
