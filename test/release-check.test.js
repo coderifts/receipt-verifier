@@ -18,6 +18,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { checkKeyringDigest, checkVersion, requiredFiles, checkTarballFiles, releaseCheck } = require('../scripts/release-check.js');
+const PKG_VERSION = require('../package.json').version;
 
 const ROOT = path.join(__dirname, '..');
 
@@ -45,13 +46,13 @@ describe('release check · the keyring', () => {
 });
 
 describe('release check · the version', () => {
-  it('package.json is 1.1.0, the tag v1.1.0 matches, and the CHANGELOG has the heading', () => {
-    assert.deepEqual(checkVersion(ROOT, 'v1.1.0'), { ok: true, version: '1.1.0' });
+  it(`package.json is ${PKG_VERSION}, the tag v${PKG_VERSION} matches, and the CHANGELOG has the heading`, () => {
+    assert.deepEqual(checkVersion(ROOT, `v${PKG_VERSION}`), { ok: true, version: PKG_VERSION });
   });
   it('a tag that is not the package version fails (v1.0.3 was tagged on package.json 1.0.2)', () => {
     const r = checkVersion(ROOT, 'v1.0.3');
     assert.equal(r.ok, false);
-    assert.match(r.reason, /tag v1\.0\.3 is not v1\.1\.0/);
+    assert.equal(r.reason, `tag v1.0.3 is not v${PKG_VERSION} (package.json)`);
   });
 });
 
@@ -73,7 +74,7 @@ describe('release check · the tarball', () => {
 
 describe('release check · end to end (npm pack → offline install → the installed bin)', () => {
   it('passes on this tree: fixture VERIFIED_CURRENT through the bin and npx, P58 BOUND / RECEIPT_COMMIT_MISMATCH', () => {
-    const r = releaseCheck({ root: ROOT, tag: 'v1.1.0' });
+    const r = releaseCheck({ root: ROOT, tag: `v${PKG_VERSION}` });
     assert.equal(r.ok, true, JSON.stringify(r.steps, null, 2));
     assert.ok(!r.files.some((f) => f.startsWith('test/')), 'no test file ships');
   });
