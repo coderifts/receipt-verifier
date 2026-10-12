@@ -3,6 +3,16 @@
 Versions here are the npm package `@coderifts/receipt-verifier`. Entries land before the release
 that carries them; a heading with no tag has not been published.
 
+## 1.1.1 — 2026-10-12
+
+### A receipt below v4 is not authorization (P66, 2026-10-12)
+
+**Changed.** `verify.js`, `verify.py` and the CLI report `RECEIPT_VERSION_UNSUPPORTED` for a receipt
+whose version is below 4: those versions do not bind the request envelope and carry no expiry, so a
+valid signature on them proves that the server signed something, not what was asked. A signed field
+that is not a string (for example `expires_at` given as an array) is `MALFORMED`. Tests:
+`test/p66-version-and-field-types.test.js`. Trust-center entry P66 (2026-10-12).
+
 ## 1.1.0 — 2026-10-06
 
 ### The usage text names the bin (T19, 2026-10-06)
