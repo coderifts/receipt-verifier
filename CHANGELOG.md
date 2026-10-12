@@ -3,6 +3,15 @@
 Versions here are the npm package `@coderifts/receipt-verifier`. Entries land before the release
 that carries them; a heading with no tag has not been published.
 
+## 1.1.2 — 2026-10-12
+
+### Test-only release
+
+**Changed.** Nothing at run time. `test/release-check.test.js` pinned the version `1.1.0` by hand, so
+the `v1.1.1` release run failed at its own test step and published nothing; the test now reads the
+version from `package.json`. The `v1.1.1` tag stays in the repository and names no npm package.
+The 1.1.1 entry below is what this version carries.
+
 ## 1.1.1 — 2026-10-12
 
 ### A receipt below v4 is not authorization (P66, 2026-10-12)
