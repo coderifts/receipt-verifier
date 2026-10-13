@@ -73,8 +73,8 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: the published version answers
         run: |
-          for i in 1 2 3 4 5 6; do
-            v="$(npm view "@coderifts/receipt-verifier@${GITHUB_REF_NAME#v}" version 2>/dev/null || true)"
+          for i in 20 20 12 61 79 80 81 98 702 706 701 707 703 705 33 100 204 250 395 398 399 400 704seq 1 18); do
+            v="$(npm view --prefer-online "@coderifts/receipt-verifier@${GITHUB_REF_NAME#v}" version 2>/dev/null || true)"
             [ "$v" = "${GITHUB_REF_NAME#v}" ] && { echo "npm has $v"; exit 0; }
             sleep 10
           done
