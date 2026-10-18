@@ -329,8 +329,11 @@ async function main() {
     // sidecar) or read off a commit — must be v4: v1–v3 bind no envelope and carry no expiry. MEASURED
     // (audit probe p1b): a legitimately signed v1–v3 token beside a hand-written envelope was
     // VERIFIED_CURRENT + BOUND. A bare token with no envelope is still a signature check only.
+    // 1.1.4: with an envelope (--envelope, or a sidecar's, which arrives in verifyOpts.envelope) the core
+    // verifyReceipt now applies this itself, so the branch below only still acts for --from-commit WITHOUT
+    // an envelope (a trailer, or a sidecar that carries none).
     const v = result && result.payload && result.payload.v;
-    if ((envelope || fromCommitFound) && result && result.valid && result.payload && v !== 4) {
+    if (!envelope && fromCommitFound && result && result.valid && result.payload && v !== 4) {
       result = { ...result, valid: false, signature_status: result.status, status: 'RECEIPT_VERSION_UNSUPPORTED',
         reason: `receipt version v${v} binds no envelope and carries no expiry; only a v4 receipt is accepted with an envelope or --from-commit` };
     }
@@ -374,9 +377,33 @@ async function main() {
     }
   }
 
+  // 1.1.4 (2026-10-18): the receipt verdict names its limits, as the bundle (verify-bundle.js:140),
+  // attestation (verify-atomic-attestation.js:198) and DSSE (to-dsse.js:158) verdicts already do.
+  // Appended, so nothing else in the verdict moves; a --chain verdict is a different object and keeps its shape.
+  if (!opts.chainFile) result = { ...result, does_not_prove: [...RECEIPT_DOES_NOT_PROVE] };
   process.stdout.write(JSON.stringify(result) + '\n');
   process.exit(result.valid ? 0 : 1);
 }
+
+/**
+ * What a verified receipt token does NOT establish — the sentences already published, verbatim:
+ *   [0] README.md:231-233 ("What it does NOT prove", the first two sentences);
+ *   [1..3] the receipt scope the app publishes (coderifts-app src/does-not-prove.js `receipt`, the
+ *          vendored src/generated/does-not-prove.json), itself the SDK's wording
+ *          (sdk src/verify-receipt-local.ts:87) and mirrored on the website's /portable-verification/.
+ * No new claim: a change here is a change to a published sentence.
+ */
+const RECEIPT_DOES_NOT_PROVE = Object.freeze([
+  'it does not prove the agent then stopped. It is evidence about a decision we issued, never about what '
+    + 'the caller did next.',
+  'that the receipt AUTHORIZES the action you are about to take — a valid signature is '
+    + 'authenticity, not authorization. Pass an intended context to the server verify, or use '
+    + 'authorize() for the execution binding',
+  'that the signing key is still trusted — REVOCATION and the issuer\'s clock are not visible '
+    + 'to any local verifier, including this one. A key compromised a minute ago still verifies here',
+  'that the bytes came from the run you think they did — this checks ONE token, and "these '
+    + 'tokens are one run" is a property of a set (see cr.evidence.root.v1)',
+]);
 
 // CLI entry — this file IS the command; verify.js never runs one.
 if (require.main === module) {
@@ -385,5 +412,5 @@ if (require.main === module) {
 
 module.exports = {
   fetchKeyInfo, downgradeLegacyVerdict, registryUnreachableVerdict, discoveryWasMandatory,
-  parseArgs, main, USAGE, VENDORED_KEYS_PATH,
+  parseArgs, main, USAGE, VENDORED_KEYS_PATH, RECEIPT_DOES_NOT_PROVE,
 };

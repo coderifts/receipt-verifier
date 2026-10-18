@@ -425,9 +425,24 @@ async function loadKeyring(source) {
   return keyring;
 }
 
+/**
+ * 1.1.4 (2026-10-18): a receipt used beside an envelope must be v4 — the rule moves here from cli.js
+ * (1.1.1, P66), so every consumer of the core gets it. MEASURED 2026-10-17: two gateways that vendored
+ * this core admitted a production-signed v2 receipt beside a forged ALLOW envelope, because the core
+ * answered valid:true; v1–v3 bind no envelope (no `bh`) and carry no expiry. Any envelope object counts,
+ * `{}` included (the CLI's JS truthiness). A bare token with no envelope stays a signature check, and
+ * verifyChain is unchanged (it checks links, not an envelope per link).
+ */
+function v4EnvelopeRule(result, opts) {
+  const v = result && result.payload && result.payload.v;
+  if (!opts || !opts.envelope || !result || !result.valid || !result.payload || v === 4) return result;
+  return { ...result, valid: false, signature_status: result.status, status: 'RECEIPT_VERSION_UNSUPPORTED',
+    reason: `receipt version v${v} binds no envelope and carries no expiry; only a v4 receipt is accepted with an envelope or --from-commit` };
+}
+
 function verifyReceipt(token, second, third) {
   const { ctx, opts } = split3ary('verifyReceipt', arguments.length, second, third);
-  return verifyReceiptInner(token, ctx, opts);
+  return v4EnvelopeRule(verifyReceiptInner(token, ctx, opts), opts);
 }
 
 function verifyChain(tokens, second, third) {
