@@ -311,8 +311,8 @@ prev(receipt[i])  ==  "sha256:" + sha256hex( entire token string of receipt[i-1]
 7. `body_hash_mismatch` -- (`--envelope`, v4) the envelope's recomputed body hash != `bh`.
 8. `retired_key_after_issue` -- signed by a key already retired at the receipt's `ts`.
 
-`status` (15-status taxonomy) — the verdict a caller branches on. `valid === (status is
-VERIFIED_CURRENT or RETIRED_KEY_VALID_AT_ISSUE)`. **11 live, 4 dormant** (fire only when the
+`status` (16-status taxonomy) — the verdict a caller branches on. `valid === (status is
+VERIFIED_CURRENT or RETIRED_KEY_VALID_AT_ISSUE)`. **12 live, 4 dormant** (fire only when the
 envelope carries the field AND a `--audience`/`--environment`/… check input is supplied):
 
 | status | live? | fires when |
@@ -327,6 +327,7 @@ envelope carries the field AND a `--audience`/`--environment`/… check input is
 | `INVALID_SIGNATURE` | live | signature/delimiter/body-hash failure, or retired-at-issue |
 | `MALFORMED` | live | structure / JSON failure |
 | `UNSUPPORTED_VERSION` | live | `body.v` > the verifier's max supported version |
+| `RECEIPT_VERSION_UNSUPPORTED` | live | the receipt verifies but `body.v !== 4` while an envelope is supplied (`--envelope`, a sidecar's, or `opts.envelope` — any object, `{}` included), or it was read with `--from-commit`. v1–v3 bind no envelope (`bh`) and carry no expiry, so they are never accepted as an authorization. `signature_status` keeps the bare verdict. In the CLI since 1.1.1; in the core `verifyReceipt` since 1.1.4, so every consumer of the library gets it. |
 | `REGISTRY_UNREACHABLE` | live | the key registry / attestation endpoint could not be reached |
 | `VERIFIED_WRONG_AUDIENCE` | dormant | `--audience` supplied and envelope `audience` differs |
 | `VERIFIED_WRONG_ENVIRONMENT` | dormant | `--environment` supplied and envelope `environment` differs |
@@ -334,6 +335,14 @@ envelope carries the field AND a `--audience`/`--environment`/… check input is
 | `VERIFIED_SCOPE_MISMATCH` | dormant | authorization scope differs (no check input defined yet) |
 
 An authentic, fresh receipt returns `{ valid: true, status: "VERIFIED_CURRENT", payload }`.
+
+**Verdict fields (CLI, single receipt).** `valid`, `status`, `reason` (on a failure), `payload`, then,
+when they apply, `signature_status` (the bare signature verdict under a refusal: `RECEIPT_VERSION_UNSUPPORTED`,
+a commit-binding failure) and `commit_binding` (`--from-commit`). Since 1.1.4 the CLI verdict ends with
+`does_not_prove`: a constant array of the published limits of a verified receipt token (README "What it
+does NOT prove", and the receipt scope the app and the SDK publish). It is appended, so no other field
+moves; a `--chain` verdict keeps its own shape, and the bundle, attestation and DSSE verdicts keep their
+own `does_not_prove` lists. The library `verifyReceipt` result does not carry it.
 
 ## 7.1 Revocation (NORMATIVE)
 
