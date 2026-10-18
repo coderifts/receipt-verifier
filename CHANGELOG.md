@@ -3,6 +3,29 @@
 Versions here are the npm package `@coderifts/receipt-verifier`. Entries land before the release
 that carries them; a heading with no tag has not been published.
 
+## 1.1.4 — 2026-10-18
+
+### A receipt verified beside an envelope must be v4, in the core
+
+**Changed.** A receipt verified beside an envelope must be v4. The rule moves from the CLI into
+`verifyReceipt`, so every consumer of the core gets it. With `opts.envelope` present (any object, `{}`
+included) and a receipt that verifies at a version other than 4, `verifyReceipt` returns
+`RECEIPT_VERSION_UNSUPPORTED`, with `signature_status` set to the bare verdict and the same reason
+text the CLI printed. A bare token with no envelope is still a signature check, and `verifyChain` is
+unchanged. `verify.py` gets the same rule in `verify_receipt` and in its CLI.
+
+**Why.** Measured 2026-10-17: two public gateways that vendored this core (v1.0.3) admitted a real,
+production-signed v2 receipt beside a forged ALLOW envelope, because `verifyReceipt` answered
+`valid: true`. The 1.1.1 entry below says `verify.js`, `verify.py` and the CLI report
+`RECEIPT_VERSION_UNSUPPORTED`; measured on 1.1.3, only `cli.js` did.
+
+### The receipt verdict carries `does_not_prove`
+
+**Added.** The receipt verdict carries `does_not_prove`: `cli.js <token>` (and `verify.py`) end the
+verdict with the published limits of a verified receipt token, verbatim (README "What it does NOT
+prove", and the receipt scope the app and the SDK publish). The array is appended, so no other field
+moves. A `--chain` verdict and the bundle, attestation and DSSE verdicts are unchanged.
+
 ## 1.1.3 — 2026-10-12
 
 ### Test-only release: the release workflow runs on a bare checkout
