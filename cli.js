@@ -53,6 +53,7 @@ const {
   loadKeyring,
   keyFromPem,
   keyringFromDocument,
+  classifyPublicKeyPem,
   pickActiveFromKeyring,
   DEFAULT_FETCH_URL,
 } = require('./verify');
@@ -68,11 +69,11 @@ const VENDORED_KEYS_PATH = path.join(__dirname, 'keys', 'coderifts-keys.json');
  * Legacy returns { publicKey, kid } — same as before, so --keys users + grant
  * verifiers that read publicKey/kid stay byte-compatible.
  */
-async function fetchKeyInfo(url) {
+async function fetchKeyInfo(url, warnings) {
   const res = await fetch(url, { headers: { Accept: 'application/json' } });
   if (!res.ok) throw new Error(`fetch ${url} -> HTTP ${res.status}`);
   const info = await res.json();
-  const keyring = keyringFromDocument(info, url);
+  const keyring = keyringFromDocument(info, url, warnings);
   if (keyring) {
     const picked = pickActiveFromKeyring(keyring);
     if (!picked) throw new Error(`no usable keys at ${url}`);
@@ -263,19 +264,34 @@ async function main() {
   let ctx;
   // Non-null once the fetch resolved the LEGACY single-key body (1282-A').
   let legacyKeySource = null;
+  // 1.1.5: where the key(s) came from (verified_with.keyring_source), the --key file's digest, and the
+  // registry entries that were skipped (keyring_warnings). Decided here, where the keyring is loaded.
+  let keyringSource = null;
+  let singleKeySha256 = null;
+  const keyringWarnings = [];
   try {
     if (opts.keysSource) {
       // Registry mode: resolve each receipt's key by its kid. --kid stays an
       // optional additional guard (null => accept any kid present in the registry).
       // A URL here is the opt-in network path; a file is offline.
-      const keyring = await loadKeyring(opts.keysSource);
+      const keyring = await loadKeyring(opts.keysSource, keyringWarnings);
       ctx = { keyring, expectedKid: opts.kid };
+      keyringSource = /^https?:\/\//i.test(opts.keysSource) ? 'url' : 'file';
     } else if (opts.keyFile) {
       const pem = fs.readFileSync(opts.keyFile, 'utf8');
-      ctx = { publicKey: keyFromPem(pem), expectedKid: opts.kid };
+      // 1.1.5: the same classification as a keyring entry — a non-Ed25519 --key is refused per receipt
+      // (unsupported key algorithm), not loaded and accepted.
+      const key = classifyPublicKeyPem(pem);
+      if (key.unparseable) throw new Error(`${opts.keyFile} is not a PUBLIC KEY PEM`);
+      ctx = key.unsupported_alg
+        ? { publicKey: null, unsupportedAlg: key.unsupported_alg, expectedKid: opts.kid }
+        : { publicKey: key.publicKey, expectedKid: opts.kid };
+      keyringSource = 'file';
+      singleKeySha256 = key.key_sha256;
     } else if (opts.refreshKeys || opts.fetchUrl) {
       // Opt-in live discovery. --refresh-keys hits the well-known URL; --fetch overrides it.
-      const info = await fetchKeyInfo(opts.fetchUrl || DEFAULT_FETCH_URL);
+      const info = await fetchKeyInfo(opts.fetchUrl || DEFAULT_FETCH_URL, keyringWarnings);
+      keyringSource = 'url';
       if (info.keyring) {
         // Registry shape: resolve each receipt by kid (retired window included).
         ctx = { keyring: info.keyring, expectedKid: opts.kid };
@@ -286,8 +302,9 @@ async function main() {
       }
     } else {
       // Default: vendored snapshot, no network. A CA pins roots locally.
-      const keyring = await loadKeyring(VENDORED_KEYS_PATH);
+      const keyring = await loadKeyring(VENDORED_KEYS_PATH, keyringWarnings);
       ctx = { keyring, expectedKid: opts.kid };
+      keyringSource = 'pinned-snapshot';
     }
   } catch (e) {
     // ⚠ A FAILED MANDATORY DISCOVERY IS A VERDICT, NOT A USAGE ERROR. Structured status on stdout
@@ -377,12 +394,30 @@ async function main() {
     }
   }
 
+  // 1.1.5 (2026-10-25): WHICH KEY VERIFIED IT, AND FROM WHERE. Before, the verdict repeated only the
+  // kid the receipt claims (payload.kid); nothing named the key that was used or the keyring it came
+  // from. Additive, on a valid verdict only (no key verified an invalid one), receipt path only.
+  if (!opts.chainFile && result.valid && result.payload) {
+    result = { ...result, verified_with: verifiedWith(ctx, result.payload.kid, keyringSource, singleKeySha256) };
+  }
+  if (!opts.chainFile && keyringWarnings.length) result = { ...result, keyring_warnings: [...keyringWarnings] };
+
   // 1.1.4 (2026-10-18): the receipt verdict names its limits, as the bundle (verify-bundle.js:140),
   // attestation (verify-atomic-attestation.js:198) and DSSE (to-dsse.js:158) verdicts already do.
   // Appended, so nothing else in the verdict moves; a --chain verdict is a different object and keeps its shape.
   if (!opts.chainFile) result = { ...result, does_not_prove: [...RECEIPT_DOES_NOT_PROVE] };
   process.stdout.write(JSON.stringify(result) + '\n');
   process.exit(result.valid ? 0 : 1);
+}
+
+/** verified_with: the kid, the sha256 of the verifying key's SPKI DER, and file | url | pinned-snapshot. */
+function verifiedWith(ctx, kid, keyringSource, singleKeySha256) {
+  const entry = ctx && ctx.keyring ? ctx.keyring.get(kid) : null;
+  return {
+    kid,
+    key_sha256: entry ? entry.key_sha256 : singleKeySha256,
+    keyring_source: keyringSource,
+  };
 }
 
 /**
@@ -403,6 +438,10 @@ const RECEIPT_DOES_NOT_PROVE = Object.freeze([
     + 'to any local verifier, including this one. A key compromised a minute ago still verifies here',
   'that the bytes came from the run you think they did — this checks ONE token, and "these '
     + 'tokens are one run" is a property of a set (see cr.evidence.root.v1)',
+  // [4] 1.1.5: true beside verified_with — it names the key and the keyring's source, not their authority.
+  'that the keyring is authentic — verified_with names the key that verified this receipt (its kid and '
+    + 'the sha256 of its SPKI DER) and where the keyring came from (file, URL or the pinned snapshot), '
+    + 'not who published that keyring or that it is the issuer\'s',
 ]);
 
 // CLI entry — this file IS the command; verify.js never runs one.
@@ -412,5 +451,5 @@ if (require.main === module) {
 
 module.exports = {
   fetchKeyInfo, downgradeLegacyVerdict, registryUnreachableVerdict, discoveryWasMandatory,
-  parseArgs, main, USAGE, VENDORED_KEYS_PATH, RECEIPT_DOES_NOT_PROVE,
+  parseArgs, main, USAGE, VENDORED_KEYS_PATH, RECEIPT_DOES_NOT_PROVE, verifiedWith,
 };

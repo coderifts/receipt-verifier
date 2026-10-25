@@ -325,6 +325,25 @@ else
   fails=$((fails + 1))
 fi
 
+# 1.1.5 (2026-10-25): Ed25519 only, the per-entry tolerant keyring and verified_with — both ports; the JS
+# file also compares the two CLIs byte for byte on every case.
+echo
+echo "== 1.1.5 key algorithm + keyring + verified_with (js + py) =="
+checks=$((checks + 1))
+if node --test test/key-algorithm-keyring-1.1.5.test.js >/dev/null; then
+  echo "ok    key-algorithm-keyring-1.1.5.test.js"
+else
+  echo "FAIL  key-algorithm-keyring-1.1.5.test.js"
+  fails=$((fails + 1))
+fi
+checks=$((checks + 1))
+if "$PYTHON" test/test_key_algorithm.py; then
+  echo "ok    test_key_algorithm.py"
+else
+  echo "FAIL  test_key_algorithm.py"
+  fails=$((fails + 1))
+fi
+
 GRANT_VECTORS="test/grant-vectors.json"
 GRANT_PEM="$(mktemp -t rv_gpub.XXXXXX)"
 GRANT_KEYS="$(mktemp -t rv_gkeys.XXXXXX)"

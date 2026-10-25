@@ -15,7 +15,8 @@
  *      (derived from the require graph, not a hand list) and nothing from test/, .github/ or the
  *      Python sources;
  *   4. the tarball installed into an empty project, offline: the installed bin verifies the fixture
- *      receipt against the keyring it ships (also through `npx --no-install`);
+ *      receipt against the keyring it ships (also through `npx --no-install`) — RETIRED_KEY_VALID_AT_ISSUE
+ *      since 1.1.5 (FIXTURE_STATUS);
  *   5. the P58 repro with the installed bin: a receipt for its own commit is VERIFIED_CURRENT with
  *      commit_binding BOUND (exit 0); the same sidecar copied beside another commit is
  *      RECEIPT_COMMIT_MISMATCH (exit 1).
@@ -151,6 +152,13 @@ function p58Repro(installDir) {
   }
 }
 
+/**
+ * The fixture's verdict against the shipped keyring. 1.1.5 (2026-10-25): the pin is the live registry —
+ * 2026-07-k1 retired at 2026-10-21 — and the fixture was signed by 2026-07-k1 on 2026-08-26, so it is a
+ * valid receipt under a key retired after it was issued.
+ */
+const FIXTURE_STATUS = 'RETIRED_KEY_VALID_AT_ISSUE';
+
 /** The whole check on `root`. Returns { ok, steps: [{ name, ok, detail }] }. */
 function releaseCheck({ root = ROOT, tag = null } = {}) {
   const steps = [];
@@ -182,11 +190,11 @@ function releaseCheck({ root = ROOT, tag = null } = {}) {
 
     const token = fs.readFileSync(path.join(root, 'test', 'fixtures-receipt.txt'), 'utf8').trim();
     const viaBin = run(path.join(project, 'node_modules', '.bin', BIN), [token], { cwd: project });
-    step('installed bin verifies the fixture (shipped keyring)', viaBin.code === 0 && viaBin.json?.status === 'VERIFIED_CURRENT'
-      ? { ok: true } : { ok: false, reason: `exit ${viaBin.code}: ${viaBin.stdout.trim() || viaBin.stderr.trim()}` }, 'VERIFIED_CURRENT, exit 0');
+    step('installed bin verifies the fixture (shipped keyring)', viaBin.code === 0 && viaBin.json?.status === FIXTURE_STATUS
+      ? { ok: true } : { ok: false, reason: `exit ${viaBin.code}: ${viaBin.stdout.trim() || viaBin.stderr.trim()}` }, `${FIXTURE_STATUS}, exit 0`);
     const viaNpx = run('npx', ['--no-install', BIN, token], { cwd: project });
-    step('npx --no-install', viaNpx.code === 0 && viaNpx.json?.status === 'VERIFIED_CURRENT'
-      ? { ok: true } : { ok: false, reason: `exit ${viaNpx.code}: ${viaNpx.stdout.trim() || viaNpx.stderr.trim()}` }, 'VERIFIED_CURRENT, exit 0');
+    step('npx --no-install', viaNpx.code === 0 && viaNpx.json?.status === FIXTURE_STATUS
+      ? { ok: true } : { ok: false, reason: `exit ${viaNpx.code}: ${viaNpx.stdout.trim() || viaNpx.stderr.trim()}` }, `${FIXTURE_STATUS}, exit 0`);
     let p58;
     try { p58 = p58Repro(project); } catch (err) { p58 = { ok: false, reason: err.message }; }
     step('P58 --from-commit repro (installed package)', p58, p58.ok ? `own commit ${p58.own}; copied sidecar ${p58.copied}` : '');

@@ -73,7 +73,7 @@ describe('release check · the tarball', () => {
 });
 
 describe('release check · end to end (npm pack → offline install → the installed bin)', () => {
-  it('passes on this tree: fixture VERIFIED_CURRENT through the bin and npx, P58 BOUND / RECEIPT_COMMIT_MISMATCH', () => {
+  it('passes on this tree: fixture RETIRED_KEY_VALID_AT_ISSUE through the bin and npx, P58 BOUND / RECEIPT_COMMIT_MISMATCH', () => {
     const r = releaseCheck({ root: ROOT, tag: `v${PKG_VERSION}` });
     assert.equal(r.ok, true, JSON.stringify(r.steps, null, 2));
     assert.ok(!r.files.some((f) => f.startsWith('test/')), 'no test file ships');

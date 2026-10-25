@@ -25,6 +25,10 @@ Verification order: structure -> json -> kid -> signature -> delimiter guard -> 
 -> taxonomy status. Statuses (12): VERIFIED_CURRENT, VERIFIED_EXPIRED, VERIFIED_WRONG_AUDIENCE,
 VERIFIED_WRONG_ENVIRONMENT, VERIFIED_SUPERSEDED, VERIFIED_SCOPE_MISMATCH, UNKNOWN_KEY,
 RETIRED_KEY_VALID_AT_ISSUE, INVALID_SIGNATURE, MALFORMED, UNSUPPORTED_VERSION, REGISTRY_UNREACHABLE.
+
+1.1.5: only an Ed25519 key verifies a receipt (read from the SPKI OID, as verify.js does); a keyring entry
+with a bad PEM or no public_key_pem is skipped with a keyring_warnings line; a valid verdict carries
+verified_with {kid, key_sha256, keyring_source}.
 """
 
 import base64
@@ -32,12 +36,13 @@ import hashlib
 import json
 import math
 import os
+import re
 import sys
 import urllib.request
 from datetime import datetime, timezone
 
 from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.serialization import load_pem_public_key
+from cryptography.hazmat.primitives.serialization import load_der_public_key, load_pem_public_key
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 DEFAULT_FETCH_URL = "https://app.coderifts.com/.well-known/coderifts-keys.json"
@@ -141,7 +146,11 @@ def resolve_entry(ctx, payload):
         return entry
     if ctx.get("expected_kid") is not None and kid != ctx["expected_kid"]:
         return None
-    return {"public_key": ctx["public_key"], "status": None, "retired_at": None, "revoked_at": None, "compromised_at": None}
+    single = {"public_key": ctx.get("public_key"), "status": None, "retired_at": None, "revoked_at": None, "compromised_at": None}
+    # 1.1.5: a --key PEM classified by classify_public_key_pem carries its algorithm verdict.
+    if ctx.get("unsupported_alg"):
+        single["unsupported_alg"] = ctx["unsupported_alg"]
+    return single
 
 
 def _parse_iso(ts):
@@ -223,6 +232,10 @@ RECEIPT_DOES_NOT_PROVE = (
     "to any local verifier, including this one. A key compromised a minute ago still verifies here",
     "that the bytes came from the run you think they did \u2014 this checks ONE token, and \"these "
     "tokens are one run\" is a property of a set (see cr.evidence.root.v1)",
+    # [4] 1.1.5: true beside verified_with — it names the key and the keyring's source, not their authority.
+    "that the keyring is authentic \u2014 verified_with names the key that verified this receipt (its kid and "
+    "the sha256 of its SPKI DER) and where the keyring came from (file, URL or the pinned snapshot), "
+    "not who published that keyring or that it is the issuer's",
 )
 
 
@@ -278,6 +291,12 @@ def _verify_receipt(token, ctx, opts=None):
     entry = resolve_entry(ctx, payload)
     if entry is None:
         return {"valid": False, "status": "UNKNOWN_KEY", "reason": "unknown_kid", "payload": payload}
+    # 3b. 1.1.5: only an Ed25519 key verifies a receipt (verify.js, same order, same reason text).
+    unsupported_alg = entry.get("unsupported_alg")
+    if not unsupported_alg and entry.get("public_key") is not None and not isinstance(entry["public_key"], Ed25519PublicKey):
+        unsupported_alg = type(entry["public_key"]).__name__
+    if unsupported_alg:
+        return {"valid": False, "status": "INVALID_SIGNATURE", "reason": "unsupported key algorithm: " + unsupported_alg, "payload": payload}
 
     # 4. signature (raw Ed25519 over the reconstructed UTF-8 bytes)
     message = reconstruct_signed_input(payload).encode("utf-8")
@@ -363,46 +382,163 @@ def key_from_pem(pem_text):
     return key
 
 
-def keyring_from_document(doc, source):
+# 1.1.5 (2026-10-25): the key algorithm is read from the SPKI AlgorithmIdentifier OID by the same
+# few lines as verify.js (spkiDerFromPem / spkiAlgorithmOid / classifyPublicKeyPem), never from what
+# the installed `cryptography` happens to load, so both ports refuse the same keys with the same words.
+ED25519_OID = "1.3.101.112"
+KEY_ALG_NAMES = {
+    "1.3.101.112": "Ed25519",
+    "1.3.101.113": "Ed448",
+    "1.2.840.10045.2.1": "EC",
+    "1.2.840.113549.1.1.1": "RSA",
+    "2.16.840.1.101.3.4.3.17": "ML-DSA-44",
+    "2.16.840.1.101.3.4.3.18": "ML-DSA-65",
+    "2.16.840.1.101.3.4.3.19": "ML-DSA-87",
+}
+SUPPORTED_DECLARED_ALGS = ("ed25519", "eddsa")
+_PEM_RE = re.compile(r"-----BEGIN PUBLIC KEY-----([\s\S]*?)-----END PUBLIC KEY-----")
+_B64_RE = re.compile(r"^[A-Za-z0-9+/]+={0,2}$")
+
+
+def spki_der_from_pem(pem):
+    """The DER bytes of a PUBLIC KEY PEM block, or None (strict base64, as verify.js)."""
+    m = _PEM_RE.search(str(pem or ""))
+    if not m:
+        return None
+    body = re.sub(r"\s+", "", m.group(1))
+    if not body or len(body) % 4 != 0 or not _B64_RE.match(body):
+        return None
+    return base64.b64decode(body)
+
+
+def _read_tlv(buf, off):
+    if off + 2 > len(buf):
+        return None
+    tag = buf[off]
+    length = buf[off + 1]
+    p = off + 2
+    if length & 0x80:
+        n = length & 0x7F
+        if n < 1 or n > 4 or p + n > len(buf):
+            return None
+        length = 0
+        for i in range(n):
+            length = length * 256 + buf[p + i]
+        p += n
+    if p + length > len(buf):
+        return None
+    return tag, p, p + length
+
+
+def spki_algorithm_oid(der):
+    """The AlgorithmIdentifier OID of an SPKI DER, dotted, or None."""
+    outer = _read_tlv(der, 0)
+    if not outer or outer[0] != 0x30 or outer[2] != len(der):
+        return None
+    alg = _read_tlv(der, outer[1])
+    if not alg or alg[0] != 0x30:
+        return None
+    oid = _read_tlv(der, alg[1])
+    if not oid or oid[0] != 0x06 or oid[2] > alg[2] or oid[2] == oid[1]:
+        return None
+    data = der[oid[1]:oid[2]]
+    first = data[0]
+    a = 0 if first < 40 else (1 if first < 80 else 2)
+    parts = [a, first - 40 * a]
+    v = 0
+    for i in range(1, len(data)):
+        v = v * 128 + (data[i] & 0x7F)
+        if not data[i] & 0x80:
+            parts.append(v)
+            v = 0
+        elif i == len(data) - 1:
+            return None
+    return ".".join(str(x) for x in parts)
+
+
+def classify_public_key_pem(pem, declared_alg=None):
+    """verify.js classifyPublicKeyPem: {public_key, key_sha256} | {public_key: None, key_sha256,
+    unsupported_alg} | {unparseable: True}. Never raises."""
+    der = spki_der_from_pem(pem)
+    if der is None:
+        return {"unparseable": True}
+    oid = spki_algorithm_oid(der)
+    if oid is None:
+        return {"unparseable": True}
+    key_sha256 = hashlib.sha256(der).hexdigest()
+    if declared_alg is not None and str(declared_alg).lower() not in SUPPORTED_DECLARED_ALGS:
+        return {"public_key": None, "key_sha256": key_sha256, "unsupported_alg": str(declared_alg) or "(empty)"}
+    if oid != ED25519_OID:
+        return {"public_key": None, "key_sha256": key_sha256, "unsupported_alg": KEY_ALG_NAMES.get(oid, oid)}
+    try:
+        key = load_der_public_key(der)
+    except Exception:
+        return {"unparseable": True}
+    if not isinstance(key, Ed25519PublicKey):
+        return {"unparseable": True}
+    return {"public_key": key, "key_sha256": key_sha256}
+
+
+def keyring_from_document(doc, source, warnings=None):
     """Build a kid -> entry map from a registry document. None when keys[] is missing/empty
-    so the caller can try the legacy single-key body."""
+    so the caller can try the legacy single-key body.
+
+    1.1.5: tolerant per entry (verify.js keyringFromDocument): an entry with no kid, no public_key_pem
+    or an unparseable PEM is skipped and named in `warnings`; every other key stays usable."""
     keys = doc.get("keys") if isinstance(doc, dict) else None
     if not keys:
         return None
     keyring = {}
-    for k in keys:
-        if not k or not k.get("kid") or not k.get("public_key_pem"):
-            raise ValueError("registry entry missing kid/public_key_pem in " + source)
-        keyring[k["kid"]] = {
-            "public_key": key_from_pem(k["public_key_pem"]),
+
+    def warn(msg):
+        if isinstance(warnings, list):
+            warnings.append(msg)
+
+    for i, k in enumerate(keys):
+        if not isinstance(k, dict):
+            warn("registry entry #%d: not an object \u2014 skipped" % i)
+            continue
+        if not k.get("kid"):
+            warn("registry entry #%d: missing kid \u2014 skipped" % i)
+            continue
+        if not k.get("public_key_pem"):
+            warn("registry entry %s: missing public_key_pem \u2014 skipped" % k["kid"])
+            continue
+        key = classify_public_key_pem(k["public_key_pem"], k.get("alg"))
+        if key.get("unparseable"):
+            warn("registry entry %s: unparseable public_key_pem \u2014 skipped" % k["kid"])
+            continue
+        entry = {
+            "public_key": key["public_key"],
             "status": k.get("status"),
             "retired_at": k.get("retired_at"),
             "revoked_at": k.get("revoked_at"),
             # Carried through for the revoked rule (RECEIPT_FORMAT 7.1). Dropping it makes the
             # rule inert: every revoked key would return UNDECIDABLE regardless of ts.
             "compromised_at": k.get("compromised_at"),
+            "key_sha256": key["key_sha256"],
         }
+        if key.get("unsupported_alg"):
+            entry["unsupported_alg"] = key["unsupported_alg"]
+        keyring[k["kid"]] = entry
     return keyring
 
 
-def fetch_key_document(url):
+def fetch_key_document(url, warnings=None):
     """Fetch a key document. Accepts BOTH shapes: registry {keys:[...]} and
     legacy {kid, public_key_pem}. Registry includes a keyring so retired kids resolve."""
     req = urllib.request.Request(url, headers={"Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310 (explicit --fetch/--refresh-keys only)
         info = json.loads(resp.read().decode("utf-8"))
-    keyring = keyring_from_document(info, url)
-    if keyring:
-        active_kid = None
-        active_entry = None
-        for kid, entry in keyring.items():
-            if entry.get("status") == "active":
-                active_kid, active_entry = kid, entry
-                break
-        if active_entry is None:
-            active_kid = next(iter(keyring))
-            active_entry = keyring[active_kid]
-        return {"public_key": active_entry["public_key"], "kid": active_kid, "keyring": keyring}
+    keyring = keyring_from_document(info, url, warnings)
+    if keyring is not None:
+        # The active entry that can verify, else the first that can (verify.js pickActiveFromKeyring).
+        usable = [(kid, e) for kid, e in keyring.items() if e.get("public_key") is not None]
+        active = [(kid, e) for kid, e in usable if e.get("status") == "active"]
+        picked = (active or usable or [None])[0]
+        if picked is None:
+            raise ValueError("no usable keys at " + url)
+        return {"public_key": picked[1]["public_key"], "kid": picked[0], "keyring": keyring}
     if not info or not info.get("public_key_pem"):
         raise ValueError("no public_key_pem at " + url)
     return {"public_key": key_from_pem(info["public_key_pem"]), "kid": info.get("kid")}
@@ -414,7 +550,7 @@ def fetch_key_info(url):
     return info["public_key"], info.get("kid")
 
 
-def load_keyring(source):
+def load_keyring(source, warnings=None):
     """Build a {kid: {public_key, status, retired_at}} map from a CodeRifts key registry
     ({keys: [{kid, public_key_pem, status, valid_from, retired_at}]}). Active + retired both load."""
     if source.lower().startswith(("http://", "https://")):
@@ -425,9 +561,14 @@ def load_keyring(source):
         with open(source, "r", encoding="utf-8") as fh:
             text = fh.read()
     doc = json.loads(text)
-    keyring = keyring_from_document(doc, source)
-    if not keyring:
+    local = []
+    keyring = keyring_from_document(doc, source, local)
+    if isinstance(warnings, list):
+        warnings.extend(local)
+    if keyring is None:
         raise ValueError("no keys[] in registry " + source)
+    if not keyring:
+        raise ValueError("no usable keys in registry %s: %s" % (source, "; ".join(local)))
     return keyring
 
 
@@ -496,22 +637,36 @@ def main():
     if not opts["chain_file"] and not opts["receipt"]:
         fail("no receipt provided")
 
-    # Resolve the verification key(s) + expected kid.
+    # Resolve the verification key(s) + expected kid. 1.1.5: also where they came from
+    # (verified_with.keyring_source), the --key file's digest, and the skipped registry entries.
+    keyring_source = None
+    single_key_sha256 = None
+    keyring_warnings = []
     try:
         if opts["keys_source"]:
-            ctx = {"keyring": load_keyring(opts["keys_source"]), "expected_kid": opts["kid"]}
+            ctx = {"keyring": load_keyring(opts["keys_source"], keyring_warnings), "expected_kid": opts["kid"]}
+            keyring_source = "url" if opts["keys_source"].lower().startswith(("http://", "https://")) else "file"
         elif opts["key_file"]:
             with open(opts["key_file"], "r", encoding="utf-8") as fh:
-                public_key = key_from_pem(fh.read())
-            ctx = {"public_key": public_key, "expected_kid": opts["kid"]}
+                key = classify_public_key_pem(fh.read())
+            if key.get("unparseable"):
+                raise ValueError(opts["key_file"] + " is not a PUBLIC KEY PEM")
+            if key.get("unsupported_alg"):
+                ctx = {"public_key": None, "unsupported_alg": key["unsupported_alg"], "expected_kid": opts["kid"]}
+            else:
+                ctx = {"public_key": key["public_key"], "expected_kid": opts["kid"]}
+            keyring_source = "file"
+            single_key_sha256 = key["key_sha256"]
         elif opts["refresh_keys"] or opts["fetch_url"]:
-            info = fetch_key_document(opts["fetch_url"] or DEFAULT_FETCH_URL)
+            info = fetch_key_document(opts["fetch_url"] or DEFAULT_FETCH_URL, keyring_warnings)
+            keyring_source = "url"
             if info.get("keyring"):
                 ctx = {"keyring": info["keyring"], "expected_kid": opts["kid"]}
             else:
                 ctx = {"public_key": info["public_key"], "expected_kid": opts["kid"] or info.get("kid")}
         else:
-            ctx = {"keyring": load_keyring(VENDORED_KEYS_PATH), "expected_kid": opts["kid"]}
+            ctx = {"keyring": load_keyring(VENDORED_KEYS_PATH, keyring_warnings), "expected_kid": opts["kid"]}
+            keyring_source = "pinned-snapshot"
     except Exception as e:
         fail("could not load public key: " + str(e))
 
@@ -533,8 +688,19 @@ def main():
     else:
         # 1.1.4: the same v4-with-an-envelope rule as cli.js / verify.js (it was missing here).
         result = _v4_envelope_rule(_verify_receipt(opts["receipt"], ctx, verify_opts), verify_opts)
-        # 1.1.4: the receipt verdict names its limits — cli.js RECEIPT_DOES_NOT_PROVE, byte for byte.
         result = dict(result)
+        # 1.1.5: which key verified it, and from where (cli.js verifiedWith, same keys, same order).
+        if result.get("valid") and isinstance(result.get("payload"), dict):
+            kid = result["payload"].get("kid")
+            entry = ctx["keyring"].get(kid) if ctx.get("keyring") is not None else None
+            result["verified_with"] = {
+                "kid": kid,
+                "key_sha256": entry["key_sha256"] if entry else single_key_sha256,
+                "keyring_source": keyring_source,
+            }
+        if keyring_warnings:
+            result["keyring_warnings"] = list(keyring_warnings)
+        # 1.1.4: the receipt verdict names its limits — cli.js RECEIPT_DOES_NOT_PROVE, byte for byte.
         result["does_not_prove"] = list(RECEIPT_DOES_NOT_PROVE)
 
     # Byte-identical to cli.js (JSON.stringify writes the em dashes raw, not \u2014), and UTF-8

@@ -28,7 +28,8 @@ describe('1.1.4 · the receipt verdict carries does_not_prove', () => {
     const v = JSON.parse(r.stdout);
     assert.deepEqual(v.does_not_prove, [...RECEIPT_DOES_NOT_PROVE]);
     assert.equal(Object.keys(v).at(-1), 'does_not_prove');
-    assert.equal(v.does_not_prove.length, 4);
+    // 1.1.5: a fifth sentence, true beside verified_with (the keyring's authority is not checked).
+    assert.equal(v.does_not_prove.length, 5);
   });
   it('a refused receipt carries it too (a limit is not only for a pass)', () => {
     const env = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'rv-dnp-')), 'env.json');
@@ -46,8 +47,10 @@ describe('1.1.4 · the receipt verdict carries does_not_prove', () => {
     const sdk = path.join(ROOT, '..', 'sdk', 'src', 'verify-receipt-local.ts');
     if (fs.existsSync(sdk)) {
       const text = fs.readFileSync(sdk, 'utf8').replace(/'\s*\+\s*'/g, '').replace(/\\'/g, "'");
-      for (const s of RECEIPT_DOES_NOT_PROVE.slice(1)) assert.ok(text.includes(s), `sdk wording drifted: ${s.slice(0, 60)}`);
+      // [1..3] are the SDK / app receipt scope; [4] (1.1.5) is this verifier's own, about verified_with.
+      for (const s of RECEIPT_DOES_NOT_PROVE.slice(1, 4)) assert.ok(text.includes(s), `sdk wording drifted: ${s.slice(0, 60)}`);
     }
+    assert.ok(readme.includes(RECEIPT_DOES_NOT_PROVE[4]), 'README.md does not carry the verified_with sentence verbatim');
   });
   it('negative control: the bundle, attestation and DSSE verdicts keep their own lists (no receipt list spliced in)', () => {
     for (const f of ['verify-bundle.js', 'verify-atomic-attestation.js', 'to-dsse.js']) {

@@ -3,6 +3,44 @@
 Versions here are the npm package `@coderifts/receipt-verifier`. Entries land before the release
 that carries them; a heading with no tag has not been published.
 
+## 1.1.5 — 2026-10-25
+
+### The pinned keyring is the live registry
+
+**Changed.** `keys/coderifts-keys.json` is the bytes of `https://app.coderifts.com/.well-known/coderifts-keys.json`
+as served on 2026-10-25: `2026-10-k1` active and `2026-07-k1` retired at `2026-10-21T00:00:00.000Z`, with
+`valid_from` and `retired_at` carried. A receipt signed by `2026-07-k1` before that date (the fixture, signed
+2026-08-26) is now `RETIRED_KEY_VALID_AT_ISSUE` (`valid: true`) with no flags, where 1.1.4's pin still said the
+key was active (`VERIFIED_CURRENT`).
+
+### Only an Ed25519 key verifies a receipt, in both ports
+
+**Changed.** The key algorithm is read from the PEM's SPKI AlgorithmIdentifier, by the same few lines in
+`verify.js` and `verify.py`. Any other algorithm, or a registry entry that declares an `alg` other than
+Ed25519 (even over an Ed25519 PEM), is `valid: false`, `INVALID_SIGNATURE`, reason
+`unsupported key algorithm: <alg>`. No new status.
+
+**Why.** Measured 2026-10-25 on 1.1.4 with Node 24.12: a receipt signed with ML-DSA-65 under a registry entry
+carrying an ML-DSA-65 PEM was `{ valid: true, VERIFIED_CURRENT }` in JS; `verify.py` refused the same keyring
+by raising at load time.
+
+### A bad registry entry is skipped, not fatal
+
+**Changed.** A registry entry with an unparseable PEM, no `public_key_pem` or no `kid` is skipped, and the
+verdict names it in `keyring_warnings`; the other keys still verify. A registry with no usable key at all is
+still an error (exit 2). Measured on 1.1.4: one such entry made the whole keyring fail to load
+(`could not load public key`, exit 2), so the good key beside it verified nothing.
+
+### The verdict names the key that verified it
+
+**Added.** A valid receipt verdict carries `verified_with: { kid, key_sha256, keyring_source }` — the sha256
+of the verifying key's SPKI DER, and `file`, `url` or `pinned-snapshot`, decided where the CLI loads the
+keys. `does_not_prove` gains a fifth sentence: that the keyring is authentic — the output names the key and
+where the keyring came from, not who published it. Both are additive; JS and Python print the same bytes.
+
+**Docs.** README: what `KEY_RETIRED_AFTER_SIGNING` means (the key was already retired when the receipt says
+it was signed; the name is kept).
+
 ## 1.1.4 — 2026-10-18
 
 ### A receipt verified beside an envelope must be v4, in the core

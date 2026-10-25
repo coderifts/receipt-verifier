@@ -527,6 +527,31 @@ was signed by an honest holder, it can only invalidate. Entries without either
 field are unchanged (this verifier's reading; the app registry does not mint
 `revoked_at` on key entries yet — follow-up).
 
+The name `KEY_RETIRED_AFTER_SIGNING` reads backwards: it means the key was
+already retired when the receipt says it was signed (`ts >= retired_at`), so
+the signature came after the retirement, and the receipt is refused
+(`valid: false`). The name is kept; a receipt signed before `retired_at` is
+`RETIRED_KEY_VALID_AT_ISSUE` (`valid: true`).
+
+### Which key verified it (1.1.5)
+
+A valid receipt verdict carries `verified_with`: `{ kid, key_sha256, keyring_source }`.
+`key_sha256` is the hex sha256 of the verifying key's SPKI DER (the bytes inside the
+`PUBLIC KEY` PEM); `keyring_source` is `file` (`--keys <file>`, `--key <file>`), `url`
+(`--keys <url>`, `--fetch`, `--refresh-keys`) or `pinned-snapshot` (no flag: the
+vendored `keys/coderifts-keys.json`). JS and Python print the same bytes.
+
+Only an Ed25519 key verifies a receipt. The algorithm is read from the PEM's SPKI
+AlgorithmIdentifier, and a registry entry that declares an `alg` other than Ed25519 is
+refused too: `valid: false`, `INVALID_SIGNATURE`, reason
+`unsupported key algorithm: <alg>` (for example `ML-DSA-65`).
+
+A registry entry with an unparseable PEM or no `public_key_pem` is skipped and named in
+`keyring_warnings`; the other keys still verify. A registry with no usable key at all is
+still an error (exit 2).
+
+What `verified_with` does not prove: that the keyring is authentic — verified_with names the key that verified this receipt (its kid and the sha256 of its SPKI DER) and where the keyring came from (file, URL or the pinned snapshot), not who published that keyring or that it is the issuer's.
+
 ## consumeAndCommit contract (EP-2 — not shipped)
 
 `test/consume-and-commit-vectors.json` pins the **contract** a future

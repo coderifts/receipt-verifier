@@ -168,7 +168,8 @@ describe('1355-default — vendored keys, network is opt-in', () => {
     const got = crypto.createHash('sha256').update(body).digest('hex');
     const sidecar = fs.readFileSync(`${VENDORED_KEYS_PATH}.sha256`, 'utf8').trim().split(/\s+/)[0];
     assert.equal(got, sidecar);
-    assert.equal(got, 'bfe0c898cda3c3a4c8141726d0adb4cdb7eb9762de6264e430eff6469b90422e');
+    // 1.1.5 (2026-10-25): the live registry's bytes — 2026-10-k1 active, 2026-07-k1 retired 2026-10-21.
+    assert.equal(got, '0981898b8bd3fc5745be183f1cd021f355b1bbd8f37fc30b493e225a763928dd');
   });
 
   it('BITES JS: default verify with network trapped PASSES against the vendored key', () => {
@@ -179,7 +180,8 @@ describe('1355-default — vendored keys, network is opt-in', () => {
     );
     const r = JSON.parse(out);
     assert.equal(r.valid, true);
-    assert.equal(r.status, 'VERIFIED_CURRENT');
+    // 1.1.5: the pin says 2026-07-k1 retired at 2026-10-21; the fixture was signed 2026-08-26.
+    assert.equal(r.status, 'RETIRED_KEY_VALID_AT_ISSUE');
     assert.equal(r.payload.kid, '2026-07-k1');
   });
 
@@ -212,7 +214,7 @@ runpy.run_path(${JSON.stringify(path.join(ROOT, 'verify.py'))}, run_name="__main
     const out = execFileSync('python3', ['-c', py], { cwd: ROOT, encoding: 'utf8' });
     const r = JSON.parse(out.trim().split('\n').pop());
     assert.equal(r.valid, true);
-    assert.equal(r.status, 'VERIFIED_CURRENT');
+    assert.equal(r.status, 'RETIRED_KEY_VALID_AT_ISSUE');
     assert.equal(r.payload.kid, '2026-07-k1');
   });
 
