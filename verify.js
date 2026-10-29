@@ -567,8 +567,74 @@ function v4EnvelopeRule(result, opts) {
     reason: `receipt version v${v} binds no envelope and carries no expiry; only a v4 receipt is accepted with an envelope or --from-commit` };
 }
 
+/**
+ * 1.1.6 (2026-10-29) — AUDIT MODE: `asOf`, "was this receipt inside its window at a stated instant?".
+ * A v4 receipt carries a signed expires_at (merge: 4 h); after it (+ leeway) the normal answer is
+ * VERIFIED_EXPIRED, which cannot answer an after-incident question. With asOf the EXPIRY COMPARISON
+ * uses that instant instead of now; nothing else moves: the signature, the key lookup, every key-status
+ * rule (RECEIPT_FORMAT §7.1 — a revoked key is valid:false at any asOf; a retired key exactly as
+ * today), the envelope binding and the v4-with-envelope rule run unchanged, because the core is the
+ * same call with `now` = asOf. asOf never turns a refusal into a pass: only a verdict the core already
+ * reached is re-labelled.
+ */
+const AS_OF_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+const AS_OF_NOTE = 'no expiry to evaluate; as-of has no effect';
+
+/** An as-of input → epoch ms. Throws a TypeError with .code 'as_of_unparsable' / 'as_of_in_future'. */
+function parseAsOf(value, nowMs = Date.now()) {
+  const text = typeof value === 'string' ? value : (value instanceof Date ? value.toISOString() : null);
+  const ms = text && AS_OF_RE.test(text) ? Date.parse(text) : NaN;
+  if (!Number.isFinite(ms)) {
+    const err = new TypeError(`--as-of must be an ISO 8601 instant with a zone (e.g. 2026-10-29T13:00:00Z): ${String(value)}`);
+    err.code = 'as_of_unparsable';
+    throw err;
+  }
+  if (ms > nowMs + CLOCK_SKEW_LEEWAY_MS) {
+    const err = new RangeError(`as_of_in_future: ${new Date(ms).toISOString()} is later than now + ${CLOCK_SKEW_LEEWAY_MS / 1000}s`);
+    err.code = 'as_of_in_future';
+    throw err;
+  }
+  return ms;
+}
+
+/** The audit fields for a verdict the core reached with now = asOf. */
+function auditResult(result, asOfMs, nowMs, opts) {
+  const p = result && result.payload;
+  const asOf = new Date(asOfMs).toISOString();
+  const window = { ts: p && typeof p.ts === 'string' ? p.ts : null, expires_at: p && p.v === 4 && typeof p.expires_at === 'string' ? p.expires_at : null };
+  const base = { ...result, mode: 'audit', as_of: asOf, window };
+  if (!window.expires_at) {
+    // v1–v3 (or no payload): today's result, unchanged; the note says why as-of did nothing.
+    return { ...base, valid_at_as_of: result.valid === true, expired_now: false, as_of_note: AS_OF_NOTE };
+  }
+  const exp = Date.parse(window.expires_at);
+  const context = opts.envelope || { environment: opts.expectedEnvironment };
+  const expiredNow = isExpiredAt(exp, nowMs, context);
+  const issued = Date.parse(window.ts);
+  const beforeIssue = Number.isFinite(issued) && asOfMs < issued;
+  const insideWindow = !beforeIssue && !isExpiredAt(exp, asOfMs, context);
+  // Only a verdict that passed the signature and every key rule can be re-labelled.
+  const reachedWindow = result.valid === true || result.status === 'VERIFIED_EXPIRED';
+  if (!reachedWindow) return { ...base, valid_at_as_of: false, expired_now: expiredNow };
+  if (beforeIssue) {
+    return { ...base, valid: false, status: 'NOT_YET_VALID_AT_AS_OF', reason: 'as_of_before_issue', valid_at_as_of: false, expired_now: expiredNow };
+  }
+  if (result.status === 'VERIFIED_CURRENT') {
+    return { ...base, valid: true, status: 'VERIFIED_AT_AS_OF', valid_at_as_of: true, expired_now: expiredNow };
+  }
+  // VERIFIED_EXPIRED at asOf, a retired key valid at issue (status kept, as today), or a dormant check
+  // status: the verdict stays; valid_at_as_of says whether asOf was inside the window as well.
+  return { ...base, valid_at_as_of: result.valid === true && insideWindow, expired_now: expiredNow };
+}
+
 function verifyReceipt(token, second, third) {
   const { ctx, opts } = split3ary('verifyReceipt', arguments.length, second, third);
+  if (opts && opts.asOf != null) {
+    const nowMs = opts.now != null ? opts.now : Date.now();
+    const asOfMs = parseAsOf(opts.asOf, nowMs);
+    const atAsOf = v4EnvelopeRule(verifyReceiptInner(token, ctx, { ...opts, now: asOfMs }), opts);
+    return auditResult(atAsOf, asOfMs, nowMs, opts);
+  }
   return v4EnvelopeRule(verifyReceiptInner(token, ctx, opts), opts);
 }
 
@@ -612,4 +678,6 @@ module.exports = {
   CLOCK_SKEW_LEEWAY_MS,
   expiryLeewayMs,
   isExpiredAt,
+  parseAsOf,
+  AS_OF_NOTE,
 };

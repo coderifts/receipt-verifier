@@ -3,6 +3,33 @@
 Versions here are the npm package `@coderifts/receipt-verifier`. Entries land before the release
 that carries them; a heading with no tag has not been published.
 
+## 1.1.6 — unreleased
+
+### `--as-of`: was the receipt inside its window at a stated instant?
+
+**Added.** `--as-of <ISO 8601>` on the CLI and `asOf` in `verifyReceipt(token, { ctx, asOf })` (beside `ctx`, where `envelope` sits; audit mode). The expiry
+comparison uses the given instant instead of now; the signature, the key lookup, every key-status rule
+(RECEIPT_FORMAT §7.1 — a revoked key is `valid:false` at any as-of; a retired key as before), the envelope
+binding and the chain rule are unchanged. The verdict adds `mode: "audit"`, `as_of`, `valid_at_as_of`,
+`expired_now` and `window {ts, expires_at}`; status `VERIFIED_AT_AS_OF` inside the window,
+`NOT_YET_VALID_AT_AS_OF` (`valid:false`) before the receipt's `ts`, `VERIFIED_EXPIRED` after the window.
+Exit 0 when `valid_at_as_of`, 1 otherwise; an unparsable instant or one later than now + 30s is exit 2
+(`as_of_in_future`). A v1–v3 receipt keeps its result, with `as_of_note`. Works with `--from-commit` and
+`--envelope`; not with `--chain`. `does_not_prove` gains, in audit mode only: "that the window was still
+open when you read this: as-of evaluates a stated instant, not now". `verify.py` has no as-of.
+
+Why: a v4 merge receipt expires after 4 h, so the ordinary answer to "was the action inside the grant at
+the time?" became `VERIFIED_EXPIRED` once the TTL had passed (asked about the public coderifts/demo #36
+receipt).
+
+### RFC 8785 canonicalization vectors
+
+**Added.** `test/vectors/rfc8785.json` (16 vectors, computed by `verify.js` `canonicalJson`, with
+`test/gen-rfc8785-vectors.js`) and `test/rfc8785-vectors.test.js`. **Measured:** `verify.py`
+`canonical_json` agrees on 11 of 16; it differs on astral-plane key order (code points, not UTF-16 code
+units) and on number forms (`1e+20`, `1e-07`, `-0.0`, `100.0`, an integer above 2^53 kept exact) — recorded
+in the file, not changed in this release.
+
 ## 1.1.5 — 2026-10-25
 
 ### The pinned keyring is the live registry

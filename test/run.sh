@@ -772,7 +772,8 @@ fi
 # the installed package (fixture + P58 repro). Here so a change that breaks the package fails CI, not
 # the release run.
 # T19 (2026-10-06): the usage text names the npm bin, not `node cli.js`.
-for t in test/from-commit-1961-tag1.test.js test/from-commit-p58-binding.test.js test/release-check.test.js test/usage-bin-name.test.js; do
+# 1.1.6: --as-of audit mode and the RFC 8785 canonicalization vectors.
+for t in test/from-commit-1961-tag1.test.js test/from-commit-p58-binding.test.js test/release-check.test.js test/usage-bin-name.test.js test/as-of-audit.test.js test/rfc8785-vectors.test.js; do
   checks=$((checks + 1))
   if node --test "$t" >/dev/null; then
     echo "ok    $(basename "$t")"

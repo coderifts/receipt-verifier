@@ -55,6 +55,7 @@ const {
   keyringFromDocument,
   classifyPublicKeyPem,
   pickActiveFromKeyring,
+  parseAsOf,
   DEFAULT_FETCH_URL,
 } = require('./verify');
 
@@ -186,6 +187,9 @@ function parseArgs(argv) {
     else if (a === '--envelope') opts.envelopeFile = argv[++i];
     else if (a === '--audience') opts.audience = argv[++i];
     else if (a === '--environment') opts.environment = argv[++i];
+    // 1.1.6: --as-of <ISO 8601> — audit mode (verify.js auditResult). Parsed here, so an unparsable
+    // value or one later than now + leeway is a usage error (exit 2), never a verdict.
+    else if (a === '--as-of') opts.asOf = argv[++i];
     else if (a === '-h' || a === '--help') opts.help = true;
     else if (a.startsWith('--')) throw new Error(`unknown flag: ${a}`);
     else if (opts.receipt === null) opts.receipt = a;
@@ -201,6 +205,10 @@ function parseArgs(argv) {
   if (opts.refreshKeys && (opts.keyFile || opts.keysSource)) {
     throw new Error('--refresh-keys is mutually exclusive with --key and --keys');
   }
+  if (opts.asOf !== undefined) {
+    if (opts.chainFile) throw new Error('--as-of applies to one receipt, not to --chain');
+    parseAsOf(opts.asOf); // throws as_of_unparsable / as_of_in_future
+  }
   return opts;
 }
 
@@ -213,7 +221,10 @@ const USAGE =
   '                                  reads the CodeRifts-Receipt trailer or .coderifts/receipts/<sha>.json\n' +
   '                                  (docs/receipt-commit-binding.md)\n' +
   '  --json           suppress human notes on stderr so 2>&1 stays parseable. Errors still go to\n' +
-  '                   stderr and still exit 2 — this never silences a failure.\n';
+  '                   stderr and still exit 2 — this never silences a failure.\n' +
+  '  --as-of <ISO>    audit mode: evaluate the receipt window at that instant instead of now\n' +
+  '                   (e.g. 2026-10-29T13:00:00Z). Exit 0 when valid_at_as_of, 1 otherwise; an\n' +
+  '                   unparsable instant or one later than now + 30s is exit 2.\n';
 
 function fail(msg) {
   process.stderr.write(`${msg}\n${USAGE}`);
@@ -330,7 +341,8 @@ async function main() {
   // statement than a pointer found in the repository, and silently overriding it would make
   // `--envelope` unreliable exactly where it matters.
   if (!envelope && fromCommitEnvelope) envelope = fromCommitEnvelope;
-  const verifyOpts = { envelope, expectedAudience: opts.audience, expectedEnvironment: opts.environment };
+  const verifyOpts = { envelope, expectedAudience: opts.audience, expectedEnvironment: opts.environment,
+    ...(opts.asOf !== undefined ? { asOf: opts.asOf } : {}) };
 
   let result;
   if (opts.chainFile) {
@@ -406,8 +418,33 @@ async function main() {
   // attestation (verify-atomic-attestation.js:198) and DSSE (to-dsse.js:158) verdicts already do.
   // Appended, so nothing else in the verdict moves; a --chain verdict is a different object and keeps its shape.
   if (!opts.chainFile) result = { ...result, does_not_prove: [...RECEIPT_DOES_NOT_PROVE] };
+  if (result.mode === 'audit') {
+    // 1.1.6: a later step (the commit binding, the legacy-key downgrade, the --from-commit v4 rule) can
+    // still refuse the receipt, so valid_at_as_of is the core's answer AND the final valid.
+    result = { ...result, valid_at_as_of: result.valid_at_as_of === true && result.valid === true,
+      does_not_prove: [...result.does_not_prove, AS_OF_DOES_NOT_PROVE] };
+    if (!opts.json) process.stderr.write(`${auditLine(result)}\n`);
+    process.stdout.write(JSON.stringify(result) + '\n');
+    process.exit(result.valid_at_as_of ? 0 : 1);
+  }
   process.stdout.write(JSON.stringify(result) + '\n');
   process.exit(result.valid ? 0 : 1);
+}
+
+/** 1.1.6: the audit verdict's one human line (stderr), e.g.
+ *  "VERIFIED_AT_AS_OF 2026-10-29T13:00:00Z · window 2026-10-29T12:57:43Z to 16:57:43Z · expired now". */
+function auditLine(result) {
+  const iso = (t) => {
+    const ms = Date.parse(t);
+    return Number.isFinite(ms) ? new Date(Math.floor(ms / 1000) * 1000).toISOString().replace('.000Z', 'Z') : String(t);
+  };
+  const w = result.window || {};
+  const head = `${result.status} ${iso(result.as_of)}`;
+  if (!w.expires_at) return `${head} · ${result.as_of_note || 'no expiry to evaluate'}`;
+  const from = iso(w.ts);
+  const to = iso(w.expires_at);
+  const toShort = from.slice(0, 11) === to.slice(0, 11) ? to.slice(11) : to;
+  return `${head} · window ${from} to ${toShort} · ${result.expired_now ? 'expired now' : 'not expired now'}`;
 }
 
 /** verified_with: the kid, the sha256 of the verifying key's SPKI DER, and file | url | pinned-snapshot. */
@@ -428,6 +465,9 @@ function verifiedWith(ctx, kid, keyringSource, singleKeySha256) {
  *          (sdk src/verify-receipt-local.ts:87) and mirrored on the website's /portable-verification/.
  * No new claim: a change here is a change to a published sentence.
  */
+/** 1.1.6: what an --as-of verdict does not establish (appended to does_not_prove in audit mode only). */
+const AS_OF_DOES_NOT_PROVE = 'that the window was still open when you read this: as-of evaluates a stated instant, not now';
+
 const RECEIPT_DOES_NOT_PROVE = Object.freeze([
   'it does not prove the agent then stopped. It is evidence about a decision we issued, never about what '
     + 'the caller did next.',
@@ -452,4 +492,5 @@ if (require.main === module) {
 module.exports = {
   fetchKeyInfo, downgradeLegacyVerdict, registryUnreachableVerdict, discoveryWasMandatory,
   parseArgs, main, USAGE, VENDORED_KEYS_PATH, RECEIPT_DOES_NOT_PROVE, verifiedWith,
+  AS_OF_DOES_NOT_PROVE, auditLine,
 };

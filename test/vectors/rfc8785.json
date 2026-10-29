@@ -1,0 +1,133 @@
+{
+  "schema": "coderifts.rfc8785-vectors.v1",
+  "description": "RFC 8785 (JCS) canonicalization vectors. input_json is the JSON text of the input (kept as text so -0 and the number forms survive); canonical is the expected canonical string; sha256 is the hex sha256 of its UTF-8 bytes.",
+  "computed_by": "verify.js canonicalJson (this repository)",
+  "provenance": "Every expected value was computed with this repository's canonicalizer; none is copied from an external source.",
+  "cross_check": {
+    "implementation": "verify.py canonical_json (this repository)",
+    "agrees": 11,
+    "of": 16,
+    "differs": [
+      "RFC8785-01",
+      "RFC8785-07",
+      "RFC8785-08",
+      "RFC8785-09",
+      "RFC8785-10"
+    ],
+    "note": "Where verify.py differs, the expected value here is verify.js's: ECMAScript Number serialization and UTF-16 code-unit key order, which RFC 8785 specifies. The differences are verify.py's (Python float repr, code-point key sort), measured, not fixed in this file."
+  },
+  "vectors": [
+    {
+      "id": "RFC8785-01",
+      "name": "key order: UTF-16 code units (BMP above the surrogates sorts after an astral key), non-ASCII and digit-like keys",
+      "input_json": "{\"\\ufb33\":1,\"\\ud83d\\ude00\":2,\"a\":3,\"\\u00f6\":4,\"\\u20ac\":5,\"10\":6,\"2\":7,\"1\":8,\"B\":9}",
+      "canonical": "{\"1\":8,\"10\":6,\"2\":7,\"B\":9,\"a\":3,\"ö\":4,\"€\":5,\"😀\":2,\"דּ\":1}",
+      "sha256": "f6b67879a04a233fa3f7117a72c7b41d123ca1c6aefc4dbe2ad16d04a7d4b447"
+    },
+    {
+      "id": "RFC8785-02",
+      "name": "key order: a prefix sorts first; case is code-unit order",
+      "input_json": "{\"ab\":1,\"a\":2,\"aa\":3,\"A\":4,\"\":5}",
+      "canonical": "{\"\":5,\"A\":4,\"a\":2,\"aa\":3,\"ab\":1}",
+      "sha256": "01d4c75e4280e27a4b8eaa92010c6c8c48b8c712a07eeb2d7d174760c8396660"
+    },
+    {
+      "id": "RFC8785-03",
+      "name": "nested objects and arrays; arrays keep their order",
+      "input_json": "{\"b\":[3,{\"z\":1,\"a\":[]}],\"a\":{\"d\":{\"c\":null},\"c\":[[2,1],[]]}}",
+      "canonical": "{\"a\":{\"c\":[[2,1],[]],\"d\":{\"c\":null}},\"b\":[3,{\"a\":[],\"z\":1}]}",
+      "sha256": "6097a3a582193761c1a34cf5e73346f074143813dc2655e6c894931f313990c1"
+    },
+    {
+      "id": "RFC8785-04",
+      "name": "string escaping: controls, quote, backslash, slash unescaped, non-ASCII raw",
+      "input_json": "{\"s\":\"\\u0000\\u0007\\b\\t\\n\\u000b\\f\\r\\u001f\\\"\\\\/\\u007f\\u20ac\\ud83d\\ude00\"}",
+      "canonical": "{\"s\":\"\\u0000\\u0007\\b\\t\\n\\u000b\\f\\r\\u001f\\\"\\\\/€😀\"}",
+      "sha256": "ac9e857d93ab8c6c66de180a2a41947e70d45ba85c140d832f0bb9283322c3fe"
+    },
+    {
+      "id": "RFC8785-05",
+      "name": "non-ASCII keys and values",
+      "input_json": "{\"ключ\":\"значение\",\"日本\":\"語\",\"é\":\"e\\u0301\"}",
+      "canonical": "{\"é\":\"é\",\"ключ\":\"значение\",\"日本\":\"語\"}",
+      "sha256": "8c57796ee054e4aab3e471efacdb821ac2cf796090363b21646a832e2e70a559"
+    },
+    {
+      "id": "RFC8785-06",
+      "name": "integers",
+      "input_json": "{\"zero\":0,\"one\":1,\"neg\":-7,\"max_safe\":9007199254740991,\"two53\":9007199254740992}",
+      "canonical": "{\"max_safe\":9007199254740991,\"neg\":-7,\"one\":1,\"two53\":9007199254740992,\"zero\":0}",
+      "sha256": "ab27e01cfd36564958db7384b67279eecff89f3e6fb17cfc854d5a4f634b8aeb"
+    },
+    {
+      "id": "RFC8785-07",
+      "name": "1e21 switches to exponent form; 1e20 does not",
+      "input_json": "{\"a\":1e20,\"b\":1e21,\"c\":123456789012345678901}",
+      "canonical": "{\"a\":100000000000000000000,\"b\":1e+21,\"c\":123456789012345680000}",
+      "sha256": "f196bad64541148e4c56746fb5754f79771c62f0895920a67fff654796f3241c"
+    },
+    {
+      "id": "RFC8785-08",
+      "name": "1e-7 is exponent form; 1e-6 is not",
+      "input_json": "{\"a\":1e-7,\"b\":0.000001,\"c\":1.5e-7}",
+      "canonical": "{\"a\":1e-7,\"b\":0.000001,\"c\":1.5e-7}",
+      "sha256": "793e63e4a4b339f7e3c9320ecf2cbc6599ea911bea445747a83cb2d1a29d2f94"
+    },
+    {
+      "id": "RFC8785-09",
+      "name": "-0 serializes as 0",
+      "input_json": "{\"a\":-0,\"b\":-0.0,\"c\":[-0]}",
+      "canonical": "{\"a\":0,\"b\":0,\"c\":[0]}",
+      "sha256": "9a4abb4db5e7dd79c5666bc4facb703a5bd62cbcb3e76b1213681cf9cdf0a32f"
+    },
+    {
+      "id": "RFC8785-10",
+      "name": "0.1 and other decimals keep the shortest round-trip form",
+      "input_json": "{\"a\":0.1,\"b\":0.5,\"c\":3.14,\"d\":-2.5,\"e\":100.0,\"f\":1.0}",
+      "canonical": "{\"a\":0.1,\"b\":0.5,\"c\":3.14,\"d\":-2.5,\"e\":100,\"f\":1}",
+      "sha256": "f463c9f75bbdbedd1aa155e6971337ca0717ad6895ac2fd34de464bd04beb7f6"
+    },
+    {
+      "id": "RFC8785-11",
+      "name": "booleans and null",
+      "input_json": "{\"t\":true,\"f\":false,\"n\":null,\"l\":[true,false,null]}",
+      "canonical": "{\"f\":false,\"l\":[true,false,null],\"n\":null,\"t\":true}",
+      "sha256": "f67d09523e596000b74e4231d7202a6ce03c2b594846a8bb61977ad7a770c82d"
+    },
+    {
+      "id": "RFC8785-12",
+      "name": "empty object",
+      "input_json": "{}",
+      "canonical": "{}",
+      "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+    },
+    {
+      "id": "RFC8785-13",
+      "name": "empty array",
+      "input_json": "[]",
+      "canonical": "[]",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "id": "RFC8785-14",
+      "name": "empty containers nested",
+      "input_json": "{\"o\":{},\"a\":[],\"n\":[{},[]]}",
+      "canonical": "{\"a\":[],\"n\":[{},[]],\"o\":{}}",
+      "sha256": "19f960e000e08c98ffbe8433b2762659dc2879cb795a4c887f430e10e7a5d842"
+    },
+    {
+      "id": "RFC8785-15",
+      "name": "whitespace-free output from spaced input",
+      "input_json": " {\n  \"b\" : 1 ,\n  \"a\" : [ 1 , 2 , { \"y\" : 2 , \"x\" : 1 } ]\n} ",
+      "canonical": "{\"a\":[1,2,{\"x\":1,\"y\":2}],\"b\":1}",
+      "sha256": "c42c676047c845db19e0d31f5e22a817d8eaf022eb947fa1415927c7254abb29"
+    },
+    {
+      "id": "RFC8785-16",
+      "name": "top-level array of mixed values",
+      "input_json": "[3,\"x\",true,null,{\"b\":1,\"a\":2},[],-0,1e21]",
+      "canonical": "[3,\"x\",true,null,{\"a\":2,\"b\":1},[],0,1e+21]",
+      "sha256": "3c113e071815367b8eb798a945bc3963d13663455887f41b4746c71cbf904c05"
+    }
+  ]
+}

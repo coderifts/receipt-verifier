@@ -237,6 +237,21 @@ same one you are shipping) is a **separate axis**: the `fp` fingerprint. A longe
 does NOT loosen the fingerprint check — a `merge` receipt valid for hours still fails
 closed if the content drifted (`fingerprint_mismatch`).
 
+**As-of evaluates the window at a stated instant (1.1.6).** After `expires_at + 30s` a v4 receipt is
+`VERIFIED_EXPIRED`: the permission is over. An after-incident question — was the action inside the
+grant *at the time*? — is a different question, and `--as-of <ISO 8601>` (CLI) / `asOf` (`verifyReceipt(token, { ctx, asOf })`)
+answers it: the expiry comparison uses that instant instead of now; the signature, the key lookup, every
+key-status rule (§7.1: a revoked key is `valid:false` at any as-of; a retired key exactly as without
+as-of), the envelope binding and the chain rule are unchanged. As-of may not be later than now + 30s
+(`as_of_in_future`). The verdict carries `mode: "audit"`, `as_of`, `valid_at_as_of`, `expired_now` and
+`window {ts, expires_at}`; its status is `VERIFIED_AT_AS_OF` when the receipt verifies and as-of is inside
+`[ts, expires_at + 30s]`, `NOT_YET_VALID_AT_AS_OF` (`valid:false`) when as-of precedes `ts`, and
+`VERIFIED_EXPIRED` when it is past the window. These two statuses exist only in audit mode; the §6
+taxonomy of an ordinary verification is unchanged. A receipt without `expires_at` (v1–v3) keeps its
+ordinary result, with `as_of_note: "no expiry to evaluate; as-of has no effect"`. An as-of verdict is
+an audit answer about a stated instant, not an authorization now. `verify.js` / `cli.js` only in 1.1.6;
+`verify.py` has no as-of.
+
 ## 3. Signed bytes (FROZEN)
 
 The bytes covered by the signature are a UTF-8 pipe-delimited string:

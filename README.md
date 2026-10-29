@@ -415,6 +415,7 @@ Do not detect the shape with `Function.length`. Parameters with defaults are not
 ```
 cli.js <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys] [--envelope <file>]
 cli.js --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]
+cli.js <receipt> --as-of <ISO 8601> [...]                 # audit mode (1.1.6), also with --from-commit / --envelope
 
 verify.py <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys] [--envelope <file>]
 verify.py --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]
@@ -444,6 +445,19 @@ verify-bundle.js <bundle.json> --slot-keys <file> [--ctx <file>]
   `decision_body_hash` stripped) and requires it to equal the receipt's `bh`.
   Mismatch ⇒ `body_hash_mismatch`. Both `verify.js` and `verify.py` read a
   **file path** (not an inline JSON string).
+
+- `--as-of <ISO 8601>`  (1.1.6, `cli.js`, and `verifyReceipt(token, { ctx, asOf })` beside `ctx` as `envelope` is) audit mode: the
+  expiry comparison uses that instant (with a zone, e.g. `2026-10-29T13:00:00Z`) instead of now;
+  signature, key status, envelope and chain rules are unchanged. Output adds `mode: "audit"`, `as_of`,
+  `valid_at_as_of`, `expired_now` and `window {ts, expires_at}`; status `VERIFIED_AT_AS_OF` inside the
+  window, `NOT_YET_VALID_AT_AS_OF` before `ts`, `VERIFIED_EXPIRED` after it. Exit 0 when
+  `valid_at_as_of` is true, 1 otherwise; exit 2 for an unparsable instant or one later than now + 30s
+  (`as_of_in_future`), as for any usage error. Not with `--chain`. A human line goes to stderr
+  (suppressed by `--json`): `VERIFIED_AT_AS_OF 2026-10-29T13:00:00Z · window 2026-10-29T12:57:43Z to 16:57:43Z · expired now`.
+
+  **Audit is not authorization.** `--as-of` answers whether a receipt was inside its window at the instant
+  you name — an after-incident question; it never says the receipt authorizes anything now, and a receipt
+  that is expired now is still expired for any action you are about to take.
 
 Example (v4 body-hash binding — use a real envelope file from an authorize /
 bundle path; do not invent a receipt token):
@@ -566,6 +580,18 @@ These are input/expected fixtures, not signed tokens. There is **no**
 stateless and cannot detect a replayed nonce. The production consumer is
 the stateful data plane (EP-2) and is not this repository. Do not treat
 the presence of the JSON file as a verifier.
+
+## Canonicalization test vectors
+
+`test/vectors/rfc8785.json` holds RFC 8785 (JCS) canonicalization vectors: the input as JSON text, the
+expected canonical string, and the sha256 of its UTF-8 bytes. They cover key order by UTF-16 code units,
+nested objects and arrays, string escaping and non-ASCII keys, integers, `1e21`, `1e-7`, `-0`, `0.1`,
+booleans and null, empty containers and whitespace-free output. Every expected value was computed with
+this repository's canonicalizer (`verify.js` `canonicalJson`) by `test/gen-rfc8785-vectors.js`; none is
+copied from an external source. The file records a cross-check against the second implementation in this
+tree, `verify.py` `canonical_json`: it agrees on 11 of 16 and differs on the five listed in
+`cross_check.differs` (Python's float formatting and code-point key order). `test/rfc8785-vectors.test.js`
+checks every vector against `verify.js`.
 
 ## Tests
 
