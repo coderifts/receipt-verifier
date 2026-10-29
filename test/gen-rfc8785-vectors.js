@@ -52,7 +52,9 @@ const doc = {
     agrees: vectors.length - differs.length,
     of: vectors.length,
     differs,
-    note: 'Where verify.py differs, the expected value here is verify.js\'s: ECMAScript Number serialization and UTF-16 code-unit key order, which RFC 8785 specifies. The differences are verify.py\'s (Python float repr, code-point key sort), measured, not fixed in this file.',
+    note: differs.length === 0
+      ? 'verify.py produces byte-identical output on every vector (1.1.6: UTF-16 code-unit key order and ECMAScript Number serialization, as RFC 8785 specifies). Recomputed by this generator each run.'
+      : 'Where verify.py differs, the expected value here is verify.js\'s: ECMAScript Number serialization and UTF-16 code-unit key order, which RFC 8785 specifies. The differences are verify.py\'s, measured by this generator.',
   },
   vectors,
 };

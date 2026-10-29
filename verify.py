@@ -32,6 +32,7 @@ verified_with {kid, key_sha256, keyring_source}.
 """
 
 import base64
+import decimal
 import hashlib
 import json
 import math
@@ -90,24 +91,77 @@ def sha256hex(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+_JSON_SHORT_ESCAPES = {'"': '\\"', "\\": "\\\\", "\b": "\\b", "\t": "\\t", "\n": "\\n", "\f": "\\f", "\r": "\\r"}
+
+
+def _js_string(s):
+    """A string as ECMAScript JSON.stringify writes it: the short escapes, other controls and lone
+    surrogates as lowercase \\uXXXX, everything else (including "/" and U+007F) raw."""
+    out = []
+    for ch in s:
+        o = ord(ch)
+        if ch in _JSON_SHORT_ESCAPES:
+            out.append(_JSON_SHORT_ESCAPES[ch])
+        elif o < 0x20 or 0xD800 <= o <= 0xDFFF:
+            out.append("\\u%04x" % o)
+        else:
+            out.append(ch)
+    return '"' + "".join(out) + '"'
+
+
+def _js_number(value):
+    """ECMAScript Number::toString (RFC 8785 §3.2.2.3): shortest round-trip digits, -0 -> 0, no
+    exponent for 1e-6 <= |x| < 1e21, otherwise d[.ddd]e+N / e-N with no zero padding. Python ints are
+    treated as the IEEE double they denote in JSON (a JS reader rounds 123456789012345678901 too)."""
+    try:
+        x = float(value)
+    except OverflowError:
+        raise ValueError("canonical_json: non-finite number")
+    if x != x or x in (float("inf"), float("-inf")):
+        raise ValueError("canonical_json: non-finite number")
+    if x == 0:
+        return "0"
+    sign = "-" if x < 0 else ""
+    _, digit_tuple, exp = decimal.Decimal(repr(abs(x))).as_tuple()
+    raw = "".join(str(d) for d in digit_tuple)
+    digits = raw.rstrip("0")
+    exp += len(raw) - len(digits)
+    k = len(digits)
+    n = k + exp  # value = 0.digits x 10^n
+    if k <= n <= 21:
+        body = digits + "0" * (n - k)
+    elif 0 < n <= 21:
+        body = digits[:n] + "." + digits[n:]
+    elif -6 < n <= 0:
+        body = "0." + "0" * (-n) + digits
+    else:
+        e = n - 1
+        mant = digits if k == 1 else digits[0] + "." + digits[1:]
+        body = mant + "e" + ("+" if e >= 0 else "-") + str(abs(e))
+    return sign + body
+
+
+def _utf16_key(k):
+    # UTF-16BE bytes compare in the same order as UTF-16 code units (what JS Array.prototype.sort uses).
+    return k.encode("utf-16-be", "surrogatepass")
+
+
 def canonical_json(value):
-    """RFC 8785 (JCS) canonical JSON for our data domain — byte-identical to verify.js canonicalJson
-    and the issuer's src/canonical-json.js (ASCII keys, JSON scalars, sorted keys, no whitespace)."""
+    """RFC 8785 (JCS) canonical JSON — byte-identical to verify.js canonicalJson (JSON.stringify scalars,
+    keys sorted by UTF-16 code units, no whitespace). Checked against test/vectors/rfc8785.json."""
     if value is None:
         return "null"
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, str):
-        return json.dumps(value, ensure_ascii=False)
+        return _js_string(value)
     if isinstance(value, (int, float)):
-        if isinstance(value, float) and (value != value or value in (float("inf"), float("-inf"))):
-            raise ValueError("canonical_json: non-finite number")
-        return json.dumps(value)
+        return _js_number(value)
     if isinstance(value, list):
         return "[" + ",".join(canonical_json(v) for v in value) + "]"
     if isinstance(value, dict):
-        keys = sorted(value.keys())
-        return "{" + ",".join(json.dumps(k, ensure_ascii=False) + ":" + canonical_json(value[k]) for k in keys) + "}"
+        keys = sorted(value.keys(), key=_utf16_key)
+        return "{" + ",".join(_js_string(k) + ":" + canonical_json(value[k]) for k in keys) + "}"
     raise TypeError("canonical_json: unsupported type")
 
 
@@ -199,18 +253,21 @@ def derive_status(payload, entry, opts):
         if boundary is None or issued is None:
             return "REVOKED_KEY_UNDECIDABLE"
         return "REVOKED_KEY" if issued >= boundary else "REVOKED_KEY_UNDECIDABLE"
+    now = opts["now"] if opts.get("now") is not None else (datetime.now(timezone.utc).timestamp() * 1000)
+    expired = False
+    if v == 4 and isinstance(payload.get("expires_at"), str):
+        exp = _parse_iso(payload["expires_at"])
+        context = opts.get("envelope") or {"environment": opts.get("expected_environment")}
+        expired = exp is not None and is_expired_at(exp, now, context)
     if entry.get("status") == "retired":
         issued = _parse_iso(payload.get("ts"))
         retired = _parse_iso(entry.get("retired_at"))
         if retired is not None and issued is not None and issued < retired:
-            return "RETIRED_KEY_VALID_AT_ISSUE"
+            # 1.1.6: the expiry rule applies after the retired-key rule (mirrors verify.js; RECEIPT_FORMAT §7).
+            return "VERIFIED_EXPIRED" if expired else "RETIRED_KEY_VALID_AT_ISSUE"
         return "INVALID_SIGNATURE"
-    now = opts["now"] if opts.get("now") is not None else (datetime.now(timezone.utc).timestamp() * 1000)
-    if v == 4 and isinstance(payload.get("expires_at"), str):
-        exp = _parse_iso(payload["expires_at"])
-        context = opts.get("envelope") or {"environment": opts.get("expected_environment")}
-        if exp is not None and is_expired_at(exp, now, context):
-            return "VERIFIED_EXPIRED"
+    if expired:
+        return "VERIFIED_EXPIRED"
     env = opts.get("envelope")
     if env:
         if opts.get("expected_audience") is not None and env.get("audience") is not None and env["audience"] != opts["expected_audience"]:

@@ -140,13 +140,16 @@ describe('--as-of: inside the window', () => {
     assert.equal(out.json.mode, undefined);
   });
 
-  it('a retired key inside its validity: the same status and valid as today', () => {
+  it('a retired key: as-of inside the window is RETIRED_KEY_VALID_AT_ISSUE; today (window closed) is VERIFIED_EXPIRED', () => {
+    // 1.1.6 round 10c: this case used to assert audit === today, which pinned the defect (today's verdict
+    // skipped the expiry check under a retired key). Covered fully in test/retired-key-expiry.test.js.
     const entry = { status: 'retired', retired_at: iso(T0 + 30 * 60e3) };
     const today = run([mint(), '--keys', keysFile(entry)]);
+    assert.equal(today.json.status, 'VERIFIED_EXPIRED');
+    assert.equal(today.json.valid, false);
     const audit = run([mint(), '--keys', keysFile(entry), '--as-of', iso(T0 + HOUR)]);
-    assert.equal(audit.json.status, today.json.status);
-    assert.equal(audit.json.valid, today.json.valid);
     assert.equal(audit.json.status, 'RETIRED_KEY_VALID_AT_ISSUE');
+    assert.equal(audit.json.valid, true);
     assert.equal(audit.json.valid_at_as_of, true);
     assert.equal(audit.code, 0);
   });

@@ -589,9 +589,9 @@ nested objects and arrays, string escaping and non-ASCII keys, integers, `1e21`,
 booleans and null, empty containers and whitespace-free output. Every expected value was computed with
 this repository's canonicalizer (`verify.js` `canonicalJson`) by `test/gen-rfc8785-vectors.js`; none is
 copied from an external source. The file records a cross-check against the second implementation in this
-tree, `verify.py` `canonical_json`: it agrees on 11 of 16 and differs on the five listed in
-`cross_check.differs` (Python's float formatting and code-point key order). `test/rfc8785-vectors.test.js`
-checks every vector against `verify.js`.
+tree, `verify.py` `canonical_json`: since 1.1.6 it agrees on 16 of 16 (`cross_check`, recomputed by the
+generator on every run). `test/rfc8785-vectors.test.js` checks every vector against `verify.js`, and
+`test/test_rfc8785_vectors.py` against `verify.py`.
 
 ## Tests
 

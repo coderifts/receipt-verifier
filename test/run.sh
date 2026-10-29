@@ -772,10 +772,21 @@ fi
 # the installed package (fixture + P58 repro). Here so a change that breaks the package fails CI, not
 # the release run.
 # T19 (2026-10-06): the usage text names the npm bin, not `node cli.js`.
-# 1.1.6: --as-of audit mode and the RFC 8785 canonicalization vectors.
-for t in test/from-commit-1961-tag1.test.js test/from-commit-p58-binding.test.js test/release-check.test.js test/usage-bin-name.test.js test/as-of-audit.test.js test/rfc8785-vectors.test.js; do
+# 1.1.6: --as-of audit mode, the RFC 8785 canonicalization vectors, and expiry under a retired key.
+for t in test/from-commit-1961-tag1.test.js test/from-commit-p58-binding.test.js test/release-check.test.js test/usage-bin-name.test.js test/as-of-audit.test.js test/rfc8785-vectors.test.js test/retired-key-expiry.test.js; do
   checks=$((checks + 1))
   if node --test "$t" >/dev/null; then
+    echo "ok    $(basename "$t")"
+  else
+    echo "FAIL  $(basename "$t")"
+    fails=$((fails + 1))
+  fi
+done
+
+# 1.1.6 round 10c: verify.py canonical_json against every RFC 8785 vector, and expiry under a retired key (py).
+for t in test/test_rfc8785_vectors.py test/test_retired_expiry.py; do
+  checks=$((checks + 1))
+  if "$PYTHON" "$t" >/dev/null 2>&1; then
     echo "ok    $(basename "$t")"
   else
     echo "FAIL  $(basename "$t")"

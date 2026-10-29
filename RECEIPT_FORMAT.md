@@ -241,8 +241,8 @@ closed if the content drifted (`fingerprint_mismatch`).
 `VERIFIED_EXPIRED`: the permission is over. An after-incident question — was the action inside the
 grant *at the time*? — is a different question, and `--as-of <ISO 8601>` (CLI) / `asOf` (`verifyReceipt(token, { ctx, asOf })`)
 answers it: the expiry comparison uses that instant instead of now; the signature, the key lookup, every
-key-status rule (§7.1: a revoked key is `valid:false` at any as-of; a retired key exactly as without
-as-of), the envelope binding and the chain rule are unchanged. As-of may not be later than now + 30s
+key-status rule (§7.1: a revoked key is `valid:false` at any as-of; a retired key as without as-of,
+with the same window, §7), the envelope binding and the chain rule are unchanged. As-of may not be later than now + 30s
 (`as_of_in_future`). The verdict carries `mode: "audit"`, `as_of`, `valid_at_as_of`, `expired_now` and
 `window {ts, expires_at}`; its status is `VERIFIED_AT_AS_OF` when the receipt verifies and as-of is inside
 `[ts, expires_at + 30s]`, `NOT_YET_VALID_AT_AS_OF` (`valid:false`) when as-of precedes `ts`, and
@@ -440,6 +440,15 @@ GET https://app.coderifts.com/.well-known/coderifts-keys.json
   stopped signing: a receipt whose `ts` predates `retired_at` is `RETIRED_KEY_VALID_AT_ISSUE`
   (still trustworthy — it was signed while the key was live); a receipt at/after `retired_at`
   is rejected (`INVALID_SIGNATURE`). Verifiers pass the registry with `--keys`.
+
+**Expiry still applies under a retired key (1.1.6).** The retired-key rule answers only whether the key
+was live when the receipt was signed; it does not extend the receipt's window. For a v4 receipt signed
+by a retired key before `retired_at`, the expiry rule is applied after the retired-key rule: once
+`expires_at + 30s` is past, the verdict is `VERIFIED_EXPIRED` (`valid:false`); inside the window it is
+`RETIRED_KEY_VALID_AT_ISSUE` (`valid:true`). With `--as-of` the same window is evaluated at the stated
+instant. Before 1.1.6 both verifiers returned `RETIRED_KEY_VALID_AT_ISSUE` before the expiry check, so an
+expired v4 receipt under a retired key verified `valid:true` (measured 2026-10-29). v1–v3 receipts carry
+no expiry and are unaffected.
 
 - The registry is append-only: a rotated key is marked `retired` and a new `active`
   key is added; entries are never removed. This lets a verifier resolve the right

@@ -215,19 +215,19 @@ function deriveStatus(payload, entry, opts) {
     if (!Number.isFinite(boundary) || !Number.isFinite(issued)) return 'REVOKED_KEY_UNDECIDABLE';
     return issued >= boundary ? 'REVOKED_KEY' : 'REVOKED_KEY_UNDECIDABLE';
   }
+  const now = opts.now != null ? opts.now : Date.now();
+  const expired = payload.v === 4 && typeof payload.expires_at === 'string'
+    && isExpiredAt(Date.parse(payload.expires_at), now, opts.envelope || { environment: opts.expectedEnvironment });
   if (entry.status === 'retired') {
     if (entry.retired_at && payload.ts
       && Date.parse(payload.ts) < Date.parse(entry.retired_at)) {
-      return 'RETIRED_KEY_VALID_AT_ISSUE';
+      // 1.1.6: the expiry rule applies after the retired-key rule. Before, this returned first, so an
+      // expired v4 receipt under a retired key verified valid:true (RECEIPT_FORMAT §7).
+      return expired ? 'VERIFIED_EXPIRED' : 'RETIRED_KEY_VALID_AT_ISSUE';
     }
     return 'INVALID_SIGNATURE'; // signed by a key already retired at issue -> reject
   }
-  const now = opts.now != null ? opts.now : Date.now();
-  if (payload.v === 4 && typeof payload.expires_at === 'string') {
-    const exp = Date.parse(payload.expires_at);
-    const context = opts.envelope || { environment: opts.expectedEnvironment };
-    if (isExpiredAt(exp, now, context)) return 'VERIFIED_EXPIRED';
-  }
+  if (expired) return 'VERIFIED_EXPIRED';
   if (opts.envelope) {
     const env = opts.envelope;
     if (opts.expectedAudience != null && env.audience != null && env.audience !== opts.expectedAudience) {

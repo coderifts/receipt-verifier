@@ -3,13 +3,14 @@
 Versions here are the npm package `@coderifts/receipt-verifier`. Entries land before the release
 that carries them; a heading with no tag has not been published.
 
-## 1.1.6 — unreleased
+## 1.1.6 — 2026-10-29
 
 ### `--as-of`: was the receipt inside its window at a stated instant?
 
 **Added.** `--as-of <ISO 8601>` on the CLI and `asOf` in `verifyReceipt(token, { ctx, asOf })` (beside `ctx`, where `envelope` sits; audit mode). The expiry
 comparison uses the given instant instead of now; the signature, the key lookup, every key-status rule
-(RECEIPT_FORMAT §7.1 — a revoked key is `valid:false` at any as-of; a retired key as before), the envelope
+(RECEIPT_FORMAT §7.1 — a revoked key is `valid:false` at any as-of; a retired key as before, with the
+same window), the envelope
 binding and the chain rule are unchanged. The verdict adds `mode: "audit"`, `as_of`, `valid_at_as_of`,
 `expired_now` and `window {ts, expires_at}`; status `VERIFIED_AT_AS_OF` inside the window,
 `NOT_YET_VALID_AT_AS_OF` (`valid:false`) before the receipt's `ts`, `VERIFIED_EXPIRED` after the window.
@@ -25,10 +26,27 @@ receipt).
 ### RFC 8785 canonicalization vectors
 
 **Added.** `test/vectors/rfc8785.json` (16 vectors, computed by `verify.js` `canonicalJson`, with
-`test/gen-rfc8785-vectors.js`) and `test/rfc8785-vectors.test.js`. **Measured:** `verify.py`
-`canonical_json` agrees on 11 of 16; it differs on astral-plane key order (code points, not UTF-16 code
-units) and on number forms (`1e+20`, `1e-07`, `-0.0`, `100.0`, an integer above 2^53 kept exact) — recorded
-in the file, not changed in this release.
+`test/gen-rfc8785-vectors.js`) and `test/rfc8785-vectors.test.js`.
+
+### `verify.py` canonical JSON is RFC 8785, byte-identical to `verify.js`
+
+**Fixed.** Measured on the vectors above: `verify.py` `canonical_json` agreed on 11 of 16. It sorted keys
+by code point, not UTF-16 code units (an astral-plane key against a BMP key above the surrogates), and
+wrote numbers as Python does (`1e+20`, `1e-07`, `-0.0`, `100.0`, an integer above 2^53 kept exact). It now
+sorts by UTF-16 code units and writes numbers as ECMAScript `Number::toString`, and strings as
+`JSON.stringify` (lone surrogates escaped). 16 of 16, checked by `test/test_rfc8785_vectors.py`. An integer
+too large for a double is now refused as non-finite, as in `verify.js`. `verify.py` uses this for the
+`--envelope` body hash; every envelope fixture in this tree hashes the same before and after (measured).
+`verify.js` is unchanged.
+
+### Expiry applies under a retired key
+
+**Fixed.** A v4 receipt signed by a retired key before `retired_at` returned `RETIRED_KEY_VALID_AT_ISSUE`
+before the expiry check, so once its window had closed it still verified `valid: true`. The expiry rule now
+applies after the retired-key rule, in `verify.js` and `verify.py`: past `expires_at + 30s` it is
+`VERIFIED_EXPIRED` (`valid: false`); inside the window it is `RETIRED_KEY_VALID_AT_ISSUE` as before; `--as-of`
+evaluates the same window at the stated instant (RECEIPT_FORMAT §7). v1–v3 receipts, including the
+`2026-07-k1` fixture, are unaffected.
 
 ## 1.1.5 — 2026-10-25
 

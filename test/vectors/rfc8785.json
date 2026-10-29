@@ -5,16 +5,10 @@
   "provenance": "Every expected value was computed with this repository's canonicalizer; none is copied from an external source.",
   "cross_check": {
     "implementation": "verify.py canonical_json (this repository)",
-    "agrees": 11,
+    "agrees": 16,
     "of": 16,
-    "differs": [
-      "RFC8785-01",
-      "RFC8785-07",
-      "RFC8785-08",
-      "RFC8785-09",
-      "RFC8785-10"
-    ],
-    "note": "Where verify.py differs, the expected value here is verify.js's: ECMAScript Number serialization and UTF-16 code-unit key order, which RFC 8785 specifies. The differences are verify.py's (Python float repr, code-point key sort), measured, not fixed in this file."
+    "differs": [],
+    "note": "verify.py produces byte-identical output on every vector (1.1.6: UTF-16 code-unit key order and ECMAScript Number serialization, as RFC 8785 specifies). Recomputed by this generator each run."
   },
   "vectors": [
     {
