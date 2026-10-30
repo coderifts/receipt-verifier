@@ -5,8 +5,8 @@
   "provenance": "Every expected value was computed with this repository's canonicalizer; none is copied from an external source.",
   "cross_check": {
     "implementation": "verify.py canonical_json (this repository)",
-    "agrees": 16,
-    "of": 16,
+    "agrees": 18,
+    "of": 18,
     "differs": [],
     "note": "verify.py produces byte-identical output on every vector (1.1.6: UTF-16 code-unit key order and ECMAScript Number serialization, as RFC 8785 specifies). Recomputed by this generator each run."
   },
@@ -122,6 +122,46 @@
       "input_json": "[3,\"x\",true,null,{\"b\":1,\"a\":2},[],-0,1e21]",
       "canonical": "[3,\"x\",true,null,{\"a\":2,\"b\":1},[],0,1e+21]",
       "sha256": "3c113e071815367b8eb798a945bc3963d13663455887f41b4746c71cbf904c05"
+    },
+    {
+      "id": "RFC8785-17",
+      "name": "NFC / NFD: the same visible \"café\", different code points (U+00E9 vs U+0065 U+0301)",
+      "input_json": "{\"nfc\":\"caf\\u00e9\",\"nfd\":\"cafe\\u0301\"}",
+      "canonical": "{\"nfc\":\"café\",\"nfd\":\"café\"}",
+      "sha256": "cc673dfe566ccf77bd1d7472865fdbd6e97e0f0b1976615dbc4af1a4037cabfc",
+      "label": "differ: no Unicode normalization (canonicalization is code-point exact)",
+      "differ": [
+        {
+          "member": "nfc",
+          "canonical": "\"café\"",
+          "sha256": "28380feb8724d669bc8d4cf5b5a5bb1adbdc61b81ebd06f3fabc567b4f3b0fc5"
+        },
+        {
+          "member": "nfd",
+          "canonical": "\"café\"",
+          "sha256": "c7d7e72b8ad0dd91beb4044a4bb17c6c8a9672cc620c4c76e6584f3525d400d1"
+        }
+      ]
+    },
+    {
+      "id": "RFC8785-18",
+      "name": "_meta / annotations churn under the full-object scope: the same tool, only _meta and annotations changed",
+      "input_json": "{\"before\":{\"name\":\"read_invoice\",\"description\":\"Read an invoice.\",\"inputSchema\":{\"type\":\"object\"},\"annotations\":{\"readOnlyHint\":true},\"_meta\":{\"ui\":{\"resourceUri\":\"ui://invoices/view\"}}},\"after\":{\"name\":\"read_invoice\",\"description\":\"Read an invoice.\",\"inputSchema\":{\"type\":\"object\"},\"annotations\":{\"readOnlyHint\":false},\"_meta\":{\"ui\":{\"resourceUri\":\"ui://invoices/view-v2\"}}}}",
+      "canonical": "{\"after\":{\"_meta\":{\"ui\":{\"resourceUri\":\"ui://invoices/view-v2\"}},\"annotations\":{\"readOnlyHint\":false},\"description\":\"Read an invoice.\",\"inputSchema\":{\"type\":\"object\"},\"name\":\"read_invoice\"},\"before\":{\"_meta\":{\"ui\":{\"resourceUri\":\"ui://invoices/view\"}},\"annotations\":{\"readOnlyHint\":true},\"description\":\"Read an invoice.\",\"inputSchema\":{\"type\":\"object\"},\"name\":\"read_invoice\"}}",
+      "sha256": "d64fc0b6dbdb59ca0e748600a23e108ceab76c2c047c10eb4a08d4074628f0b8",
+      "label": "differ: a full-object digest covers _meta and annotations, so the digest changes",
+      "differ": [
+        {
+          "member": "before",
+          "canonical": "{\"_meta\":{\"ui\":{\"resourceUri\":\"ui://invoices/view\"}},\"annotations\":{\"readOnlyHint\":true},\"description\":\"Read an invoice.\",\"inputSchema\":{\"type\":\"object\"},\"name\":\"read_invoice\"}",
+          "sha256": "929af9d1a0ec1320df9ef9361fdb3b6f69c8e288feb601d8256b946051d7c206"
+        },
+        {
+          "member": "after",
+          "canonical": "{\"_meta\":{\"ui\":{\"resourceUri\":\"ui://invoices/view-v2\"}},\"annotations\":{\"readOnlyHint\":false},\"description\":\"Read an invoice.\",\"inputSchema\":{\"type\":\"object\"},\"name\":\"read_invoice\"}",
+          "sha256": "044a71c202b316e74370bc5440900137a1330e02d1059af185ca127f34761140"
+        }
+      ]
     }
   ]
 }

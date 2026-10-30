@@ -252,6 +252,21 @@ ordinary result, with `as_of_note: "no expiry to evaluate; as-of has no effect"`
 an audit answer about a stated instant, not an authorization now. `verify.js` / `cli.js` only in 1.1.6;
 `verify.py` has no as-of.
 
+### 2.2 Parser differentials are rejected, not given a reading (1.1.7)
+
+Some JSON text is read differently by different parsers. A digest or a pin over such text is not
+meaningful, so the policy is to **reject** it, never to pick one reading. `parseJsonStrict` (`verify.js`,
+exported beside `canonicalJson`) parses RFC 8259 text and refuses it with a code and an RFC 6901 pointer
+when an object at any depth has two members with the same name after unescaping (`duplicate_key`;
+`JSON.parse` keeps the last one, so a pin would cover whichever value came last), a string holds an
+unpaired UTF-16 surrogate (`lone_surrogate`; `JSON.parse` passes it through), or a number is not finite
+as binary64 (`non_finite`, e.g. `1e400`; `JSON.parse` gives `Infinity`). Anything else that is not one
+JSON text is `invalid_json`. On valid input it returns what `JSON.parse` returns. It is a separate
+function: `canonicalJson`, `--envelope` and every existing caller still use `JSON.parse` and are
+unchanged. The same three rejections are `mcp-tool-digest/v1-draft` §2 (purysho/mcp-digest-vectors).
+The CodeRifts MCP lock (`coderifts lock`, the app's `packages/cli`) does not use this repository's
+canonicalizer; its input parse is where the rule has to be applied for the lock.
+
 ## 3. Signed bytes (FROZEN)
 
 The bytes covered by the signature are a UTF-8 pipe-delimited string:
@@ -439,7 +454,9 @@ GET https://app.coderifts.com/.well-known/coderifts-keys.json
 - `retired_at` is `null` for an active key. For a retired key it is the instant the key
   stopped signing: a receipt whose `ts` predates `retired_at` is `RETIRED_KEY_VALID_AT_ISSUE`
   (still trustworthy — it was signed while the key was live); a receipt at/after `retired_at`
-  is rejected (`INVALID_SIGNATURE`). Verifiers pass the registry with `--keys`.
+  is rejected (`KEY_RETIRED_AFTER_SIGNING`, `valid:false`, in both verifiers). `INVALID_SIGNATURE`
+  remains only for an entry marked `retired` that carries no `retired_at`. Verifiers pass the
+  registry with `--keys`.
 
 **Expiry still applies under a retired key (1.1.6).** The retired-key rule answers only whether the key
 was live when the receipt was signed; it does not extend the receipt's window. For a v4 receipt signed

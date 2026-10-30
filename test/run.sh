@@ -773,7 +773,8 @@ fi
 # the release run.
 # T19 (2026-10-06): the usage text names the npm bin, not `node cli.js`.
 # 1.1.6: --as-of audit mode, the RFC 8785 canonicalization vectors, and expiry under a retired key.
-for t in test/from-commit-1961-tag1.test.js test/from-commit-p58-binding.test.js test/release-check.test.js test/usage-bin-name.test.js test/as-of-audit.test.js test/rfc8785-vectors.test.js test/retired-key-expiry.test.js; do
+# 1.1.7: parseJsonStrict (duplicate_key / lone_surrogate / non_finite).
+for t in test/from-commit-1961-tag1.test.js test/from-commit-p58-binding.test.js test/release-check.test.js test/usage-bin-name.test.js test/as-of-audit.test.js test/rfc8785-vectors.test.js test/retired-key-expiry.test.js test/strict-parse.test.js; do
   checks=$((checks + 1))
   if node --test "$t" >/dev/null; then
     echo "ok    $(basename "$t")"

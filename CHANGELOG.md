@@ -3,6 +3,35 @@
 Versions here are the npm package `@coderifts/receipt-verifier`. Entries land before the release
 that carries them; a heading with no tag has not been published.
 
+## 1.1.7 — unreleased
+
+### Strict parse: parser differentials are rejected
+
+**Added.** `parseJsonStrict(text)` in `verify.js`, exported beside `canonicalJson`. It parses RFC 8259 text and
+throws a `SyntaxError` with `.code` and an RFC 6901 `.pointer` on a duplicate member name at any depth
+(`duplicate_key`), an unpaired UTF-16 surrogate (`lone_surrogate`) or a number that is not finite as binary64
+(`non_finite`); anything else that is not one JSON text is `invalid_json`. On valid input it returns what
+`JSON.parse` returns. Existing callers are unchanged: `canonicalJson` and `--envelope` still use `JSON.parse`.
+The policy (reject, not pick a reading) is RECEIPT_FORMAT §2.2. Measured against purysho/mcp-digest-vectors
+(4ec1041): `JSON.parse` keeps the last duplicate, so a full-object pin over a duplicate `description` with the
+malicious value first pins the safe text; `parseJsonStrict` rejects all six parse-level reject vectors there.
+The CodeRifts MCP lock does not use this canonicalizer (its input is parsed in the app's `packages/cli`), so
+nothing here changes the lock.
+
+### Canonicalization vectors: NFC/NFD and `_meta`/`annotations` churn
+
+**Added.** `RFC8785-17` (the same visible "café" in NFC and NFD: different canonical strings, no Unicode
+normalization) and `RFC8785-18` (a tool whose `_meta` and `annotations` changed: the full-object digest changes),
+each with a `label` and the two `differ` members. 18 vectors; `verify.py` agrees on 18 of 18. The README now
+states the lone-surrogate policy: `canonicalJson` passes an unpaired surrogate through and writes `\udxxx`.
+
+### Fixes
+
+- RECEIPT_FORMAT §7: a receipt at or after a retired key's `retired_at` is `KEY_RETIRED_AFTER_SIGNING` in both
+  verifiers, not `INVALID_SIGNATURE` as the key-registry bullet said.
+- Release workflow: the post-publish registry readback waits 30 × 20 s (was 18 × 10 s, which failed the 1.1.6
+  job after a successful publish). It passes as soon as `npm view <pkg>@<version> version` prints the version.
+
 ## 1.1.6 — 2026-10-29
 
 ### `--as-of`: was the receipt inside its window at a stated instant?

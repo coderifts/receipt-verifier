@@ -35,6 +35,21 @@ describe('RFC 8785 canonicalization vectors (verify.js canonicalJson)', () => {
     });
   }
 
+  it('1.1.7 pairs: each labelled pair\'s two members canonicalize differently, as recorded', () => {
+    const pairs = doc.vectors.filter((v) => v.differ);
+    assert.deepEqual(pairs.map((v) => v.id), ['RFC8785-17', 'RFC8785-18']);
+    for (const v of pairs) {
+      const input = JSON.parse(v.input_json);
+      assert.match(v.label, /^differ: /, v.id);
+      const got = v.differ.map((d) => canonicalJson(input[d.member]));
+      assert.notEqual(got[0], got[1], `${v.id}: the pair must differ`);
+      v.differ.forEach((d, k) => {
+        assert.equal(got[k], d.canonical, `${v.id} ${d.member}`);
+        assert.equal(crypto.createHash('sha256').update(Buffer.from(got[k], 'utf8')).digest('hex'), d.sha256);
+      });
+    }
+  });
+
   it('the recorded cross-check with verify.py is consistent with the vectors it names', () => {
     const cc = doc.cross_check;
     assert.equal(cc.of, doc.vectors.length);

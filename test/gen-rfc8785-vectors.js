@@ -29,11 +29,28 @@ const cases = [
   ['empty containers nested', '{"o":{},"a":[],"n":[{},[]]}'],
   ['whitespace-free output from spaced input', ' {\n  "b" : 1 ,\n  "a" : [ 1 , 2 , { "y" : 2 , "x" : 1 } ]\n} '],
   ['top-level array of mixed values', '[3,"x",true,null,{"b":1,"a":2},[],-0,1e21]'],
+  // 1.1.7: pairs. `differ` names two members of the input whose canonical strings MUST differ; `label` says why.
+  ['NFC / NFD: the same visible "café", different code points (U+00E9 vs U+0065 U+0301)',
+    '{"nfc":"caf\\u00e9","nfd":"cafe\\u0301"}',
+    { label: 'differ: no Unicode normalization (canonicalization is code-point exact)', differ: ['nfc', 'nfd'] }],
+  ['_meta / annotations churn under the full-object scope: the same tool, only _meta and annotations changed',
+    '{"before":{"name":"read_invoice","description":"Read an invoice.","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":true},"_meta":{"ui":{"resourceUri":"ui://invoices/view"}}},'
+    + '"after":{"name":"read_invoice","description":"Read an invoice.","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":false},"_meta":{"ui":{"resourceUri":"ui://invoices/view-v2"}}}}',
+    { label: 'differ: a full-object digest covers _meta and annotations, so the digest changes', differ: ['before', 'after'] }],
 ];
-const vectors = cases.map(([name, input_json], i) => {
-  const canonical = canonicalJson(JSON.parse(input_json));
-  return { id: `RFC8785-${String(i + 1).padStart(2, '0')}`, name, input_json, canonical,
-    sha256: crypto.createHash('sha256').update(Buffer.from(canonical, 'utf8')).digest('hex') };
+const sha = (s) => crypto.createHash('sha256').update(Buffer.from(s, 'utf8')).digest('hex');
+const vectors = cases.map(([name, input_json, pair], i) => {
+  const input = JSON.parse(input_json);
+  const canonical = canonicalJson(input);
+  const out = { id: `RFC8785-${String(i + 1).padStart(2, '0')}`, name, input_json, canonical, sha256: sha(canonical) };
+  if (pair) {
+    const [a, b] = pair.differ;
+    const members = { [a]: canonicalJson(input[a]), [b]: canonicalJson(input[b]) };
+    if (members[a] === members[b]) throw new Error(`${out.id}: the pair does not differ`);
+    out.label = pair.label;
+    out.differ = pair.differ.map((m) => ({ member: m, canonical: members[m], sha256: sha(members[m]) }));
+  }
+  return out;
 });
 const PY = `import json, sys, importlib.util
 spec = importlib.util.spec_from_file_location("verify", "verify.py"); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)

@@ -591,7 +591,15 @@ this repository's canonicalizer (`verify.js` `canonicalJson`) by `test/gen-rfc87
 copied from an external source. The file records a cross-check against the second implementation in this
 tree, `verify.py` `canonical_json`: since 1.1.6 it agrees on 16 of 16 (`cross_check`, recomputed by the
 generator on every run). `test/rfc8785-vectors.test.js` checks every vector against `verify.js`, and
-`test/test_rfc8785_vectors.py` against `verify.py`.
+`test/test_rfc8785_vectors.py` against `verify.py`. Since 1.1.7 there are 18: `RFC8785-17` (the same
+visible "café" in NFC and NFD; they canonicalize differently because there is no Unicode normalization)
+and `RFC8785-18` (a tool whose `_meta` and `annotations` changed; under a full-object scope the digest
+changes). Each carries a `label` and the two `differ` members' canonical strings.
+
+**Lone surrogates.** `canonicalJson` does not reject an unpaired UTF-16 surrogate: it passes it through
+and writes it escaped as `\udxxx` (lowercase), as `JSON.stringify` does, and `verify.py` does the same.
+`parseJsonStrict` is the rejecting entry point: it refuses a lone surrogate (`lone_surrogate`), a
+duplicate member name (`duplicate_key`) and a non-finite number (`non_finite`); RECEIPT_FORMAT §2.2.
 
 ## Tests
 

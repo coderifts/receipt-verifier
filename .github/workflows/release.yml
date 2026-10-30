@@ -71,11 +71,14 @@ jobs:
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # 2026-10-29: 18 x 10 s was too short — 1.1.6 published and this step failed the job while the registry
+      # was still listing it. 30 x 20 s (up to 10 min). It succeeds as soon as `npm view <pkg>@<version> version`
+      # prints the version; it is the job's last step, so nothing after it can be skipped.
       - name: the published version answers
         run: |
-          for i in $(seq 1 18); do
+          for i in $(seq 1 30); do
             v="$(npm view --prefer-online "@coderifts/receipt-verifier@${GITHUB_REF_NAME#v}" version 2>/dev/null || true)"
-            [ "$v" = "${GITHUB_REF_NAME#v}" ] && { echo "npm has $v"; exit 0; }
-            sleep 10
+            [ "$v" = "${GITHUB_REF_NAME#v}" ] && { echo "npm has $v (attempt $i)"; exit 0; }
+            sleep 20
           done
           echo "npm does not list ${GITHUB_REF_NAME#v} yet"; exit 1

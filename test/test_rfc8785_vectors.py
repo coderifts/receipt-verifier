@@ -20,7 +20,7 @@ with open(os.path.join(HERE, "vectors", "rfc8785.json"), encoding="utf-8") as fh
 
 class TestRfc8785Vectors(unittest.TestCase):
     def test_all_vectors_present(self):
-        self.assertEqual(len(DOC["vectors"]), 16)
+        self.assertEqual(len(DOC["vectors"]), 18)
 
     def test_every_vector_canonical_and_sha256(self):
         for v in DOC["vectors"]:
@@ -31,7 +31,19 @@ class TestRfc8785Vectors(unittest.TestCase):
 
     def test_the_file_records_full_agreement(self):
         cc = DOC["cross_check"]
-        self.assertEqual((cc["agrees"], cc["of"], cc["differs"]), (16, 16, []))
+        self.assertEqual((cc["agrees"], cc["of"], cc["differs"]), (18, 18, []))
+
+    def test_labelled_pairs_differ(self):
+        # 1.1.7: RFC8785-17 (NFC vs NFD: no normalization) and RFC8785-18 (_meta / annotations churn).
+        pairs = [v for v in DOC["vectors"] if v.get("differ")]
+        self.assertEqual([v["id"] for v in pairs], ["RFC8785-17", "RFC8785-18"])
+        for v in pairs:
+            data = json.loads(v["input_json"])
+            got = [canonical_json(data[d["member"]]) for d in v["differ"]]
+            self.assertNotEqual(got[0], got[1], v["id"])
+            for d, g in zip(v["differ"], got):
+                self.assertEqual(g, d["canonical"])
+                self.assertEqual(hashlib.sha256(g.encode("utf-8")).hexdigest(), d["sha256"])
 
     def test_number_forms(self):
         cases = [(1e21, "1e+21"), (1e20, "100000000000000000000"), (1e-7, "1e-7"), (1e-6, "0.000001"),

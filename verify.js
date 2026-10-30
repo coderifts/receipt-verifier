@@ -95,6 +95,122 @@ function canonicalJson(value) {
 }
 
 /**
+ * 1.1.7 — strict JSON parse: RFC 8259 text, with the three inputs two parsers can read differently
+ * REJECTED, not given one reading (RECEIPT_FORMAT §2.2; purysho/mcp-digest-vectors SPEC §2 rejects them too):
+ *   duplicate_key   an object, at any depth, has two members with the same name after unescaping
+ *                   (JSON.parse keeps the last one: a pin over a duplicate "description" pins whichever came last)
+ *   lone_surrogate  a string holds an unpaired UTF-16 surrogate (JSON.parse passes it through;
+ *                   canonicalJson then writes it as \udxxx)
+ *   non_finite      a number is not finite as binary64 (1e400; JSON.parse gives Infinity)
+ *   invalid_json    anything else that is not one JSON text (NaN, comments, trailing commas, …)
+ * Throws a SyntaxError with .code and .pointer (RFC 6901). On valid input it returns what JSON.parse
+ * returns. A separate function: canonicalJson and every existing caller are unchanged.
+ */
+function parseJsonStrict(text) {
+  const src = String(text);
+  let i = 0;
+  const fail = (code, pointer, detail) => {
+    const e = new SyntaxError(`${code}${pointer != null ? ` at ${pointer === '' ? '(root)' : pointer}` : ''}${detail ? `: ${detail}` : ''}`);
+    e.code = code;
+    e.pointer = pointer;
+    throw e;
+  };
+  const ptr = (base, token) => `${base}/${String(token).replace(/~/g, '~0').replace(/\//g, '~1')}`;
+  const ws = () => { while (i < src.length && (src[i] === ' ' || src[i] === '\t' || src[i] === '\n' || src[i] === '\r')) i += 1; };
+  const expect = (ch, at) => { if (src[i] !== ch) fail('invalid_json', at, `expected '${ch}' at offset ${i}`); i += 1; };
+
+  function str(at) {
+    expect('"', at);
+    let out = '';
+    for (;;) {
+      if (i >= src.length) fail('invalid_json', at, 'unterminated string');
+      const c = src[i];
+      if (c === '"') { i += 1; break; }
+      if (c === '\\') {
+        const e = src[i + 1];
+        const simple = { '"': '"', '\\': '\\', '/': '/', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t' };
+        if (e in simple) { out += simple[e]; i += 2; continue; }
+        if (e === 'u' && /^[0-9a-fA-F]{4}$/.test(src.slice(i + 2, i + 6))) { out += String.fromCharCode(parseInt(src.slice(i + 2, i + 6), 16)); i += 6; continue; }
+        fail('invalid_json', at, `bad escape at offset ${i}`);
+      }
+      if (c.charCodeAt(0) < 0x20) fail('invalid_json', at, `control character in string at offset ${i}`);
+      out += c;
+      i += 1;
+    }
+    for (let k = 0; k < out.length; k += 1) {
+      const u = out.charCodeAt(k);
+      if (u >= 0xD800 && u <= 0xDBFF) {
+        const next = out.charCodeAt(k + 1);
+        if (next >= 0xDC00 && next <= 0xDFFF) { k += 1; continue; }
+        fail('lone_surrogate', at, `unpaired \\u${u.toString(16)}`);
+      }
+      if (u >= 0xDC00 && u <= 0xDFFF) fail('lone_surrogate', at, `unpaired \\u${u.toString(16)}`);
+    }
+    return out;
+  }
+
+  function num(at) {
+    const m = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(src.slice(i));
+    if (!m) fail('invalid_json', at, `unexpected '${src[i] === undefined ? 'end of input' : src[i]}' at offset ${i}`);
+    i += m[0].length;
+    const n = Number(m[0]);
+    if (!Number.isFinite(n)) fail('non_finite', at, m[0]);
+    return n;
+  }
+
+  function value(at) {
+    ws();
+    const c = src[i];
+    let v;
+    if (c === '{') {
+      i += 1;
+      v = {};
+      const seen = new Set();
+      ws();
+      if (src[i] === '}') { i += 1; return v; }
+      for (;;) {
+        ws();
+        const key = str(at);
+        const here = ptr(at, key);
+        if (seen.has(key)) fail('duplicate_key', here);
+        seen.add(key);
+        ws();
+        expect(':', here);
+        const member = value(here);
+        // JSON.parse makes "__proto__" an own data property; so does this.
+        Object.defineProperty(v, key, { value: member, writable: true, enumerable: true, configurable: true });
+        ws();
+        if (src[i] === ',') { i += 1; continue; }
+        expect('}', at);
+        break;
+      }
+    } else if (c === '[') {
+      i += 1;
+      v = [];
+      ws();
+      if (src[i] === ']') { i += 1; return v; }
+      for (;;) {
+        v.push(value(ptr(at, v.length)));
+        ws();
+        if (src[i] === ',') { i += 1; continue; }
+        expect(']', at);
+        break;
+      }
+    } else if (c === '"') {
+      v = str(at);
+    } else if (src.startsWith('true', i)) { i += 4; v = true; } else if (src.startsWith('false', i)) { i += 5; v = false; } else if (src.startsWith('null', i)) { i += 4; v = null; } else {
+      v = num(at);
+    }
+    return v;
+  }
+
+  const result = value('');
+  ws();
+  if (i !== src.length) fail('invalid_json', '', `unexpected data at offset ${i}`);
+  return result;
+}
+
+/**
  * Reconstruct the exact signed bytes from a parsed receipt body.
  *   v1 (v absent or 1): the base string.
  *   v2 (v === 2):       base + '|' + reg.
@@ -661,6 +777,7 @@ module.exports = {
   resolveEntry,
   reconstructSignedInput,
   canonicalJson,
+  parseJsonStrict,
   loadKeyring,
   keyFromPem,
   keyringFromDocument,
