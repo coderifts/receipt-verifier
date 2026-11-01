@@ -240,9 +240,11 @@ not reach.
 
 ## Verifying an execution grant
 
-A `cr.exec.v1` grant is the short-lived, mutation-bound sibling of a chain
+A `cr.exec.v1` / `cr.exec.v2` grant is the short-lived, mutation-bound sibling of a chain
 receipt. This repo ships `verify-grant.js` / `verify_grant.py` as the public,
-dependency-light verifiers (same CLI feel as `verify.js` / `verify.py`).
+dependency-light verifiers (same CLI feel as `verify.js` / `verify.py`), and the npm bin runs the
+same check as `coderifts-receipt-verifier grant <token>`. A grant passed to the receipt command is a
+usage error (exit 2) that names `grant`.
 
 **What `GRANT_CURRENT` proves / does not prove** (from
 `coderifts-app/docs/cr-exec-v1.md`):
@@ -262,8 +264,35 @@ dependency-light verifiers (same CLI feel as `verify.js` / `verify.py`).
   is required. Default TTL is 300s.
 - Retired `kid` → `UNKNOWN_KEY`. Grants are live execution permission;
   receipts may forensically verify a retired key, grants must not.
+- **Checked, and only presence-checked.** `policy_hash`, `nonce_hash` and
+  `expected_state_token` must be present; nothing compares them, so a grant
+  minted for another policy, nonce or state verifies here. `max_attempts` is
+  not enforced: a stateless verifier cannot count uses, so the executor must
+  keep its own record of used grants (RECEIPT_FORMAT §10.5).
+- **Key status and parsing.** A keyring entry with a `revoked_at` is refused at
+  every instant, whatever its `status` (`UNKNOWN_KEY` / `revoked_kid`). An
+  unknown `status` is `unknown_key_status` on v1 and v2. A v2 body with a
+  duplicate member, a lone surrogate or a non-finite number is `MALFORMED` with
+  that code (RECEIPT_FORMAT §10.7).
+- **`environment`** (v2, optional, signed): compared only with
+  `--intended-environment`; then a different or absent value is
+  `GRANT_UNBOUND` / `environment_mismatch`.
+- **Keys.** With no `--key` / `--keys` the grant command uses the pinned
+  CodeRifts snapshot (`keys/coderifts-keys.json`), offline, and every verdict
+  says so: `keyring: pinned CodeRifts snapshot <sha256 first 12> — an
+  owner-signed grant needs --key or --keys`. A grant signed with your own key is
+  `UNKNOWN_KEY` against that snapshot. `--fetch [url]` is the opt-in network path.
+- **`--as-of <ISO>`** asks whether the grant was inside its window at that
+  instant: `GRANT_CURRENT_AT_AS_OF` / `GRANT_EXPIRED` (with `expired_now`) /
+  `GRANT_NOT_YET_VALID_AT_AS_OF`. `valid` stays `false` (it is not permission
+  to execute now); exit `0` iff `valid_at_as_of`. An instant in the future is
+  exit 2. A revoked key fails at every instant (RECEIPT_FORMAT §10.6). JS only.
 
 ```
+# The npm bin. An owner-signed grant: pin the owner's key.
+npx @coderifts/receipt-verifier grant "$GRANT" --key owner-pub.pem \
+  --intended-executor "$EXEC" --intended-target "$TARGET" --intended-environment production
+
 # Node (zero deps). --keys is the registry; --key pins a PEM like verify.js.
 node verify-grant.js "$GRANT" --keys https://app.coderifts.com/.well-known/coderifts-keys.json \
   --intended-operation merge --intended-target "$TARGET" --intended-audience "$AUD" \
@@ -275,8 +304,9 @@ python3 verify_grant.py "$GRANT" --keys https://app.coderifts.com/.well-known/co
   --intended-after-file after.txt --receipt "$RECEIPT"
 ```
 
-Exit `0` iff `status` is `GRANT_CURRENT`. JSON on stdout matches across JS and
-Python (`valid`, `status`, `reason?`, decoded `payload`).
+Exit `0` iff `status` is `GRANT_CURRENT` (with `--as-of`: iff `valid_at_as_of`). JSON on stdout
+matches across JS and Python (`valid`, `status`, `reason?`, decoded `payload`, `verified_with` on a
+current grant, `keyring` with the pinned snapshot); `--as-of` is JS only.
 
 ## Verifying an execution attestation
 
@@ -554,6 +584,13 @@ A valid receipt verdict carries `verified_with`: `{ kid, key_sha256, keyring_sou
 `PUBLIC KEY` PEM); `keyring_source` is `file` (`--keys <file>`, `--key <file>`), `url`
 (`--keys <url>`, `--fetch`, `--refresh-keys`) or `pinned-snapshot` (no flag: the
 vendored `keys/coderifts-keys.json`). JS and Python print the same bytes.
+
+1.1.7: with the pinned snapshot, `verified_with` also carries `keyring_snapshot_sha256`, the
+first 12 hex of the snapshot file's sha256, and the CLI writes one line under the verdict on
+stderr (not with `--json`): `verified with kid … · key sha256 …… · keyring: pinned snapshot
+<12 hex> (the snapshot file carries no date)`. The snapshot file has no date field of its own
+(its only key is `keys`), so none is printed. The verdict is unchanged. A verified grant carries
+the same `verified_with`.
 
 Only an Ed25519 key verifies a receipt. The algorithm is read from the PEM's SPKI
 AlgorithmIdentifier, and a registry entry that declares an `alg` other than Ed25519 is

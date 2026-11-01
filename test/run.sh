@@ -384,6 +384,8 @@ else
     after="$(node -e "const f=require('./$GRANT_VECTORS').vectors[$i].flags||{}; process.stdout.write(f.after_payload==null?'':String(f.after_payload))")"
     execid="$(node -e "const f=require('./$GRANT_VECTORS').vectors[$i].flags||{}; process.stdout.write(f['intended-executor']||'')")"
     adp="$(node -e "const f=require('./$GRANT_VECTORS').vectors[$i].flags||{}; process.stdout.write(f['intended-adapter']||'')")"
+    envn="$(node -e "const f=require('./$GRANT_VECTORS').vectors[$i].flags||{}; process.stdout.write(f['intended-environment']||'')")"
+    [ -n "$envn" ] && extra+=(--intended-environment "$envn")
     [ -n "$op" ] && extra+=(--intended-operation "$op")
     [ -n "$tgt" ] && extra+=(--intended-target "$tgt")
     [ -n "$aud" ] && extra+=(--intended-audience "$aud")

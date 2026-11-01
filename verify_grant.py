@@ -13,10 +13,12 @@ Usage:
 Key discovery: --keys resolves by kid from a registry
   ({keys: [{kid, public_key_pem, status, valid_from, retired_at}]}).
 --key pins a single SPKI PEM. --key and --keys are mutually exclusive.
-With neither, the public key is fetched from
-  https://app.coderifts.com/api/v1/attestation/public-key  (override --fetch).
+With neither (1.1.7), the pinned snapshot keys/coderifts-keys.json, offline; --fetch [url] is the
+opt-in network path (default https://app.coderifts.com/api/v1/attestation/public-key).
+--intended-environment and --json as in verify-grant.js; --as-of is JS only (exit 2 here).
 
-Output: JSON { valid, status, reason?, payload? } to stdout — byte-identical to verify-grant.js.
+Output: JSON { valid, status, reason?, payload?, verified_with?, keyring? } to stdout — byte-identical
+to verify-grant.js.
 Exit codes: 0 GRANT_CURRENT, 1 otherwise, 2 usage error.
 
 Retired kid → UNKNOWN_KEY. Grants are live execution permission; receipts may
@@ -24,6 +26,7 @@ forensically verify a retired key inside [valid_from, retired_at), grants must n
 (see coderifts-app/docs/cr-exec-v1.md).
 """
 
+import hashlib
 import json
 import sys
 
@@ -39,6 +42,7 @@ from verify import (
     key_from_pem,
     load_keyring,
     sha256hex,
+    VENDORED_KEYS_PATH,
 )
 
 GRANT_VERSION = "cr.exec.v1"
@@ -57,6 +61,8 @@ V2_REQUIRED_STRINGS = [
 # Admitted, and read as NOTHING. Twin of verify-grant.js V2_RESERVED_INERT.
 # applied_policy_hash is 1942 verifier-admits: not a gate, not compared, not required.
 V2_RESERVED_INERT = ("call_hash", "executor_image_digest", "applied_policy_hash")
+# 1.1.7: optional, signed, and CHECKED when an intended environment is stated (verify-grant.js twin).
+V2_OPTIONAL_SIGNED_STRINGS = ("environment",)
 TARGET_SCHEMES = ("fs", "git", "api", "db", "registry", "deploy")
 DEFAULT_FETCH_URL = "https://app.coderifts.com/api/v1/attestation/public-key"
 
@@ -64,7 +70,8 @@ USAGE = (
     "usage: python3 verify_grant.py <grant> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>]\n"
     "                             [--intended-operation X] [--intended-target Y] [--intended-audience Z]\n"
     "                             [--intended-after-file PATH | --intended-scope-hash sha256:…]\n"
-    "                             [--receipt <token>]\n"
+    "                             [--intended-executor E] [--intended-adapter A] [--intended-environment ENV]\n"
+    "                             [--receipt <token>] [--json]\n"
 )
 
 
@@ -145,6 +152,10 @@ def receipt_digest(token):
     return "sha256:" + sha256hex(str(token))
 
 
+def _has_revoked_at(entry):
+    return isinstance(entry.get("revoked_at"), str) and len(entry["revoked_at"]) > 0
+
+
 def resolve_entry(ctx, payload):
     kid = payload.get("kid")
     if ctx.get("keyring") is not None:
@@ -157,6 +168,71 @@ def resolve_entry(ctx, payload):
     if ctx.get("expected_kid") is not None and kid != ctx["expected_kid"]:
         return None
     return {"public_key": ctx["public_key"], "status": None, "retired_at": None}
+
+
+def _utf8_like_node(text):
+    """Buffer.from(text, 'utf8'): a lone surrogate becomes U+FFFD. Python's strict encode raised instead, so a
+    v1 body with an escaped lone surrogate crashed this verifier with no verdict (measured, addendum 1.1.7)."""
+    import re
+
+    return re.sub("[\ud800-\udfff]", "\ufffd", text).encode("utf-8")
+
+
+def _reject_constant(name):
+    raise ValueError("not JSON: " + name)
+
+
+class _NonFinite(ValueError):
+    pass
+
+
+def _strict_check(text):
+    """The verify.js parseJsonStrict codes this verifier can see, for a text json.loads already accepted:
+    (code | None, duplicate top-level "v"). duplicate_key: two members with one name at any depth;
+    lone_surrogate: an unpaired surrogate in a key or string; non_finite: a number that is not finite as
+    binary64 (1e400, or an integer JS reads as Infinity)."""
+    state = {"dup": False, "top_dup_v": set()}
+
+    def hook(pairs):
+        keys = [k for k, _ in pairs]
+        obj = dict(pairs)
+        if len(set(keys)) != len(keys):
+            state["dup"] = True
+            if keys.count("v") > 1:
+                state["top_dup_v"].add(id(obj))
+        return obj
+
+    def finite(s):
+        if float(s) in (float("inf"), float("-inf")):
+            raise _NonFinite(s)
+        return float(s)
+
+    def finite_int(s):
+        if float(s) in (float("inf"), float("-inf")):
+            raise _NonFinite(s)
+        return int(s)
+
+    try:
+        root = json.loads(text, object_pairs_hook=hook, parse_float=finite, parse_int=finite_int,
+                          parse_constant=_reject_constant)
+    except _NonFinite:
+        return "non_finite", False
+    except ValueError:
+        return "invalid_json", False
+    dup_v = isinstance(root, dict) and id(root) in state["top_dup_v"]
+    if state["dup"]:
+        return "duplicate_key", dup_v
+    stack = [root]
+    while stack:
+        x = stack.pop()
+        if isinstance(x, dict):
+            stack.extend(x.keys())
+            stack.extend(x.values())
+        elif isinstance(x, list):
+            stack.extend(x)
+        elif isinstance(x, str) and any("\ud800" <= ch <= "\udfff" for ch in x):
+            return "lone_surrogate", False
+    return None, False
 
 
 def _parse_iso_ms(ts):
@@ -178,18 +254,27 @@ def _verify_execution_grant_v2(payload, sig_b64, ctx, opts):
         return {"valid": False, "status": "MALFORMED", "reason": "bad_max_attempts", "payload": payload}
     # The reserved names are ADMITTED, never inspected. A payload carrying them is graded
     # identically to one that does not — including applied_policy_hash (1942, inert).
-    allowed = set(V2_REQUIRED_STRINGS + ["max_attempts"] + list(V2_RESERVED_INERT))
+    allowed = set(V2_REQUIRED_STRINGS + ["max_attempts"] + list(V2_RESERVED_INERT) + list(V2_OPTIONAL_SIGNED_STRINGS))
     for k in payload.keys():
         if k not in allowed:
             return {"valid": False, "status": "MALFORMED", "reason": "unknown_field", "payload": payload}
+    if "environment" in payload and (not isinstance(payload["environment"], str) or len(payload["environment"]) == 0):
+        return {"valid": False, "status": "MALFORMED", "reason": "bad_environment", "payload": payload}
     if canonicalize_target_uri(payload.get("target_uri")) is None:
         return {"valid": False, "status": "MALFORMED", "reason": "bad_target_uri", "payload": payload}
 
     entry = resolve_entry(ctx, payload)
     if entry is None:
         return {"valid": False, "status": "UNKNOWN_KEY", "reason": "unknown_kid", "payload": payload}
+    # 1.1.7: MEASURED — the revoked check was missing, so a v2 grant under a revoked key was GRANT_CURRENT
+    # here while verify-grant.js said UNKNOWN_KEY / revoked_kid. Addendum: a revoked_at refuses whatever the
+    # status says, before the retired rule; an unknown status fails closed as on v1.
+    if entry.get("status") == "revoked" or _has_revoked_at(entry):
+        return {"valid": False, "status": "UNKNOWN_KEY", "reason": "revoked_kid", "payload": payload}
     if entry.get("status") == "retired":
         return {"valid": False, "status": "UNKNOWN_KEY", "reason": "retired_kid", "payload": payload}
+    if entry.get("status") is not None and entry.get("status") != "active":
+        return {"valid": False, "status": "UNKNOWN_KEY", "reason": "unknown_key_status", "payload": payload}
 
     message = signing_input_v2(payload).encode("utf-8")
     try:
@@ -233,6 +318,8 @@ def _verify_execution_grant_v2(payload, sig_b64, ctx, opts):
             return {"valid": False, "status": "GRANT_UNBOUND", "reason": "after_payload_mismatch", "payload": payload}
     if intended.get("operation") and payload.get("operation") != str(intended["operation"]):
         return {"valid": False, "status": "GRANT_UNBOUND", "reason": "operation_mismatch", "payload": payload}
+    if intended.get("environment") and payload.get("environment") != str(intended["environment"]):
+        return {"valid": False, "status": "GRANT_UNBOUND", "reason": "environment_mismatch", "payload": payload}
     if intended.get("receipt_token"):
         if sha256pref(intended["receipt_token"]) != payload.get("receipt_hash"):
             return {"valid": False, "status": "GRANT_UNBOUND", "reason": "receipt_hash_mismatch", "payload": payload}
@@ -255,13 +342,19 @@ def _verify_execution_grant(token, ctx, opts=None):
     if len(segments) != 2 or any(len(s) == 0 for s in segments):
         return {"valid": False, "status": "MALFORMED", "reason": "malformed_structure"}
 
-    # 2. json
+    # 2. json — NaN / Infinity / -Infinity literals are bad_json, as JSON.parse rejects them (addendum 1.1.7;
+    # Python's json accepted them, so this verifier graded a body the JS one called bad_json).
     try:
-        payload = json.loads(b64url_decode(segments[0]).decode("utf-8"))
+        text = b64url_decode(segments[0]).decode("utf-8")
+        payload = json.loads(text, parse_constant=_reject_constant)
     except Exception:
         return {"valid": False, "status": "MALFORMED", "reason": "bad_json"}
     if not isinstance(payload, dict):
         return {"valid": False, "status": "MALFORMED", "reason": "bad_json"}
+    # Addendum 1.1.7: the strict rule for the v2 body (verify-grant.js, RECEIPT_FORMAT §2.2). No payload echoed.
+    strict_code, dup_v = _strict_check(text)
+    if strict_code and (payload.get("v") == GRANT_VERSION_V2 or dup_v):
+        return {"valid": False, "status": "MALFORMED", "reason": strict_code}
     if payload.get("v") == GRANT_VERSION_V2:
         return _verify_execution_grant_v2(payload, segments[1], ctx, opts)
     if payload.get("v") != GRANT_VERSION:
@@ -285,6 +378,9 @@ def _verify_execution_grant(token, ctx, opts=None):
     entry = resolve_entry(ctx, payload)
     if entry is None:
         return {"valid": False, "status": "UNKNOWN_KEY", "reason": "unknown_kid", "payload": payload}
+    # Addendum 1.1.7: a revoked_at refuses whatever the status says (status "revoked" keeps the rule below).
+    if entry.get("status") != "revoked" and _has_revoked_at(entry):
+        return {"valid": False, "status": "UNKNOWN_KEY", "reason": "revoked_kid", "payload": payload}
     if entry.get("status") == "retired":
         return {"valid": False, "status": "UNKNOWN_KEY", "reason": "retired_kid", "payload": payload}
 
@@ -320,7 +416,7 @@ def _verify_execution_grant(token, ctx, opts=None):
         return {"valid": False, "status": "UNKNOWN_KEY", "reason": "unknown_key_status", "payload": payload}
 
     # 5. Ed25519 over crexec.v1|… pipe input
-    message = reconstruct_signed_input(payload).encode("utf-8")
+    message = _utf8_like_node(reconstruct_signed_input(payload))
     try:
         sig = b64url_decode(segments[1])
     except Exception:
@@ -375,6 +471,9 @@ def _verify_execution_grant(token, ctx, opts=None):
         return {"valid": False, "status": "GRANT_SCOPE_MISMATCH", "reason": "scope_hash_mismatch", "payload": payload}
 
     # 10.
+    # 1.1.7: v1 has no environment field, so a stated intended environment cannot be met.
+    if intended.get("environment"):
+        return {"valid": False, "status": "GRANT_UNBOUND", "reason": "environment_mismatch", "payload": payload}
     return {"valid": True, "status": "GRANT_CURRENT", "payload": payload}
 
 
@@ -395,6 +494,9 @@ def parse_args(argv):
         "intended_audience": None,
         "intended_executor": None,
         "intended_adapter": None,
+        "intended_environment": None,
+        "fetch": False,
+        "json": False,
         "intended_after_file": None,
         "intended_scope_hash": None,
         "receipt": None,
@@ -413,8 +515,17 @@ def parse_args(argv):
             i += 1
             opts["kid"] = argv[i] if i < len(argv) else None
         elif a == "--fetch":
+            # 1.1.7: --fetch [url] — the opt-in network path; without a URL, the default endpoint.
+            opts["fetch"] = True
+            nxt = argv[i + 1] if i + 1 < len(argv) else ""
+            if nxt.lower().startswith(("http://", "https://")):
+                i += 1
+                opts["fetch_url"] = nxt
+        elif a == "--intended-environment":
             i += 1
-            opts["fetch_url"] = argv[i] if i < len(argv) else None
+            opts["intended_environment"] = argv[i] if i < len(argv) else None
+        elif a == "--json":
+            opts["json"] = True
         elif a == "--intended-operation":
             i += 1
             opts["intended_operation"] = argv[i] if i < len(argv) else None
@@ -450,6 +561,8 @@ def parse_args(argv):
         i += 1
     if opts["key_file"] and opts["keys_source"]:
         raise ValueError("--key and --keys are mutually exclusive")
+    if opts["fetch"] and (opts["key_file"] or opts["keys_source"]):
+        raise ValueError("--fetch is mutually exclusive with --key and --keys")
     if opts["intended_after_file"] and opts["intended_scope_hash"]:
         raise ValueError("--intended-after-file and --intended-scope-hash are mutually exclusive")
     return opts
@@ -466,16 +579,26 @@ def main():
     if not opts["grant"] or not str(opts["grant"]).strip():
         fail("no grant provided")
 
+    # 1.1.7: no --key / --keys / --fetch → the pinned snapshot, offline (verify-grant.js main).
+    snapshot = None
     try:
         if opts["keys_source"]:
             ctx = {"keyring": load_keyring(opts["keys_source"]), "expected_kid": opts["kid"]}
+            keyring_source = "url" if opts["keys_source"].lower().startswith(("http://", "https://")) else "file"
         elif opts["key_file"]:
             with open(opts["key_file"], "r", encoding="utf-8") as fh:
                 public_key = key_from_pem(fh.read())
             ctx = {"public_key": public_key, "expected_kid": opts["kid"]}
-        else:
+            keyring_source = "file"
+        elif opts["fetch"]:
             public_key, discovered_kid = fetch_key_info(opts["fetch_url"] or DEFAULT_FETCH_URL)
             ctx = {"public_key": public_key, "expected_kid": opts["kid"] or discovered_kid}
+            keyring_source = "url"
+        else:
+            ctx = {"keyring": load_keyring(VENDORED_KEYS_PATH), "expected_kid": opts["kid"]}
+            keyring_source = "pinned-snapshot"
+            with open(VENDORED_KEYS_PATH, "rb") as fh:
+                snapshot = hashlib.sha256(fh.read()).hexdigest()[:12]
     except Exception as e:
         fail("could not load public key: " + str(e))
 
@@ -491,6 +614,8 @@ def main():
         intended["executor_id"] = opts["intended_executor"]
     if opts["intended_adapter"] is not None:
         intended["adapter_id"] = opts["intended_adapter"]
+    if opts["intended_environment"] is not None:
+        intended["environment"] = opts["intended_environment"]
     if opts["intended_scope_hash"] is not None:
         intended["scope_hash"] = opts["intended_scope_hash"]
     if opts["receipt"] is not None:
@@ -502,9 +627,43 @@ def main():
         except Exception as e:
             fail("could not read --intended-after-file: " + str(e))
 
-    result = _verify_execution_grant(opts["grant"], ctx, {"intended": intended})
-    sys.stdout.write(json.dumps(result, separators=(",", ":")) + "\n")
+    result = dict(_verify_execution_grant(opts["grant"], ctx, {"intended": intended}))
+    if result.get("valid") and isinstance(result.get("payload"), dict):
+        kid = result["payload"].get("kid")
+        entry = ctx["keyring"].get(kid) if ctx.get("keyring") is not None else None
+        pub = entry["public_key"] if entry else ctx["public_key"]
+        verified_with = {"kid": kid, "key_sha256": _key_sha256(pub), "keyring_source": keyring_source}
+        if snapshot:
+            verified_with["keyring_snapshot_sha256"] = snapshot
+        result["verified_with"] = verified_with
+    if snapshot:
+        result["keyring"] = KEYRING_LINE % snapshot
+    sys.stdout.flush()
+    sys.stdout.buffer.write((dumps_like_js(result) + "\n").encode("utf-8"))
+    sys.stdout.flush()
+    if snapshot and not opts["json"]:
+        sys.stderr.write("keyring: " + (KEYRING_LINE % snapshot) + " (the snapshot file carries no date)\n")
     sys.exit(0 if result["valid"] else 1)
+
+
+def dumps_like_js(value):
+    """JSON.stringify's bytes: non-ASCII raw (the keyring line's em dash), a LONE surrogate escaped as
+    \\udxxx (lowercase), as JSON.stringify writes it. MEASURED (addendum): 10l's ensure_ascii=False wrote
+    the raw surrogate and the UTF-8 encode raised — a crash with no verdict, where HEAD had escaped it."""
+    import re
+
+    text = json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+    return re.sub("[\ud800-\udfff]", lambda m: "\\u%04x" % ord(m.group()), text)
+
+
+KEYRING_LINE = "pinned CodeRifts snapshot %s \u2014 an owner-signed grant needs --key or --keys"
+
+
+def _key_sha256(public_key):
+    """sha256 of the SPKI DER (verify-grant.js keySha256)."""
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    return hashlib.sha256(public_key.public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)).hexdigest()
 
 
 if __name__ == "__main__":

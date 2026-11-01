@@ -154,12 +154,16 @@ function issueGrantV2(over, signer) {
     not_before: IAT,
     expires_at: over.exp || EXP_FUTURE,
     max_attempts: 1,
+    // 1.1.7: optional and signed; omitted when absent, as the app issuer does.
+    ...(over.environment ? { environment: over.environment } : {}),
   };
   const sig = crypto.sign(null, Buffer.from(signingInputV2(body), 'utf8'), signer);
   return `${b64url(Buffer.from(JSON.stringify(body), 'utf8'))}.${b64url(sig)}`;
 }
 
 const validV2 = issueGrantV2({}, privateKey);
+const ENV = 'production';
+const envV2 = issueGrantV2({ grant_id: '00000000-0000-4000-8000-0000000000e7', environment: ENV }, privateKey);
 
 /**
  * 1109 GRANT-SWAP — two concurrent operations, each with its own v2 grant.
@@ -409,6 +413,36 @@ const out = {
         receipt: RECEIPT,
       },
       expected: { valid: true, status: 'GRANT_CURRENT' },
+    },
+    /*
+     * 1.1.7 — `environment`, an optional signed v2 field the app issuer adds when the decision names one.
+     * MEASURED before: MALFORMED / unknown_field in this verifier (and in the app's own v2 verifier).
+     */
+    {
+      name: 'EG2-ENVIRONMENT',
+      token: envV2,
+      flags: {
+        'intended-operation': OP,
+        'intended-target': URI,
+        'intended-audience': AUD,
+        'intended-executor': EXEC,
+        'intended-adapter': ADAPTER,
+        'intended-environment': ENV,
+        after_payload: AFTER,
+        receipt: RECEIPT,
+      },
+      expected: { valid: true, status: 'GRANT_CURRENT' },
+    },
+    {
+      name: 'EG2-ENVIRONMENT-MISMATCH',
+      token: envV2,
+      flags: {
+        'intended-executor': EXEC,
+        'intended-adapter': ADAPTER,
+        'intended-target': URI,
+        'intended-environment': 'staging',
+      },
+      expected: { valid: false, status: 'GRANT_UNBOUND', reason: 'environment_mismatch' },
     },
   ],
 };

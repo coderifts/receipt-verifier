@@ -33,6 +33,15 @@
  * the moment to notice that the vendored copies are behind.
  *
  * Until then this test PINS the boundary, so nobody discovers it as a production refusal.
+ *
+ * ── 1.1.7 (2026-10-31): FLIPPED, AS ANNOUNCED ABOVE ─────────────────────────────────────────
+ *
+ * `environment` is now admitted BY NAME (verify-grant.js V2_OPTIONAL_SIGNED_STRINGS) and CHECKED
+ * when the caller states one (--intended-environment → GRANT_UNBOUND environment_mismatch). Every
+ * other unknown key is still unknown_field. Re-measured 2026-10-31: the app's authorize handler still
+ * does not pass `environment` to the issuer (coderifts-app src/change-set.js:2032-2067), and the app's
+ * own v2 verifier still refuses it (unknown_field) — both app-side, not changed here. The vendored
+ * copies (agent-guard, conformance, contract-gate) are now behind this file.
  */
 
 const { describe, it } = require('node:test');
@@ -92,14 +101,14 @@ describe('cr.exec.v2 — the unknown-field boundary', () => {
     assert.equal(r.valid, true, `${r.status}/${r.reason}`);
   });
 
-  it('THE BOUNDARY: a CORRECTLY SIGNED grant carrying `environment` is refused unknown_field', () => {
-    // Not a forgery: the signature verifies. It is refused for its VOCABULARY, which is the
-    // fail-closed answer to a field this verifier cannot interpret.
+  it('THE BOUNDARY (1.1.7): a CORRECTLY SIGNED grant carrying `environment` is accepted, and bound when asked', () => {
+    // Was: MALFORMED / unknown_field (pinned 2026-09-06). Now admitted by name and checked.
     const g = mint({ environment: 'production' });
     const r = verifyExecutionGrant(g.token, { ctx: g.ctx, now: g.now });
-    assert.equal(r.valid, false);
-    assert.equal(r.status, 'MALFORMED');
-    assert.equal(r.reason, 'unknown_field');
+    assert.equal(r.valid, true, `${r.status}/${r.reason}`);
+    assert.equal(r.status, 'GRANT_CURRENT');
+    const wrong = verifyExecutionGrant(g.token, { ctx: g.ctx, now: g.now, intended: { environment: 'staging' } });
+    assert.equal(wrong.reason, 'environment_mismatch');
   });
 
   it('the same is true of any other unknown key — the rule is general, not about `environment`', () => {

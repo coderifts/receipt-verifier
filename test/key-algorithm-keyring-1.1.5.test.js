@@ -62,6 +62,8 @@ describe('1.1.5 · the pinned keyring is the live registry (2026-10-25)', () => 
       kid: '2026-07-k1',
       key_sha256: derSha(pin.keys.find((k) => k.kid === '2026-07-k1').public_key_pem),
       keyring_source: 'pinned-snapshot',
+      // 1.1.7: which snapshot — the first 12 hex of the snapshot file's sha256 (cli.js verifiedWith).
+      keyring_snapshot_sha256: crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname, '..', 'keys', 'coderifts-keys.json'))).digest('hex').slice(0, 12),
     });
   });
   it('a receipt claiming 2026-10-k1 resolves to the active pinned key (a bad signature, not UNKNOWN_KEY)', () => {

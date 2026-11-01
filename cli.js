@@ -13,6 +13,7 @@
  * Usage:
  *   coderifts-receipt-verifier <receipt> [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]
  *   coderifts-receipt-verifier --chain receipts.txt [--key pub.pem | --keys <url|file>] [--kid <kid>] [--fetch <url>] [--refresh-keys]
+ *   coderifts-receipt-verifier grant <token> [--key pub.pem | --keys <file|url> | --fetch [url]] [--intended-* …] [--as-of <ISO>] [--json]
  *   (from a clone: `node cli.js …`)
  *
  * ── 1355-default: VENDORED KEYS ARE THE DEFAULT; THE NETWORK IS OPT-IN ──────────────────────
@@ -61,6 +62,26 @@ const {
 
 /** Pinned well-known snapshot shipped with the package. Default verify is offline against this file. */
 const VENDORED_KEYS_PATH = path.join(__dirname, 'keys', 'coderifts-keys.json');
+
+/**
+ * 1.1.7 (2026-10-31) — A GRANT IS NOT A RECEIPT. MEASURED: a cr.exec.v1/v2 grant passed here was read as
+ * a receipt and came back INVALID_SIGNATURE / signature_mismatch, which reads as forgery. The token is
+ * fine; it is the wrong command. Returns the grant version when the first segment decodes to a JSON
+ * object whose v is a grant version, else null. Nothing about the token is trusted beyond that label:
+ * the answer is a usage error naming `grant`, never a verdict.
+ */
+const GRANT_VERSIONS = Object.freeze(['cr.exec.v1', 'cr.exec.v2']);
+function grantVersionOf(token) {
+  if (typeof token !== 'string') return null;
+  const segs = token.trim().split('.');
+  if (segs.length !== 2) return null;
+  try {
+    const body = JSON.parse(Buffer.from(segs[0], 'base64url').toString('utf8'));
+    return body && typeof body === 'object' && GRANT_VERSIONS.includes(body.v) ? body.v : null;
+  } catch (_) {
+    return null;
+  }
+}
 
 /**
  * Fetch a key document. Accepts BOTH shapes:
@@ -224,7 +245,10 @@ const USAGE =
   '                   stderr and still exit 2 — this never silences a failure.\n' +
   '  --as-of <ISO>    audit mode: evaluate the receipt window at that instant instead of now\n' +
   '                   (e.g. 2026-10-29T13:00:00Z). Exit 0 when valid_at_as_of, 1 otherwise; an\n' +
-  '                   unparsable instant or one later than now + 30s is exit 2.\n';
+  '                   unparsable instant or one later than now + 30s is exit 2.\n' +
+  '       coderifts-receipt-verifier grant <token> [--key pub.pem | --keys <file|url> | --fetch [url]] [--kid <kid>]\n' +
+  '                                  [--intended-* …] [--as-of <ISO>] [--json]\n' +
+  '                   an execution grant (cr.exec.v1 / cr.exec.v2); `grant --help` lists the flags.\n';
 
 function fail(msg) {
   process.stderr.write(`${msg}\n${USAGE}`);
@@ -232,6 +256,10 @@ function fail(msg) {
 }
 
 async function main() {
+  // 1.1.7: `grant …` is verify-grant.js's command, under this bin's name.
+  if (process.argv[2] === 'grant') {
+    return require('./verify-grant.js').main(process.argv.slice(3), { prog: 'coderifts-receipt-verifier grant' });
+  }
   let opts;
   try {
     opts = parseArgs(process.argv.slice(2));
@@ -262,6 +290,12 @@ async function main() {
     } catch (e) {
       return fail(e.message);
     }
+  }
+
+  const grantV = grantVersionOf(opts.receipt);
+  if (grantV) {
+    return fail(`this token is an execution grant (${grantV}), not a receipt — verify it with: `
+      + 'coderifts-receipt-verifier grant <token> [--key pub.pem | --keys <file|url>]');
   }
 
   if (!opts.chainFile && (!opts.receipt || !String(opts.receipt).trim())) {
@@ -411,6 +445,11 @@ async function main() {
   // from. Additive, on a valid verdict only (no key verified an invalid one), receipt path only.
   if (!opts.chainFile && result.valid && result.payload) {
     result = { ...result, verified_with: verifiedWith(ctx, result.payload.kid, keyringSource, singleKeySha256) };
+    // 1.1.7: one human line under the verdict naming the snapshot; the verdict itself is unchanged.
+    if (keyringSource === 'pinned-snapshot' && !opts.json) {
+      process.stderr.write(`verified with kid ${result.verified_with.kid} · key sha256 ${String(result.verified_with.key_sha256).slice(0, 12)}… · `
+        + `keyring: pinned snapshot ${result.verified_with.keyring_snapshot_sha256} (the snapshot file carries no date)\n`);
+    }
   }
   if (!opts.chainFile && keyringWarnings.length) result = { ...result, keyring_warnings: [...keyringWarnings] };
 
@@ -447,14 +486,23 @@ function auditLine(result) {
   return `${head} · window ${from} to ${toShort} · ${result.expired_now ? 'expired now' : 'not expired now'}`;
 }
 
-/** verified_with: the kid, the sha256 of the verifying key's SPKI DER, and file | url | pinned-snapshot. */
+/**
+ * verified_with: the kid, the sha256 of the verifying key's SPKI DER, and file | url | pinned-snapshot.
+ * 1.1.7: with the pinned snapshot, also keyring_snapshot_sha256 — the first 12 hex of the snapshot
+ * file's sha256, so a verdict names which snapshot it trusted. The file carries no date of its own.
+ */
 function verifiedWith(ctx, kid, keyringSource, singleKeySha256) {
   const entry = ctx && ctx.keyring ? ctx.keyring.get(kid) : null;
   return {
     kid,
     key_sha256: entry ? entry.key_sha256 : singleKeySha256,
     keyring_source: keyringSource,
+    ...(keyringSource === 'pinned-snapshot' ? { keyring_snapshot_sha256: snapshotSha12(VENDORED_KEYS_PATH) } : {}),
   };
+}
+
+function snapshotSha12(file) {
+  return require('crypto').createHash('sha256').update(fs.readFileSync(file)).digest('hex').slice(0, 12);
 }
 
 /**
@@ -484,13 +532,15 @@ const RECEIPT_DOES_NOT_PROVE = Object.freeze([
     + 'not who published that keyring or that it is the issuer\'s',
 ]);
 
+// Assigned before the entry runs: `grant` hands off to verify-grant.js, whose --fetch reads fetchKeyInfo
+// from here while this module is still the one executing.
+module.exports = {
+  fetchKeyInfo, downgradeLegacyVerdict, registryUnreachableVerdict, discoveryWasMandatory,
+  parseArgs, main, USAGE, VENDORED_KEYS_PATH, RECEIPT_DOES_NOT_PROVE, verifiedWith,
+  AS_OF_DOES_NOT_PROVE, auditLine, grantVersionOf,
+};
+
 // CLI entry — this file IS the command; verify.js never runs one.
 if (require.main === module) {
   main().catch((e) => fail(e.message));
 }
-
-module.exports = {
-  fetchKeyInfo, downgradeLegacyVerdict, registryUnreachableVerdict, discoveryWasMandatory,
-  parseArgs, main, USAGE, VENDORED_KEYS_PATH, RECEIPT_DOES_NOT_PROVE, verifiedWith,
-  AS_OF_DOES_NOT_PROVE, auditLine,
-};

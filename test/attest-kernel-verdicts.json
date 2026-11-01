@@ -3,7 +3,7 @@
   "family": "attest",
   "proves": "The public verifier agrees with the app kernel AS OF kernel_sha256 below.",
   "does_not_prove": "Agreement with the app kernel as it stands now. Nothing here can see that repo.",
-  "vectors_sha256": "sha256:0f70a7780dd0fba1c9295c5aec3593918b2c3a9991d1ca116daddda233195b04",
+  "vectors_sha256": "sha256:e79f7781d5aa952b1df9465c60d20a65a72ec2009f00b1025029bc702b4041c6",
   "kernel_sha256": "sha256:5e45fa11c6a0d1f23eb01f59ced0d90a4df0dd4cfdd4ca8784397e92424c7525",
   "verdicts": [
     {

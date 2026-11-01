@@ -755,6 +755,10 @@ def main():
                 "key_sha256": entry["key_sha256"] if entry else single_key_sha256,
                 "keyring_source": keyring_source,
             }
+            # 1.1.7: which snapshot (cli.js verifiedWith): first 12 hex of the file's sha256. No date in the file.
+            if keyring_source == "pinned-snapshot":
+                with open(VENDORED_KEYS_PATH, "rb") as fh:
+                    result["verified_with"]["keyring_snapshot_sha256"] = hashlib.sha256(fh.read()).hexdigest()[:12]
         if keyring_warnings:
             result["keyring_warnings"] = list(keyring_warnings)
         # 1.1.4: the receipt verdict names its limits — cli.js RECEIPT_DOES_NOT_PROVE, byte for byte.

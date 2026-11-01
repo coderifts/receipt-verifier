@@ -642,8 +642,8 @@ registry) are later phases and are **not** shipped.
 
 ## 10. cr.exec.v1 / cr.exec.v2 (execution grants)
 
-The authorization an executor acts under. Public verifier: `verify-grant.js`
-(`verifyExecutionGrant`), and `verify_grant.py` for the v1 shape.
+The authorization an executor acts under. Public verifiers: `verify-grant.js`
+(`verifyExecutionGrant`, and `coderifts-receipt-verifier grant`) and `verify_grant.py`, both shapes.
 
 ### 10.1 cr.exec.v1 — pipe-joined signed input
 
@@ -714,8 +714,8 @@ executor_image_digest     reserved for a future executor-image pinning
 applied_policy_hash       reserved for the evaluated-effective-policy binding (1942); inert until that gate
 ```
 
-The admitted set is therefore exactly those seventeen plus these three; any other key is
-`MALFORMED/unknown_field`, and that has not been loosened.
+The admitted set is therefore exactly those seventeen plus these three plus `environment` (§10.4);
+any other key is `MALFORMED/unknown_field`, and that has not been loosened.
 
 **Their PRESENCE IS NOT A GATE.** A grant carrying `call_hash` is graded IDENTICALLY to one
 without it — same status, same reason, same refusals. Same for `applied_policy_hash`: carrying it
@@ -758,6 +758,79 @@ authorized this operation on this target for these bytes, within this window. It
 does **not** say the operation happened, that the executor was the one named, or
 that anything was written. Those are the attestation's and the transition's
 claims, below.
+
+### 10.4 `environment` — optional, signed, checked when asked (1.1.7)
+
+A v2 grant MAY carry `environment`, a non-empty string. The app issuer writes it when the decision
+names one and omits it otherwise. Like every v2 field it is inside the signed canonical JSON.
+
+- Present but not a non-empty string → `MALFORMED/bad_environment`.
+- Compared only when the caller states an intended environment (`--intended-environment`,
+  `intended.environment`). Then a different value **or an absent one** is
+  `GRANT_UNBOUND/environment_mismatch`: a grant that names no environment is not bound to the one
+  the caller is in. A v1 grant has no environment field, so an intended environment on a v1 grant
+  is `environment_mismatch` as well.
+- With no intended environment nothing is compared, and a grant with an environment grades exactly
+  like one without.
+
+### 10.5 What the public verifier checks, and what it only reads
+
+Measured in `verify-grant.js` (1.1.7). The verifier is stateless; it sees one token and what the
+caller passes.
+
+- **Compared** against what the caller supplies: `executor_id`, `adapter_id`, `target_uri`,
+  `audience_hash` (from `--intended-audience`), `after_payload_hash` (from `--intended-after-file`),
+  `operation`, `environment`, `receipt_hash` (from `--receipt`).
+- **Presence-checked, not compared:** `policy_hash`, `nonce_hash` and `expected_state_token`. A v2
+  grant must carry each as a non-empty string; no flag compares them to anything. A grant minted for
+  another policy, nonce or state verifies here. The executor that holds the policy, the nonce it
+  minted and the state it observed must compare them itself.
+- **Not enforced:** `max_attempts`. It must be an integer ≥ 1, and that is all. A stateless verifier
+  cannot count uses, so the same grant verifies on every presentation within its window. The
+  executor must keep its own record of used `grant_id`s and refuse a grant past its attempts.
+
+### 10.6 `--as-of` for grants (1.1.7)
+
+Audit mode, "was this grant inside its window at a stated instant?" (receipts: §2.1, 1.1.6). The
+core runs unchanged with now = the instant: signature, key lookup, every binding check. Only a
+verdict the core reached is re-labelled:
+
+| at the instant | `status` | `valid_at_as_of` |
+|---|---|---|
+| inside `[not_before, expires_at]` (30 s leeway) | `GRANT_CURRENT_AT_AS_OF` | `true` |
+| after `expires_at` | `GRANT_EXPIRED` | `false` |
+| before `not_before` | `GRANT_NOT_YET_VALID_AT_AS_OF` | `false` |
+| any refusal (signature, key, binding) | unchanged | `false` |
+
+Every audit verdict carries `mode: "audit"`, `as_of`, `window {not_before, expires_at}` (v1: `iat`,
+`exp`) and `expired_now`. **`valid` is `false` on every audit verdict**, including
+`GRANT_CURRENT_AT_AS_OF`: unlike a receipt, a grant is live permission, and an answer about another
+instant must not read as permission to execute now. The exit code is `0` iff `valid_at_as_of`.
+
+- An instant later than now + 30 s, or one that does not parse, is a usage error (exit 2); the
+  library throws `as_of_in_future` / `as_of_unparsable`.
+- Key rules: a revoked key fails at every instant (`status: "revoked"` or any `revoked_at` on the
+  entry; §10.7). A retired key, always refused without as-of, passes only if `not_before` (v1: `iat`)
+  **and** the instant are both before its `retired_at`. A retired entry with no `retired_at` stays
+  refused.
+- `--as-of` is in `verify-grant.js` only. `verify_grant.py` refuses the flag (exit 2).
+
+### 10.7 Key status and body parsing (1.1.7, both shapes unless stated)
+
+- **`revoked_at` refuses at every instant**, whatever the entry's `status` says, with or without
+  `--as-of`: `UNKNOWN_KEY` / `revoked_kid`, the answer `status: "revoked"` gives (§7.1: a revoked key
+  never verifies). It is checked before the retired rule, so a retired entry that carries `revoked_at`
+  is revoked. A v1 entry whose `status` is `"revoked"` keeps its `compromised_at` rule
+  (`revoked_kid` / `revoked_kid_undecidable`).
+- **An unknown `status`** (anything but `active`, `retired`, `revoked` or absent) is `UNKNOWN_KEY` /
+  `unknown_key_status` on v2, as on v1.
+- **The v2 body is parsed strictly** (§2.2, the receipt rule). A duplicate member at any depth, an
+  unpaired surrogate or a number that is not finite as binary64 is `MALFORMED` with `duplicate_key`,
+  `lone_surrogate` or `non_finite` as the reason (`invalid_json` for anything else the strict parser
+  refuses that `JSON.parse` accepted). The payload is not echoed, because the body has no single reading.
+  A duplicate `v` is refused whichever version a lenient parser would pick. Text that is not JSON at all
+  (and the literals `NaN` / `Infinity`) stays `MALFORMED` / `bad_json`. v1 bodies are otherwise read as
+  before.
 
 ## 11. cr.exec.correlation.v1 (contract ⨝ observation)
 

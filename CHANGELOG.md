@@ -5,6 +5,61 @@ that carries them; a heading with no tag has not been published.
 
 ## 1.1.7 — unreleased
 
+### Grants: `environment`, the `grant` subcommand, `--as-of`, an offline key default
+
+Measured on 2c11499 before the change; the round's report has the runs.
+
+- **`environment` in cr.exec.v2.** A grant carrying it (the app issuer adds it when the decision names
+  one) was `MALFORMED` / `unknown_field`. It is now an optional signed string: present and not a
+  non-empty string is `MALFORMED` / `bad_environment`. **Added** `--intended-environment` /
+  `intended.environment`: a different or absent value is `GRANT_UNBOUND` / `environment_mismatch`
+  (v1 grants carry none, so they mismatch too). Nothing is compared without it. Same in
+  `verify_grant.py`. `test/grant-vectors.json` regenerated (ephemeral key) with `EG2-ENVIRONMENT`
+  and `EG2-ENVIRONMENT-MISMATCH`; `attest-vectors.json` regenerated so it binds the new `EG-VALID`;
+  the recorded kernel verdicts moved only in `vectors_sha256`. Every other unknown v2 key is still
+  `unknown_field`.
+- **`coderifts-receipt-verifier grant <token> …`** runs `verify-grant.js` under the npm bin. A
+  `cr.exec.v1` / `cr.exec.v2` token given to the receipt command was `INVALID_SIGNATURE` /
+  `signature_mismatch`; it is now a usage error (exit 2) naming the `grant` subcommand.
+- **`--as-of <ISO>` for grants** (`asOf` in `verifyExecutionGrant`): `GRANT_CURRENT_AT_AS_OF`,
+  `GRANT_EXPIRED` (with `expired_now`) or `GRANT_NOT_YET_VALID_AT_AS_OF`. `valid` is `false` on
+  every audit verdict, because a grant is live permission; exit `0` iff `valid_at_as_of`. An
+  instant in the future is exit 2. A revoked key fails at every instant. A retired key passes only
+  if both `not_before` and the instant are before `retired_at`. JS only.
+- **Key default for grants.** With no `--key` / `--keys` the grant command uses the pinned snapshot
+  offline (it fetched app.coderifts.com before) and says so in a `keyring` field and a stderr line.
+  `--fetch [url]` is the opt-in network path. Receipts are unchanged.
+- **`verified_with.keyring_snapshot_sha256`** (first 12 hex of the snapshot file's sha256) on
+  receipts and grants verified against the pinned snapshot, plus one stderr line in text mode. The
+  snapshot carries no date of its own, and the line says so. Same in `verify.py` / `verify_grant.py`.
+- **Docs.** RECEIPT_FORMAT §10.4–10.6 and the README: `policy_hash`, `nonce_hash` and
+  `expected_state_token` are presence-checked, not compared, and `max_attempts` is not enforced (the
+  executor keeps its own used-grant record).
+
+### Fixes (grants)
+
+- **Key status, both verifiers.** A keyring entry with a `revoked_at` is refused at every instant, whatever
+  its `status` (before: an `active` entry with `revoked_at` verified v1 and v2 grants, and a `retired` one
+  said `retired_kid`). An unknown `status` is `UNKNOWN_KEY` / `unknown_key_status` on v2 as on v1 (before:
+  `GRANT_CURRENT`).
+- **Strict parse of the v2 body** (`parseJsonStrict`, RECEIPT_FORMAT §2.2 / §10.7): `duplicate_key`,
+  `lone_surrogate`, `non_finite` → `MALFORMED` with that reason and no payload. Before, a duplicate
+  `executor_id` was read as its last value and graded `GRANT_CURRENT`. Text that is not JSON keeps
+  `bad_json`. `verify_grant.py` gains the same check, and now rejects `NaN` / `Infinity` literals as
+  `bad_json` as `JSON.parse` does (before it accepted them, and `1e400` printed `Infinity`, which is not
+  JSON).
+- `verify_grant.py` no longer crashes on a lone surrogate. The 1.1.7 `ensure_ascii=False` writer raised
+  `UnicodeEncodeError` on one, and the v1 signed input did too. The writer now escapes it as
+  `JSON.stringify` does (`\udxxx`), and the signed input encodes it as U+FFFD, as Node's `Buffer` does.
+
+- `verify-grant.js` imported `fetchKeyInfo` from `verify.js`, which stopped exporting it when the
+  command moved to `cli.js`. Every key fetch, the old default included, was exit 2 "fetchKeyInfo is
+  not a function". `--fetch` now uses the command's copy.
+- `verify_grant.py`: a v2 grant under a key with `status: "revoked"` was `GRANT_CURRENT` (the JS
+  verifier: `UNKNOWN_KEY` / `revoked_kid`). It is now `UNKNOWN_KEY` / `revoked_kid` too.
+- `verify_grant.py` writes non-ASCII raw (`ensure_ascii=False`), as `JSON.stringify` does. Before, a
+  payload with a non-ASCII character printed different bytes from the JS verifier.
+
 ### Strict parse: parser differentials are rejected
 
 **Added.** `parseJsonStrict(text)` in `verify.js`, exported beside `canonicalJson`. It parses RFC 8259 text and

@@ -84,6 +84,7 @@ for (const name of CLASSES) {
   if (f['intended-audience']) intended.audience = f['intended-audience'];
   if (f['intended-executor']) intended.executor_id = f['intended-executor'];
   if (f['intended-adapter']) intended.adapter_id = f['intended-adapter'];
+  if (f['intended-environment']) intended.environment = f['intended-environment'];
   if (f.after_payload != null) intended.after_payload = f.after_payload;
   if (f.receipt) intended.receipt_token = f.receipt;
 
