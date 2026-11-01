@@ -3,7 +3,7 @@
 Versions here are the npm package `@coderifts/receipt-verifier`. Entries land before the release
 that carries them; a heading with no tag has not been published.
 
-## 1.1.7 — unreleased
+## 1.1.7 — 2026-11-01
 
 ### Grants: `environment`, the `grant` subcommand, `--as-of`, an offline key default
 
@@ -35,6 +35,14 @@ Measured on 2c11499 before the change; the round's report has the runs.
 - **Docs.** RECEIPT_FORMAT §10.4–10.6 and the README: `policy_hash`, `nonce_hash` and
   `expected_state_token` are presence-checked, not compared, and `max_attempts` is not enforced (the
   executor keeps its own used-grant record).
+- **Python parity.** `verify_grant.py` gives the same answer as `verify-grant.js` for `environment` and
+  `--intended-environment`, `revoked_at`, an unknown key status, the strict v2 parse, the key default,
+  `keyring` and `verified_with`. `test/run.sh` compares the two outputs byte for byte on every grant vector.
+  `--as-of` is JS only: `verify_grant.py` refuses the flag (exit 2).
+- **Not in this release:** the CodeRifts App's grant kernel and the copies vendored in agent-guard
+  (`src/vendor/verify-grant.js`), conformance (`lib/vendor/receipt-verifier/verify-grant.js`) and contract-gate
+  (`src/verify-grant.js`) still refuse a grant that carries `environment` (`MALFORMED` / `unknown_field`,
+  measured 2026-11-01 on the `EG2-ENVIRONMENT` vector) until they are re-vendored.
 
 ### Fixes (grants)
 
