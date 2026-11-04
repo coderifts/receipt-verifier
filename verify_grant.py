@@ -300,27 +300,28 @@ def _verify_execution_grant_v2(payload, sig_b64, ctx, opts):
     if is_issued_in_future(nbf_ms, now, intended):
         return {"valid": False, "status": "GRANT_EXPIRED", "reason": "nbf_in_future", "payload": payload}
 
-    if intended.get("executor_id") and payload.get("executor_id") != str(intended["executor_id"]):
+    # 1.1.8 (verify-grant.js twin): a stated intended value is checked whether or not it is truthy.
+    if intended.get("executor_id") is not None and payload.get("executor_id") != str(intended["executor_id"]):
         return {"valid": False, "status": "GRANT_UNBOUND", "reason": "executor_mismatch", "payload": payload}
-    if intended.get("adapter_id") and payload.get("adapter_id") != str(intended["adapter_id"]):
+    if intended.get("adapter_id") is not None and payload.get("adapter_id") != str(intended["adapter_id"]):
         return {"valid": False, "status": "GRANT_UNBOUND", "reason": "adapter_mismatch", "payload": payload}
-    if intended.get("target_uri"):
+    if intended.get("target_uri") is not None:
         want = canonicalize_target_uri(str(intended["target_uri"])) or str(intended["target_uri"])
         if payload.get("target_uri") != want:
             return {"valid": False, "status": "GRANT_UNBOUND", "reason": "target_mismatch", "payload": payload}
-    if intended.get("audience"):
+    if intended.get("audience") is not None:
         if payload.get("audience_hash") != sha256pref(intended["audience"]):
             return {"valid": False, "status": "GRANT_UNBOUND", "reason": "audience_mismatch", "payload": payload}
-    if intended.get("audience_hash") and payload.get("audience_hash") != str(intended["audience_hash"]):
+    if intended.get("audience_hash") is not None and payload.get("audience_hash") != str(intended["audience_hash"]):
         return {"valid": False, "status": "GRANT_UNBOUND", "reason": "audience_mismatch", "payload": payload}
     if intended.get("after_payload") is not None:
         if payload.get("after_payload_hash") != sha256pref(intended["after_payload"]):
             return {"valid": False, "status": "GRANT_UNBOUND", "reason": "after_payload_mismatch", "payload": payload}
-    if intended.get("operation") and payload.get("operation") != str(intended["operation"]):
+    if intended.get("operation") is not None and payload.get("operation") != str(intended["operation"]):
         return {"valid": False, "status": "GRANT_UNBOUND", "reason": "operation_mismatch", "payload": payload}
-    if intended.get("environment") and payload.get("environment") != str(intended["environment"]):
+    if intended.get("environment") is not None and payload.get("environment") != str(intended["environment"]):
         return {"valid": False, "status": "GRANT_UNBOUND", "reason": "environment_mismatch", "payload": payload}
-    if intended.get("receipt_token"):
+    if intended.get("receipt_token") is not None:
         if sha256pref(intended["receipt_token"]) != payload.get("receipt_hash"):
             return {"valid": False, "status": "GRANT_UNBOUND", "reason": "receipt_hash_mismatch", "payload": payload}
     return {"valid": True, "status": "GRANT_CURRENT", "payload": payload}
@@ -482,6 +483,14 @@ def fail(msg):
     sys.exit(2)
 
 
+def _intended_value(flag, argv, i):
+    # 1.1.8 (verify-grant.js twin): an --intended-* flag given with an empty (or no) value is a usage error.
+    value = argv[i] if i < len(argv) else None
+    if value is None or value == "":
+        raise ValueError(flag + " needs a non-empty value (an empty one would check nothing)")
+    return value
+
+
 def parse_args(argv):
     opts = {
         "grant": None,
@@ -523,30 +532,30 @@ def parse_args(argv):
                 opts["fetch_url"] = nxt
         elif a == "--intended-environment":
             i += 1
-            opts["intended_environment"] = argv[i] if i < len(argv) else None
+            opts["intended_environment"] = _intended_value(a, argv, i)
         elif a == "--json":
             opts["json"] = True
         elif a == "--intended-operation":
             i += 1
-            opts["intended_operation"] = argv[i] if i < len(argv) else None
+            opts["intended_operation"] = _intended_value(a, argv, i)
         elif a == "--intended-target":
             i += 1
-            opts["intended_target"] = argv[i] if i < len(argv) else None
+            opts["intended_target"] = _intended_value(a, argv, i)
         elif a == "--intended-audience":
             i += 1
-            opts["intended_audience"] = argv[i] if i < len(argv) else None
+            opts["intended_audience"] = _intended_value(a, argv, i)
         elif a == "--intended-executor":
             i += 1
-            opts["intended_executor"] = argv[i] if i < len(argv) else None
+            opts["intended_executor"] = _intended_value(a, argv, i)
         elif a == "--intended-adapter":
             i += 1
-            opts["intended_adapter"] = argv[i] if i < len(argv) else None
+            opts["intended_adapter"] = _intended_value(a, argv, i)
         elif a == "--intended-after-file":
             i += 1
-            opts["intended_after_file"] = argv[i] if i < len(argv) else None
+            opts["intended_after_file"] = _intended_value(a, argv, i)
         elif a == "--intended-scope-hash":
             i += 1
-            opts["intended_scope_hash"] = argv[i] if i < len(argv) else None
+            opts["intended_scope_hash"] = _intended_value(a, argv, i)
         elif a == "--receipt":
             i += 1
             opts["receipt"] = argv[i] if i < len(argv) else None
@@ -573,9 +582,10 @@ def main():
         opts = parse_args(sys.argv[1:])
     except ValueError as e:
         fail(str(e))
+    # 1.1.8: --help / -h is a request, not a usage error: exit 0 (was exit 2), as verify-grant.js.
     if opts["help"]:
         sys.stdout.write(USAGE)
-        sys.exit(2)
+        sys.exit(0)
     if not opts["grant"] or not str(opts["grant"]).strip():
         fail("no grant provided")
 

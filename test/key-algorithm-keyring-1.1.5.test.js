@@ -47,24 +47,19 @@ function both(args) {
 
 describe('1.1.5 · the pinned keyring is the live registry (2026-10-25)', () => {
   const pin = JSON.parse(fs.readFileSync(PIN, 'utf8'));
-  it('2026-10-k1 active, 2026-07-k1 retired at 2026-10-21, valid_from/retired_at carried', () => {
-    assert.deepEqual(pin.keys.map((k) => [k.kid, k.status, k.valid_from, k.retired_at]), [
-      ['2026-10-k1', 'active', null, null],
-      ['2026-07-k1', 'retired', null, '2026-10-21T00:00:00.000Z'],
+  // 1.1.8 (2026-11-04): 2026-07-k1 is revoked (compromised_at 2026-07-01); it was retired in 1.1.5–1.1.7.
+  it('2026-10-k1 active, 2026-07-k1 revoked (compromised_at 2026-07-01, retired_at 2026-10-21 kept)', () => {
+    assert.deepEqual(pin.keys.map((k) => [k.kid, k.status, k.valid_from, k.retired_at, k.compromised_at || null]), [
+      ['2026-10-k1', 'active', null, null, null],
+      ['2026-07-k1', 'revoked', null, '2026-10-21T00:00:00.000Z', '2026-07-01T00:00:00.000Z'],
     ]);
   });
-  it('the 2026-07-k1 fixture (signed 2026-08-26) → RETIRED_KEY_VALID_AT_ISSUE, verified_with names the pinned key', () => {
+  it('the 2026-07-k1 fixture (signed 2026-08-26) → REVOKED_KEY, exit 1, in both ports (was RETIRED_KEY_VALID_AT_ISSUE)', () => {
     const { v, code } = both([TOKEN]);
-    assert.equal(code, 0);
-    assert.equal(v.valid, true);
-    assert.equal(v.status, 'RETIRED_KEY_VALID_AT_ISSUE');
-    assert.deepEqual(v.verified_with, {
-      kid: '2026-07-k1',
-      key_sha256: derSha(pin.keys.find((k) => k.kid === '2026-07-k1').public_key_pem),
-      keyring_source: 'pinned-snapshot',
-      // 1.1.7: which snapshot — the first 12 hex of the snapshot file's sha256 (cli.js verifiedWith).
-      keyring_snapshot_sha256: crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname, '..', 'keys', 'coderifts-keys.json'))).digest('hex').slice(0, 12),
-    });
+    assert.equal(code, 1);
+    assert.equal(v.valid, false);
+    assert.equal(v.status, 'REVOKED_KEY');
+    assert.equal(v.payload.kid, '2026-07-k1');
   });
   it('a receipt claiming 2026-10-k1 resolves to the active pinned key (a bad signature, not UNKNOWN_KEY)', () => {
     // No 2026-10-k1-signed receipt was available offline (measured 2026-10-25): this proves the kid

@@ -247,8 +247,9 @@ with the same window, §7), the envelope binding and the chain rule are unchange
 `window {ts, expires_at}`; its status is `VERIFIED_AT_AS_OF` when the receipt verifies and as-of is inside
 `[ts, expires_at + 30s]`, `NOT_YET_VALID_AT_AS_OF` (`valid:false`) when as-of precedes `ts`, and
 `VERIFIED_EXPIRED` when it is past the window. These two statuses exist only in audit mode; the §6
-taxonomy of an ordinary verification is unchanged. A receipt without `expires_at` (v1–v3) keeps its
-ordinary result, with `as_of_note: "no expiry to evaluate; as-of has no effect"`. An as-of verdict is
+taxonomy of an ordinary verification is unchanged. A receipt without `expires_at` (v1–v3) is
+`NOT_YET_VALID_AT_AS_OF` (`valid:false`) when as-of precedes its `ts` (1.1.8; before, it kept its ordinary
+result), and otherwise keeps its ordinary result, with `as_of_note: "no expiry to evaluate; as-of has no effect"`. An as-of verdict is
 an audit answer about a stated instant, not an authorization now. `verify.js` / `cli.js` only in 1.1.6;
 `verify.py` has no as-of.
 
@@ -775,16 +776,23 @@ names one and omits it otherwise. Like every v2 field it is inside the signed ca
 
 ### 10.5 What the public verifier checks, and what it only reads
 
-Measured in `verify-grant.js` (1.1.7). The verifier is stateless; it sees one token and what the
+Measured in `verify-grant.js` (1.1.7; the empty-flag rule and the two presence-checked ids, 1.1.8). The verifier is stateless; it sees one token and what the
 caller passes.
 
 - **Compared** against what the caller supplies: `executor_id`, `adapter_id`, `target_uri`,
   `audience_hash` (from `--intended-audience`), `after_payload_hash` (from `--intended-after-file`),
-  `operation`, `environment`, `receipt_hash` (from `--receipt`).
-- **Presence-checked, not compared:** `policy_hash`, `nonce_hash` and `expected_state_token`. A v2
-  grant must carry each as a non-empty string; no flag compares them to anything. A grant minted for
-  another policy, nonce or state verifies here. The executor that holds the policy, the nonce it
-  minted and the state it observed must compare them itself.
+  `operation`, `environment`, `receipt_hash` (from `--receipt`). An `--intended-*` flag given with an
+  empty or no value is a usage error, exit 2 (1.1.8; in 1.1.7 it was read as not given, so the binding
+  was skipped and the grant could answer `GRANT_CURRENT`). In the library, a v2 `intended` value is
+  compared whenever it is stated (not `null` / `undefined`), even when it is `""`.
+- **Presence-checked, not compared:** `policy_hash`, `nonce_hash`, `expected_state_token`, `tenant_id`
+  and `grant_id`. A v2 grant must carry each as a non-empty string (§10.2; else `MALFORMED` /
+  `missing_field`); no flag compares them to anything. A grant minted for another policy, nonce, state
+  or tenant verifies here, and so does a grant whose `grant_id` was used before. The executor that holds
+  the policy, the nonce it minted, the state it observed and the tenant it serves must compare them
+  itself, and must keep its own record of used `grant_id`s (below). A v1 grant has neither `tenant_id`
+  nor `grant_id` (§10.1; `jti` names it), so nothing changes for v1. (1.1.8: `tenant_id` and `grant_id`
+  were always required by the code; this list did not name them.)
 - **Not enforced:** `max_attempts`. It must be an integer ≥ 1, and that is all. A stateless verifier
   cannot count uses, so the same grant verifies on every presentation within its window. The
   executor must keep its own record of used `grant_id`s and refuse a grant past its attempts.

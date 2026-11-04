@@ -286,6 +286,16 @@ else
 fi
 
 echo
+echo "== 1.1.8 security: 07-k1 revoked, empty --intended-*, v1-v3 as-of before ts, --help exit 0 (js+py) =="
+checks=$((checks + 1))
+if PYTHON="$PYTHON" node --test test/security-1.1.8.test.js >/dev/null; then
+  echo "ok    security-1.1.8.test.js"
+else
+  echo "FAIL  security-1.1.8.test.js"
+  fails=$((fails + 1))
+fi
+
+echo
 echo "== 1355-default vendored keys + network trap (js+py) =="
 checks=$((checks + 1))
 if node --test test/offline-network-trap.test.js; then

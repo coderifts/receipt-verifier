@@ -266,9 +266,10 @@ async function main() {
   } catch (e) {
     return fail(e.message);
   }
+  // 1.1.8: --help / -h is a request, not a usage error: the usage on stdout, exit 0 (was exit 2).
   if (opts.help) {
     process.stdout.write(USAGE);
-    process.exit(2);
+    process.exit(0);
   }
   // Empty string from `$(curl -s … | grep …)` on GitHub 403/rate-limit is a common silent path
   // when the homepage one-liner is used without HTTP status checks — fail honestly.

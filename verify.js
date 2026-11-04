@@ -720,7 +720,15 @@ function auditResult(result, asOfMs, nowMs, opts) {
   const window = { ts: p && typeof p.ts === 'string' ? p.ts : null, expires_at: p && p.v === 4 && typeof p.expires_at === 'string' ? p.expires_at : null };
   const base = { ...result, mode: 'audit', as_of: asOf, window };
   if (!window.expires_at) {
-    // v1–v3 (or no payload): today's result, unchanged; the note says why as-of did nothing.
+    // 1.1.8: v1–v3 have no expiry, but they have ts. An as-of before the signed ts is before the receipt
+    // existed: NOT_YET_VALID_AT_AS_OF (valid:false), the status v4 already gives. MEASURED on 1.1.7: a v1/v2/v3
+    // receipt (ts 2026-10-01T12:00Z) with --as-of 2026-09-30T12:00Z was valid:true, VERIFIED_CURRENT, exit 0.
+    // Only a verdict that passed can be re-labelled; any other result stays as it is.
+    const issuedAt = window.ts ? Date.parse(window.ts) : NaN;
+    if (result.valid === true && Number.isFinite(issuedAt) && asOfMs < issuedAt) {
+      return { ...base, valid: false, status: 'NOT_YET_VALID_AT_AS_OF', reason: 'as_of_before_issue', valid_at_as_of: false, expired_now: false };
+    }
+    // At or after ts: today's result, unchanged; the note says why as-of did nothing more.
     return { ...base, valid_at_as_of: result.valid === true, expired_now: false, as_of_note: AS_OF_NOTE };
   }
   const exp = Date.parse(window.expires_at);

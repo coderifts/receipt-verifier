@@ -688,9 +688,10 @@ def main():
         opts = parse_args(sys.argv[1:])
     except ValueError as e:
         fail(str(e))
+    # 1.1.8: --help / -h is a request, not a usage error: exit 0 (was exit 2), as cli.js.
     if opts["help"]:
         sys.stdout.write(USAGE)
-        sys.exit(2)
+        sys.exit(0)
     if not opts["chain_file"] and not opts["receipt"]:
         fail("no receipt provided")
 

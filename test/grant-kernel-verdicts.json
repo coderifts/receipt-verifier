@@ -4,7 +4,7 @@
   "proves": "The public verifier agrees with the app kernel AS OF kernel_sha256 below.",
   "does_not_prove": "Agreement with the app kernel as it stands now. Nothing here can see that repo.",
   "vectors_sha256": "sha256:f98da94fae545f7c437cc7421cb68f1ee8b5f1a278bf78a52cb3095344acb417",
-  "kernel_sha256": "sha256:c91ae2533f3beaffbb8b272b47e9dfe148e1eed4ebe0f2196e29bc5cc4394eb9",
+  "kernel_sha256": "sha256:ebf9b0251b17abe664fd109c9bb7822c0b01f9d5d98d194706e157c9bdeab86b",
   "verdicts": [
     {
       "name": "EG-VALID",

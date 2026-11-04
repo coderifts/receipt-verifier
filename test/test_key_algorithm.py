@@ -70,11 +70,13 @@ class TestKeyAlgorithm(unittest.TestCase):
         self.assertTrue(_verify_receipt(TOKEN, ctx)["valid"])
         self.assertEqual(warnings, ["registry entry pq-1: missing public_key_pem — skipped"])
 
-    def test_pinned_snapshot_fixture_is_retired_key_valid_at_issue(self):
+    def test_pinned_snapshot_fixture_is_revoked_key(self):
+        # 1.1.8 (2026-11-04): 2026-07-k1 is revoked (compromised_at 2026-07-01); the fixture was signed
+        # by it on 2026-08-26. 1.1.5-1.1.7: retired -> RETIRED_KEY_VALID_AT_ISSUE.
         ctx = ctx_for(PIN["keys"])
         r = _verify_receipt(TOKEN, ctx)
-        self.assertTrue(r["valid"])
-        self.assertEqual(r["status"], "RETIRED_KEY_VALID_AT_ISSUE")
+        self.assertFalse(r["valid"])
+        self.assertEqual(r["status"], "REVOKED_KEY")
 
 
 if __name__ == "__main__":

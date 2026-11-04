@@ -28,7 +28,8 @@ describe('the usage text names the bin', () => {
 
   it('--help names coderifts-receipt-verifier for all three forms, and never `node cli.js`', () => {
     const { code, text } = help();
-    assert.equal(code, 2);
+    // 1.1.8: --help is a request, exit 0 (it was 2); a usage error below stays 2.
+    assert.equal(code, 0);
     assert.match(text, /usage: coderifts-receipt-verifier <receipt>/);
     assert.match(text, /coderifts-receipt-verifier --chain receipts\.txt/);
     assert.match(text, /coderifts-receipt-verifier --from-commit <sha>/);

@@ -3,7 +3,7 @@
   "proves": "The public verifier agrees with the app kernel AS OF kernel_sha256 below.",
   "does_not_prove": "Agreement with the app kernel as it stands now. Nothing here can see that repo.",
   "vectors_sha256": "sha256:10839d22645c4c4bd2e57bc9c544fc948c71e9a010bd97a6ecb0819b50999c07",
-  "kernel_sha256": "sha256:f6a49df4cb731c7113ffab74dba0d655bc7a4f18c530c9b467e0220b0d21d3b6",
+  "kernel_sha256": "sha256:1c7eef06ee33f48009c8ff8f6483661d5a9a56d11039ce36d408afa51e2cee7a",
   "set_digest": "sha256:d45d2004bec693a77156674e16b68bf1a89f64ba0937d40b84505206b19d443c",
   "signing_input_sha256": "sha256:af85d0df9f569223b931fb50248bbe332acf05042acb62b7d5ccc83ccad35820",
   "verdicts": [

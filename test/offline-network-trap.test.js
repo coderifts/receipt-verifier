@@ -16,7 +16,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
 
 const ROOT = path.join(__dirname, '..');
 const doc = require('./vectors.json');
@@ -168,20 +168,24 @@ describe('1355-default — vendored keys, network is opt-in', () => {
     const got = crypto.createHash('sha256').update(body).digest('hex');
     const sidecar = fs.readFileSync(`${VENDORED_KEYS_PATH}.sha256`, 'utf8').trim().split(/\s+/)[0];
     assert.equal(got, sidecar);
-    // 1.1.5 (2026-10-25): the live registry's bytes — 2026-10-k1 active, 2026-07-k1 retired 2026-10-21.
-    assert.equal(got, '0981898b8bd3fc5745be183f1cd021f355b1bbd8f37fc30b493e225a763928dd');
+    // 1.1.8 (2026-11-04): 2026-10-k1 active; 2026-07-k1 revoked (compromised_at 2026-07-01, retired_at
+    // 2026-10-21 kept). Was 0981898b… (07-k1 retired) in 1.1.5–1.1.7.
+    assert.equal(got, 'abf16e94c9a317dc9fed5651ae7a0e3c8d3a9bc03834002aebce3b70364c8957');
   });
 
-  it('BITES JS: default verify with network trapped PASSES against the vendored key', () => {
-    const out = execFileSync(
+  it('BITES JS: default verify with network trapped DECIDES against the vendored key (no fetch)', () => {
+    const r0 = spawnSync(
       process.execPath,
       ['-r', preload, path.join(ROOT, 'cli.js'), fixtureReceipt],
       { cwd: ROOT, encoding: 'utf8' },
     );
-    const r = JSON.parse(out);
-    assert.equal(r.valid, true);
-    // 1.1.5: the pin says 2026-07-k1 retired at 2026-10-21; the fixture was signed 2026-08-26.
-    assert.equal(r.status, 'RETIRED_KEY_VALID_AT_ISSUE');
+    assert.doesNotMatch(`${r0.stderr}`, /NETWORK_TRAP/);
+    const r = JSON.parse(r0.stdout);
+    // 1.1.8: the pin says 2026-07-k1 revoked (compromised_at 2026-07-01); the fixture was signed
+    // 2026-08-26 → REVOKED_KEY, exit 1, decided offline. 1.1.5–1.1.7: retired → RETIRED_KEY_VALID_AT_ISSUE.
+    assert.equal(r0.status, 1);
+    assert.equal(r.valid, false);
+    assert.equal(r.status, 'REVOKED_KEY');
     assert.equal(r.payload.kid, '2026-07-k1');
   });
 
@@ -202,7 +206,7 @@ describe('1355-default — vendored keys, network is opt-in', () => {
     assert.notEqual(err.status, 0);
   });
 
-  it('BITES PY: default verify with urlopen trapped PASSES against the vendored key', () => {
+  it('BITES PY: default verify with urlopen trapped DECIDES against the vendored key (no fetch)', () => {
     const py = `
 import json, runpy, sys, urllib.request
 def boom(*a, **k):
@@ -211,10 +215,13 @@ urllib.request.urlopen = boom
 sys.argv = ["verify.py", ${JSON.stringify(fixtureReceipt)}]
 runpy.run_path(${JSON.stringify(path.join(ROOT, 'verify.py'))}, run_name="__main__")
 `;
-    const out = execFileSync('python3', ['-c', py], { cwd: ROOT, encoding: 'utf8' });
-    const r = JSON.parse(out.trim().split('\n').pop());
-    assert.equal(r.valid, true);
-    assert.equal(r.status, 'RETIRED_KEY_VALID_AT_ISSUE');
+    const r0 = spawnSync(process.env.PYTHON || 'python3', ['-c', py], { cwd: ROOT, encoding: 'utf8' });
+    assert.doesNotMatch(`${r0.stderr}`, /NETWORK_TRAP/);
+    const r = JSON.parse(r0.stdout.trim().split('\n').pop());
+    // 1.1.8: revoked 2026-07-k1 → REVOKED_KEY, exit 1, decided offline (see the JS case).
+    assert.equal(r0.status, 1);
+    assert.equal(r.valid, false);
+    assert.equal(r.status, 'REVOKED_KEY');
     assert.equal(r.payload.kid, '2026-07-k1');
   });
 

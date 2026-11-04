@@ -15,7 +15,13 @@ The exact byte format is frozen in [RECEIPT_FORMAT.md](RECEIPT_FORMAT.md).
 ## What it checks
 
 - The receipt is a well-formed `base64url(body).base64url(signature)` token.
-- The `body.kid` matches the active published key id.
+- The `body.kid` names a key in the keyring (the pinned snapshot `keys/coderifts-keys.json` by
+  default, `--keys`, or `--key`/`--kid`), and that key's `status` decides what the signature can
+  mean (RECEIPT_FORMAT.md section 7.1): `active` → the receipt can be current; `retired` →
+  `RETIRED_KEY_VALID_AT_ISSUE` when `ts` predates `retired_at`, `KEY_RETIRED_AFTER_SIGNING` at or
+  after it; `revoked` → `REVOKED_KEY` / `REVOKED_KEY_UNDECIDABLE` at every `ts`; a `revoked_at` field
+  → `KEY_REVOKED`; any other status → `UNKNOWN_KEY_STATUS`. Only the first two can be `valid: true`.
+  In the pinned snapshot `2026-10-k1` is active and `2026-07-k1` is revoked (since 1.1.8).
 - The raw Ed25519 signature verifies over the exact signed bytes
   (`crchain.v1|kid|fp|prev|caller|ts`; v2 appends `|reg`; v3 appends `|reg|ir`;
   v4 appends `|reg|ir|expires_at|bh`). The `crchain.v1` prefix is the signed-format
@@ -37,8 +43,9 @@ The exact byte format is frozen in [RECEIPT_FORMAT.md](RECEIPT_FORMAT.md).
   v4 is issued only on
   envelope-bearing paths (bundle + MCP single-spec); see RECEIPT_FORMAT.md.
 
-It does NOT recompute the verdict fingerprint `fp` from a verdict payload; `fp`
-is verified as an opaque, signed binding (see RECEIPT_FORMAT.md section 2).
+It does NOT recompute the verdict fingerprint `fp`: it checks `fp` as a signed field. `fp` is not
+opaque — RECEIPT_FORMAT.md section 2.0 gives the recipes (`crbundle.v1` for the change-set /
+authorize path, with test vectors), so a caller who holds the inputs can recompute it and compare.
 
 ## Install
 
@@ -117,7 +124,7 @@ Output (exit code 0 = valid, 1 = invalid, 2 = usage error). The `action-verdict`
 endpoint issues `v:2` receipts (they carry `reg`):
 
 ```
-{"valid":true,"payload":{"v":2,"kid":"2026-07-k1","fp":"sha256:...","prev":"null","caller":"anon","ts":"...","reg":"..."}}
+{"valid":true,"status":"VERIFIED_CURRENT","payload":{"v":2,"kid":"2026-10-k1","fp":"sha256:...","prev":"null","caller":"anon","ts":"...","reg":"..."}}
 ```
 
 Receipts from the `/diff` endpoint and the GitHub PR-check webhook are `v:3` — they
@@ -146,8 +153,8 @@ The CLI default is already offline: it verifies against the vendored snapshot
 curl -s https://app.coderifts.com/api/v1/attestation/public-key \
   | python3 -c "import sys,json;print(json.load(sys.stdin)['public_key_pem'])" > pub.pem
 
-node cli.js "$RECEIPT" --key pub.pem --kid 2026-07-k1
-python3 verify.py "$RECEIPT" --key pub.pem --kid 2026-07-k1
+node cli.js "$RECEIPT" --key pub.pem --kid 2026-10-k1
+python3 verify.py "$RECEIPT" --key pub.pem --kid 2026-10-k1
 ```
 
 ## Verifying a chain
@@ -155,8 +162,8 @@ python3 verify.py "$RECEIPT" --key pub.pem --kid 2026-07-k1
 Put one token per line, oldest first, then:
 
 ```
-node cli.js --chain receipts.txt --key pub.pem --kid 2026-07-k1
-python3 verify.py --chain receipts.txt --key pub.pem --kid 2026-07-k1
+node cli.js --chain receipts.txt --key pub.pem --kid 2026-10-k1
+python3 verify.py --chain receipts.txt --key pub.pem --kid 2026-10-k1
 ```
 
 The first receipt is reported as `genesis` (its `prev` is the literal `null`) or
@@ -499,15 +506,22 @@ python3 verify.py "$RECEIPT" --envelope decision.json
 
 Error reasons (signature/structure failures; see RECEIPT_FORMAT.md section 6):
 `malformed_structure`, `bad_json`, `unknown_kid`, `signature_error`,
-`signature_mismatch`, `delimiter_in_field`, `body_hash_mismatch`,
-`retired_key_after_issue`, `KEY_REVOKED`, `KEY_RETIRED_AFTER_SIGNING`.
+`signature_mismatch`, `delimiter_in_field`, `body_hash_mismatch`, `KEY_REVOKED`,
+`KEY_RETIRED_AFTER_SIGNING`.
+
+**One name for "signed after the key was retired": `KEY_RETIRED_AFTER_SIGNING`** (status and reason,
+`valid: false`, `ts >= retired_at`). Earlier names for the same case, each kept only where it is still
+emitted: `retired_key_after_issue` (this verifier's reason, with status `INVALID_SIGNATURE`, only for a
+`retired` entry that carries no `retired_at`, RECEIPT_FORMAT.md section 7), and
+`retired_key_outside_window` (the reason the `coderifts` CLI and the app give, with `INVALID_SIGNATURE`).
 
 Live `status` values include `VERIFIED_CURRENT` and, for v4 when
 `expires_at + 30s` is in the past, `VERIFIED_EXPIRED` (signature authentic but
 expired — `valid` is false). 30s clock-skew leeway on expiry; 0s for destructive
 operations in production when the intended context declares them (this surface
-has no destructive field, so the 30s default always applies). Full 12-status
-taxonomy: RECEIPT_FORMAT.md section 6.
+has no destructive field, so the 30s default always applies). The full status list, with which
+statuses are live and which are dormant, is the table in RECEIPT_FORMAT.md section 6; that table is
+the reference, not a count here.
 
 ## Proof bundle (`verify-bundle.js`)
 
@@ -527,7 +541,7 @@ library's own `opts` object, unchanged:
 ```json
 {
   "perSlot": {
-    "receipt": { "ctx": { "publicKey": "-----BEGIN PUBLIC KEY-----…", "expectedKid": "2026-07-k1" }, "opts": {} },
+    "receipt": { "ctx": { "publicKey": "-----BEGIN PUBLIC KEY-----…", "expectedKid": "2026-10-k1" }, "opts": {} },
     "execution_grant": { "ctx": { "publicKey": "…", "expectedKid": "…" }, "opts": { "intended": { } } }
   }
 }
@@ -544,14 +558,18 @@ asks "did anything verify?" first (`verify-bundle.js:239`). The exit code is `1`
 the `slots` array for what actually failed.
 
 **This is not `coderifts verify-proof-bundle`.** That spelling is the future *app*-CLI verb
-(roadmap 1107) and lives in the `coderifts` package. This repository ships no `coderifts` command
-and has no `package.json`; like every other verifier here, it is invoked as `node <file>.js`.
+(roadmap 1107) and lives in the `coderifts` package. This repository ships no `coderifts` command.
+It is the `@coderifts/receipt-verifier` npm package (its `package.json` names the
+`coderifts-receipt-verifier` bin, `cli.js`); `verify-bundle.js`, like the other verifiers here, is
+invoked as `node <file>.js` or required from the package (see `exports` in `package.json`).
 
 ## Key rotation
 
 There is a single *active* signing kid at any time. When CodeRifts rotates the
 key, the previous kid is marked `retired` (never removed) in the append-only
-registry at `/.well-known/coderifts-keys.json`. The CLI default loads the
+registry at `/.well-known/coderifts-keys.json`; a key believed compromised is marked
+`revoked`, with `compromised_at` (RECEIPT_FORMAT.md section 7.1). `2026-07-k1` is revoked
+(compromised_at `2026-07-01T00:00:00.000Z`, 1.1.8): every receipt under it is `valid: false`. The CLI default loads the
 **vendored snapshot** of that registry (`keys/coderifts-keys.json`) offline.
 `--refresh-keys` (or `--keys <url>` / `--fetch <url>`) fetches the live
 registry so a receipt signed under a newly-retired kid still resolves as
@@ -568,8 +586,10 @@ verifies; `ts >= retired_at` is `KEY_RETIRED_AFTER_SIGNING`. `revoked_at` is
 compromise: every receipt under that key is `KEY_REVOKED`, including those
 signed before the timestamp — revocation cannot retroactively prove a receipt
 was signed by an honest holder, it can only invalidate. Entries without either
-field are unchanged (this verifier's reading; the app registry does not mint
-`revoked_at` on key entries yet — follow-up).
+field are unchanged. `status: "revoked"` (with `compromised_at`) is the registry's
+form for a compromised key: `REVOKED_KEY` at or after `compromised_at`,
+`REVOKED_KEY_UNDECIDABLE` before it or without it — both `valid: false`
+(RECEIPT_FORMAT.md section 7.1). The app serves that form from 2026-11-04 (10s).
 
 The name `KEY_RETIRED_AFTER_SIGNING` reads backwards: it means the key was
 already retired when the receipt says it was signed (`ts >= retired_at`), so

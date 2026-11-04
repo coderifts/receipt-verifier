@@ -305,24 +305,27 @@ function verifyExecutionGrantV2(payload, sigB64, ctx, opts = {}) {
     return { valid: false, status: 'GRANT_EXPIRED', reason: 'nbf_in_future', payload };
   }
 
-  if (intended.executor_id && payload.executor_id !== String(intended.executor_id)) {
+  // 1.1.8: a stated intended value is checked whether or not it is truthy — "given" is the question, not
+  // "non-empty" (a library caller passing "" gets a mismatch, never a skipped binding). v1 below keeps its
+  // documented reading of "" as not stated.
+  if (intended.executor_id != null && payload.executor_id !== String(intended.executor_id)) {
     return { valid: false, status: 'GRANT_UNBOUND', reason: 'executor_mismatch', payload };
   }
-  if (intended.adapter_id && payload.adapter_id !== String(intended.adapter_id)) {
+  if (intended.adapter_id != null && payload.adapter_id !== String(intended.adapter_id)) {
     return { valid: false, status: 'GRANT_UNBOUND', reason: 'adapter_mismatch', payload };
   }
-  if (intended.target_uri) {
+  if (intended.target_uri != null) {
     const want = canonicalizeTargetUri(String(intended.target_uri)) || String(intended.target_uri);
     if (payload.target_uri !== want) {
       return { valid: false, status: 'GRANT_UNBOUND', reason: 'target_mismatch', payload };
     }
   }
-  if (intended.audience) {
+  if (intended.audience != null) {
     if (payload.audience_hash !== sha256pref(intended.audience)) {
       return { valid: false, status: 'GRANT_UNBOUND', reason: 'audience_mismatch', payload };
     }
   }
-  if (intended.audience_hash && payload.audience_hash !== String(intended.audience_hash)) {
+  if (intended.audience_hash != null && payload.audience_hash !== String(intended.audience_hash)) {
     return { valid: false, status: 'GRANT_UNBOUND', reason: 'audience_mismatch', payload };
   }
   if (intended.after_payload != null) {
@@ -330,13 +333,13 @@ function verifyExecutionGrantV2(payload, sigB64, ctx, opts = {}) {
       return { valid: false, status: 'GRANT_UNBOUND', reason: 'after_payload_mismatch', payload };
     }
   }
-  if (intended.operation && payload.operation !== String(intended.operation)) {
+  if (intended.operation != null && payload.operation !== String(intended.operation)) {
     return { valid: false, status: 'GRANT_UNBOUND', reason: 'operation_mismatch', payload };
   }
-  if (intended.environment && payload.environment !== String(intended.environment)) {
+  if (intended.environment != null && payload.environment !== String(intended.environment)) {
     return { valid: false, status: 'GRANT_UNBOUND', reason: 'environment_mismatch', payload };
   }
-  if (intended.receipt_token) {
+  if (intended.receipt_token != null) {
     if (sha256pref(intended.receipt_token) !== payload.receipt_hash) {
       return { valid: false, status: 'GRANT_UNBOUND', reason: 'receipt_hash_mismatch', payload };
     }
@@ -581,6 +584,18 @@ function verifyGrantAt(token, ctx, opts = {}) {
   return { valid: true, status: 'GRANT_CURRENT', payload };
 }
 
+/** The --intended-* flags and the option each one sets (1.1.8: shared, so all eight refuse an empty value). */
+const INTENDED_FLAGS = Object.freeze({
+  '--intended-operation': 'intendedOperation',
+  '--intended-target': 'intendedTarget',
+  '--intended-audience': 'intendedAudience',
+  '--intended-executor': 'intendedExecutor',
+  '--intended-adapter': 'intendedAdapter',
+  '--intended-environment': 'intendedEnvironment',
+  '--intended-after-file': 'intendedAfterFile',
+  '--intended-scope-hash': 'intendedScopeHash',
+});
+
 function parseArgs(argv) {
   const opts = {
     grant: null,
@@ -612,14 +627,14 @@ function parseArgs(argv) {
       opts.fetch = true;
       if (/^https?:\/\//i.test(argv[i + 1] || '')) opts.fetchUrl = argv[++i];
     }
-    else if (a === '--intended-operation') opts.intendedOperation = argv[++i];
-    else if (a === '--intended-target') opts.intendedTarget = argv[++i];
-    else if (a === '--intended-audience') opts.intendedAudience = argv[++i];
-    else if (a === '--intended-executor') opts.intendedExecutor = argv[++i];
-    else if (a === '--intended-adapter') opts.intendedAdapter = argv[++i];
-    else if (a === '--intended-environment') opts.intendedEnvironment = argv[++i];
-    else if (a === '--intended-after-file') opts.intendedAfterFile = argv[++i];
-    else if (a === '--intended-scope-hash') opts.intendedScopeHash = argv[++i];
+    // 1.1.8: an --intended-* flag given with an empty (or no) value is a usage error, exit 2. MEASURED on
+    // 1.1.7: `--intended-executor ""` set the field to "", every check below read it as falsy and skipped
+    // the binding, and the grant answered GRANT_CURRENT, exit 0 — for all eight flags, js and py.
+    else if (Object.prototype.hasOwnProperty.call(INTENDED_FLAGS, a)) {
+      const value = argv[++i];
+      if (value === undefined || value === '') throw new Error(`${a} needs a non-empty value (an empty one would check nothing)`);
+      opts[INTENDED_FLAGS[a]] = value;
+    }
     else if (a === '--receipt') opts.receipt = argv[++i];
     else if (a === '--as-of') opts.asOf = argv[++i];
     else if (a === '--json') opts.json = true;
@@ -689,9 +704,10 @@ async function main(argv = process.argv.slice(2), { prog = 'node verify-grant.js
   } catch (e) {
     return die(e.message);
   }
+  // 1.1.8: --help / -h is a request, not a usage error: exit 0 (was exit 2).
   if (opts.help) {
     process.stdout.write(usage);
-    process.exit(2);
+    process.exit(0);
   }
   if (!opts.grant || !String(opts.grant).trim()) {
     return die('no grant provided');

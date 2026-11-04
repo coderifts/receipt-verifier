@@ -3,6 +3,44 @@
 Versions here are the npm package `@coderifts/receipt-verifier`. Entries land before the release
 that carries them; a heading with no tag has not been published.
 
+## 1.1.8 — 2026-11-04
+
+### Security: `2026-07-k1` revoked; empty `--intended-*` refused; as-of before `ts`; `--help` exit 0
+
+Measured on 89f1476 (1.1.7) before each change; the round's report (10s) has the runs.
+
+- **`2026-07-k1` is revoked in the pinned snapshot** (`keys/coderifts-keys.json`, sha256
+  `abf16e94c9a317dc9fed5651ae7a0e3c8d3a9bc03834002aebce3b70364c8957`): `"status": "revoked"`,
+  `"compromised_at": "2026-07-01T00:00:00.000Z"`, `retired_at` kept. In 1.1.7 it was retired at
+  2026-10-21, so a receipt under it dated before then was `RETIRED_KEY_VALID_AT_ISSUE` (`valid: true`)
+  — including a forgery backdated by whoever holds the key, since the signer chooses `ts`
+  (RECEIPT_FORMAT §7.1). Now every receipt under it is `valid: false`, exit 1: `REVOKED_KEY` (ts at or
+  after `compromised_at`, which covers every receipt the key signed), `REVOKED_KEY_UNDECIDABLE` (ts
+  before it), `KEY_RETIRED_AFTER_SIGNING` (ts at or after `retired_at`); a grant under it is refused
+  at every instant. **Every old receipt signed by `2026-07-k1` stops verifying**, the public demo and
+  test fixture (`test/fixtures-receipt.txt`, signed 2026-08-26) included. `compromised_at` is the first
+  day of the month the kid names: no creation time is recorded, and the key's first public appearance is
+  this repository's v1.0.0 (2026-07-15). `2026-10-k1` stays active.
+- **An `--intended-*` flag given with an empty or no value is a usage error, exit 2**
+  (`verify-grant.js`, `coderifts-receipt-verifier grant`, `verify_grant.py`). In 1.1.7
+  `--intended-executor ""` (and the other seven) read as "not given": the binding was skipped and the
+  grant answered `GRANT_CURRENT`, exit 0. In the library, a v2 `intended` value is compared whenever it
+  is stated, `""` included (`GRANT_UNBOUND`); v1 keeps its documented reading of `""` as not stated.
+- **`--as-of` before a v1–v3 receipt's `ts` is `NOT_YET_VALID_AT_AS_OF`** (`valid: false`, exit 1),
+  the status v4 already gave. In 1.1.7 it kept the ordinary result (`VERIFIED_CURRENT`, exit 0).
+  `verify.py` still has no as-of.
+- **`--help` / `-h` print the usage and exit 0** (`cli.js`, `grant`, `verify-grant.js`, `verify.py`,
+  `verify_grant.py`); they exited 2. A real usage error is still exit 2.
+- **RECEIPT_FORMAT §10.5** names `tenant_id` and `grant_id` among the presence-checked v2 fields (the
+  code always required them; v1 has neither) and states the empty-flag rule.
+- **README** follows RECEIPT_FORMAT and the code: `fp` is a signed field with published recipes
+  (§2.0), not opaque; the status list is RECEIPT_FORMAT section 6 (no count); the package has a
+  `package.json`; the key states are the keyring's (active / retired / revoked), not "the active key";
+  "signed after the key was retired" is `KEY_RETIRED_AFTER_SIGNING`, with `retired_key_after_issue`
+  and `retired_key_outside_window` named once as the earlier names. Examples use `2026-10-k1`.
+- `test/security-1.1.8.test.js` (js + py) holds all of the above; the tests that pinned the retired
+  state now pin the revoked one; `scripts/release-check.js` expects the fixture as `REVOKED_KEY`, exit 1.
+
 ## 1.1.7 — 2026-11-01
 
 ### Grants: `environment`, the `grant` subcommand, `--as-of`, an offline key default

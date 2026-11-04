@@ -4,7 +4,7 @@
   "proves": "The public verifier agrees with the app kernel AS OF kernel_sha256 below.",
   "does_not_prove": "Agreement with the app kernel as it stands now. Nothing here can see that repo.",
   "vectors_sha256": "sha256:a53218b0e0ca49aa6743a3c576b6f758f2a6bc6e4d710948d671f39d89e17dbb",
-  "kernel_sha256": "sha256:9fbcd43062af37d29d9c2ed2c5b01cd212c883e7608a5fb1eade1b869f345a85",
+  "kernel_sha256": "sha256:462f14c9acc1dc6a83d1998da006f6230e8e898d0630fc00a788ce7b3d440dc1",
   "verdicts": [
     {
       "name": "MON-A-VALID",
