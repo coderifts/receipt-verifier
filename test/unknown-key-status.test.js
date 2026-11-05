@@ -111,9 +111,21 @@ describe('an unrecognised key status fails closed (both languages)', () => {
     const res = await fetch(LIVE_KEYS, { headers: { Accept: 'application/json' } });
     if (!res.ok) return; // transport: not a verdict (same policy as the other network gates)
     const doc = await res.json();
+    // 1.1.8 (10s-d, 2026-11-05): "understands" is asked of the verifiers themselves, not of a hand list.
+    // MEASURED: this compared each live status with ['active', 'retired'] while verify.js (deriveStatus
+    // KNOWN_STATUSES) and verify.py already understood 'revoked' (REVOKED_KEY, exit 1), so the day the live
+    // registry revoked 2026-07-k1 the gate failed on a status both verifiers handle. Now each live entry's
+    // status (with its compromised_at / revoked_at) is put on the fixture key, run through both CLIs, and
+    // must not come back UNKNOWN_KEY_STATUS — the fail-closed answer for a status a verifier does not know.
+    const PY = process.env.PYTHON || 'python3';
     for (const k of doc.keys || []) {
-      assert.ok(['active', 'retired'].includes(k.status),
-        `live registry publishes status "${k.status}" — every verifier must learn it BEFORE it ships`);
+      const extra = {};
+      for (const f of ['compromised_at', 'revoked_at', 'retired_at', 'valid_from']) if (k[f] !== undefined) extra[f] = k[f];
+      const keys = registryWith(String(k.status), extra);
+      for (const [label, r] of [['cli.js', run('node', ['cli.js', RECEIPT, '--keys', keys])], ['verify.py', run(PY, ['verify.py', RECEIPT, '--keys', keys])]]) {
+        assert.notEqual(r.status, 'UNKNOWN_KEY_STATUS',
+          `live registry publishes status "${k.status}" — ${label} does not understand it; every verifier must learn it BEFORE it ships`);
+      }
     }
   });
 });

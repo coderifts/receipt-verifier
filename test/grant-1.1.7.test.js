@@ -274,17 +274,36 @@ describe('5. verified_with.keyring_snapshot_sha256', () => {
     assert.equal(r.json.verified_with.keyring_snapshot_sha256, undefined);
   });
 
-  it('a receipt verified against the pinned snapshot: keyring_snapshot_sha256 and one text line', () => {
+  // 10s-d (2026-11-05): this ran on test/fixtures-receipt.txt, a 2026-07-k1 receipt, and expected exit 0 /
+  // RETIRED_KEY_VALID_AT_ISSUE. From 1.1.8 the pinned snapshot revokes 2026-07-k1, so that receipt is
+  // REVOKED_KEY, exit 1 — and, as cli.js and the README say ("on a valid verdict only (no key verified an
+  // invalid one)"; README "A valid receipt verdict carries verified_with"), it carries no verified_with and
+  // prints no snapshot line. Both halves are pinned: the revoked receipt is refused with nothing that names a
+  // verifying key, and the provenance is measured on a VALID receipt against the same pinned snapshot — the
+  // public 2026-10-k1 receipt of coderifts/demo PR #36 (test/fixtures-receipt-2026-10-k1.txt, v4, ts
+  // 2026-11-01T07:21:52Z, expires 11:21:52Z), read at an instant inside its window (it has expired since).
+  it('a 2026-07-k1 receipt against the pinned snapshot is refused: REVOKED_KEY, exit 1, no verified_with, no snapshot line', () => {
     const tok = fs.readFileSync(path.join(__dirname, 'fixtures-receipt.txt'), 'utf8').trim();
     const r = run('cli.js', [tok]);
+    assert.equal(r.code, 1);
+    assert.equal(r.json.valid, false);
+    assert.equal(r.json.status, 'REVOKED_KEY');
+    assert.equal(r.json.verified_with, undefined, 'no key verified an invalid receipt');
+    assert.equal(r.stderr, '');
+  });
+
+  it('a receipt verified against the pinned snapshot: keyring_snapshot_sha256 and one text line', () => {
+    const tok = fs.readFileSync(path.join(__dirname, 'fixtures-receipt-2026-10-k1.txt'), 'utf8').trim();
+    const r = run('cli.js', [tok, '--as-of', '2026-11-01T08:00:00Z']);
     assert.equal(r.code, 0);
-    const before = { kid: '2026-07-k1', key_sha256: r.json.verified_with.key_sha256, keyring_source: 'pinned-snapshot' };
+    assert.equal(r.json.status, 'VERIFIED_AT_AS_OF');
+    const before = { kid: '2026-10-k1', key_sha256: r.json.verified_with.key_sha256, keyring_source: 'pinned-snapshot' };
     assert.deepEqual(r.json.verified_with, { ...before, keyring_snapshot_sha256: SNAPSHOT_SHA12 });
-    assert.equal(r.json.status, 'RETIRED_KEY_VALID_AT_ISSUE', 'the verdict is unchanged');
-    const lines = r.stderr.split('\n').filter(Boolean);
+    // One snapshot line; the as-of audit line under it is the audit mode's own (cli.js auditLine).
+    const lines = r.stderr.split('\n').filter(Boolean).filter((l) => /^verified with /.test(l));
     assert.equal(lines.length, 1);
     assert.match(lines[0], new RegExp(`pinned snapshot ${SNAPSHOT_SHA12} \\(the snapshot file carries no date\\)`));
-    assert.equal(run('cli.js', [tok, '--json']).stderr, '', '--json: no note');
+    assert.equal(run('cli.js', [tok, '--as-of', '2026-11-01T08:00:00Z', '--json']).stderr, '', '--json: no note');
   });
 
   it('the snapshot file carries no date field (measured, so the line says so)', () => {
