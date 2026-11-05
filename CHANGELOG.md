@@ -3,6 +3,10 @@
 Versions here are the npm package `@coderifts/receipt-verifier`. Entries land before the release
 that carries them; a heading with no tag has not been published.
 
+## 1.1.9 — 2026-11-05
+
+Same shipped content as 1.1.8. The v1.1.8 tag failed the release workflow test step on two outdated test expectations and never reached npm; 1.1.9 carries the corrected tests and the same verifier, key list and pinned snapshot.
+
 ## 1.1.8 — 2026-11-04
 
 ### Security: `2026-07-k1` revoked; empty `--intended-*` refused; as-of before `ts`; `--help` exit 0
