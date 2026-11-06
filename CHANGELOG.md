@@ -3,7 +3,9 @@
 Versions here are the npm package `@coderifts/receipt-verifier`. Entries land before the release
 that carries them; a heading with no tag has not been published.
 
-## Unreleased
+## 1.2.1 — 2026-11-06
+
+- The v1.2.0 tag failed the release workflow on the release-check step (the CHANGELOG heading for 1.2.0 was missing) and never reached npm; 1.2.1 carries the same verifier and tests.
 
 - **Verdict order (RECEIPT_FORMAT.md §7.1, normative) — a key's entry decides in one fixed order.** 1 unknown status → `UNKNOWN_KEY_STATUS`; 2 `revoked` → `REVOKED_KEY` at every signing time, with the entry's `compromised_at` in the result; 3 `retired`, signed at or after `retired_at` → `KEY_RETIRED_AFTER_SIGNING`; 4 `retired`, before `retired_at`, with an independent time anchor → `RETIRED_KEY_VALID_AT_ISSUE` (not reachable: no anchor input exists yet); 5 `retired`, before `retired_at`, no anchor → `RETIRED_KEY_UNANCHORED` (`valid: false`, exit 1); 6 `active` → the signature decides. Measured on 1.1.9: a revoked key before `compromised_at` or without it was `REVOKED_KEY_UNDECIDABLE` (no longer returned); a key both revoked and retired, signed after `retired_at`, was `KEY_RETIRED_AFTER_SIGNING` (now `REVOKED_KEY`); a retired key before `retired_at` was `RETIRED_KEY_VALID_AT_ISSUE`, `valid: true`, exit 0 (now `RETIRED_KEY_UNANCHORED`, `valid: false`, exit 1). `verify.js` and `verify.py`; `test/key-status-table-10t-rv.test.js`. The grant, attest, monitor and toolset verifiers keep their own rules.
 - **One test source.** `test/run.sh` runs every `test/*.test.js` and `test/test_*.py`; `release.yml` runs only `npm test`. Before, `release.yml` also ran `node --test test/*.test.js` (38 files) where the script named 14, and `test_arity.py` and `test_v2_reserved_inert.py` ran nowhere.
