@@ -52,7 +52,7 @@ function structureOf(corpus) {
 function generateReference() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xlang-sync-'));
   const out = path.join(dir, 'xlang-vectors.json');
-  execFileSync(process.execPath, [path.join(__dirname, 'gen-xlang-vectors.js'), '--out', out], {
+  execFileSync(process.execPath, [path.join(__dirname, '..', 'scripts', 'vectors', 'gen-xlang-vectors.js'), '--out', out], {
     cwd: REPO, stdio: ['ignore', 'ignore', 'pipe'],
   });
   return JSON.parse(fs.readFileSync(out, 'utf8'));
@@ -65,7 +65,9 @@ const absent = COPIES.filter((c) => !fs.existsSync(c.file));
 describe('xlang corpus — every copy covers what the generator produces', () => {
   it('the generator itself produces the withdrawal class this corpus exists for', () => {
     const statuses = new Set(Object.values(reference).map((v) => v.expected.status));
-    for (const required of ['REVOKED_KEY', 'REVOKED_KEY_UNDECIDABLE', 'KEY_REVOKED',
+    // 10t-rv (2026-11-05): RECEIPT_FORMAT §7.1 — REVOKED_KEY_UNDECIDABLE is no longer an outcome (a revoked key is
+    // REVOKED_KEY at every signing time); the unanchored retired case (RETIRED_KEY_UNANCHORED) is.
+    for (const required of ['REVOKED_KEY', 'RETIRED_KEY_UNANCHORED', 'KEY_REVOKED',
       'KEY_RETIRED_AFTER_SIGNING', 'UNKNOWN_KEY_STATUS', 'VERIFIED_CURRENT']) {
       assert.ok(statuses.has(required), `the generator no longer emits ${required}`);
     }

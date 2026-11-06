@@ -21,7 +21,7 @@
  * NO PRIVATE KEY IS WRITTEN. The keypair lives in memory for the length of this run; only the
  * public PEM is embedded, in the registry the vectors verify against.
  *
- *   node test/gen-toolset-vectors.js
+ *   node scripts/vectors/gen-toolset-vectors.js
  */
 'use strict';
 
@@ -35,9 +35,9 @@ const {
   STATEMENTS,
   computeSetDigest,
   signingInput,
-} = require('../verify-toolset.js');
+} = require('../../verify-toolset.js');
 
-const OUT = path.join(__dirname, 'toolset-vectors.json');
+const OUT = path.join(__dirname, '..', '..', 'test', 'toolset-vectors.json');
 
 /** The declared set. Three tools, two mutating — the shape set_digest is computed over. */
 const ENTRIES = [

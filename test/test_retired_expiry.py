@@ -55,29 +55,32 @@ def verify(token, retired_at):
 
 
 class TestRetiredKeyExpiry(unittest.TestCase):
-    def test_expired_under_retired_key_is_verified_expired(self):
+    # 10t-rv (2026-11-05): RECEIPT_FORMAT 7.1 row 5 — signed before retired_at, no independent time anchor
+    # (none is read) -> RETIRED_KEY_UNANCHORED, valid False, whatever the window. MEASURED on 15fbdc4:
+    # VERIFIED_EXPIRED (window closed) and RETIRED_KEY_VALID_AT_ISSUE, valid True (leeway, window open).
+    def test_expired_under_retired_key_is_unanchored(self):
         token, _ = mint(TS, TS + 4 * HOUR)
         r = verify(token, TS + HOUR)
-        self.assertEqual(r["status"], "VERIFIED_EXPIRED")
+        self.assertEqual(r["status"], "RETIRED_KEY_UNANCHORED")
         self.assertFalse(r["valid"])
 
-    def test_derive_status_expired_under_retired_key(self):
+    def test_derive_status_under_retired_key_is_unanchored_at_any_now(self):
         _, payload = mint(TS, TS + 4 * HOUR)
         entry = dict(RETIRED, retired_at=iso(TS + HOUR))
-        self.assertEqual(derive_status(payload, entry, {"now": NOW}), "VERIFIED_EXPIRED")
-        self.assertEqual(derive_status(payload, entry, {"now": TS + 2 * HOUR}), "RETIRED_KEY_VALID_AT_ISSUE")
+        self.assertEqual(derive_status(payload, entry, {"now": NOW}), "RETIRED_KEY_UNANCHORED")
+        self.assertEqual(derive_status(payload, entry, {"now": TS + 2 * HOUR}), "RETIRED_KEY_UNANCHORED")
 
-    def test_inside_the_leeway_is_still_valid_at_issue(self):
+    def test_inside_the_leeway_is_unanchored(self):
         token, _ = mint(TS, NOW - 10_000)
         r = verify(token, TS + HOUR)
-        self.assertEqual(r["status"], "RETIRED_KEY_VALID_AT_ISSUE")
-        self.assertTrue(r["valid"])
+        self.assertEqual(r["status"], "RETIRED_KEY_UNANCHORED")
+        self.assertFalse(r["valid"])
 
-    def test_inside_the_window_unchanged(self):
+    def test_inside_the_window_is_unanchored(self):
         token, _ = mint(TS, NOW + HOUR)
         r = verify(token, TS + HOUR)
-        self.assertEqual(r["status"], "RETIRED_KEY_VALID_AT_ISSUE")
-        self.assertTrue(r["valid"])
+        self.assertEqual(r["status"], "RETIRED_KEY_UNANCHORED")
+        self.assertFalse(r["valid"])
 
     def test_signed_after_retirement_still_refused(self):
         token, _ = mint(TS, NOW + HOUR)

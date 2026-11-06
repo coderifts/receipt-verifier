@@ -8,9 +8,9 @@
  * Same contract as gen-toolset-kernel-verdicts.js: LIVE re-derives and fails on
  * drift; RECORDED is weaker and says so. vectors_sha256 binds the tokens.
  *
- *   node test/gen-kernel-verdicts.js            # write all three (needs app checkout)
- *   node test/gen-kernel-verdicts.js --check
- *   node test/gen-kernel-verdicts.js --family grant|attest|monitor
+ *   node scripts/vectors/gen-kernel-verdicts.js            # write all three (needs app checkout)
+ *   node scripts/vectors/gen-kernel-verdicts.js --check
+ *   node scripts/vectors/gen-kernel-verdicts.js --family grant|attest|monitor
  */
 
 const crypto = require('node:crypto');
@@ -18,7 +18,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const ROOT = path.join(__dirname, '..');
+const ROOT = path.join(__dirname, '..', '..');
 const sha256 = (buf) => `sha256:${crypto.createHash('sha256').update(buf).digest('hex')}`;
 
 function appRoot() {
@@ -56,7 +56,7 @@ function envelope(family, vectorsFile, kernelFile, verdicts) {
 
 function grantVerdicts() {
   const { path: kp, mod } = loadKernel('execution-grant.js');
-  const vectors = require('./grant-vectors.json');
+  const vectors = require('../../test/grant-vectors.json');
   const cryptoMod = require('node:crypto');
   const publicKey = cryptoMod.createPublicKey(vectors.public_key_pem);
   const CLASSES = [
@@ -82,8 +82,8 @@ function grantVerdicts() {
     const r = mod.verifyExecutionGrant(v.token, { publicKey, intended });
     return { name, valid: r.valid, status: r.status, reason: r.reason === undefined ? null : r.reason };
   });
-  const out = path.join(__dirname, 'grant-kernel-verdicts.json');
-  return { out, text: envelope('grant', path.join(__dirname, 'grant-vectors.json'), kp, verdicts) };
+  const out = path.join(__dirname, '..', '..', 'test', 'grant-kernel-verdicts.json');
+  return { out, text: envelope('grant', path.join(__dirname, '..', '..', 'test', 'grant-vectors.json'), kp, verdicts) };
 }
 
 function registryFor(vectors, v) {
@@ -94,7 +94,7 @@ function registryFor(vectors, v) {
 
 function attestVerdicts() {
   const { path: kp, mod } = loadKernel('execution-attestation.js');
-  const vectors = require('./attest-vectors.json');
+  const vectors = require('../../test/attest-vectors.json');
   const verdicts = vectors.vectors.map((v) => {
     const f = v.flags || {};
     const intended = {};
@@ -104,13 +104,13 @@ function attestVerdicts() {
     const r = mod.verifyExecutionAttestation(v.token, opts);
     return { name: v.name, valid: r.valid, status: r.status, reason: r.reason === undefined ? null : r.reason };
   });
-  const out = path.join(__dirname, 'attest-kernel-verdicts.json');
-  return { out, text: envelope('attest', path.join(__dirname, 'attest-vectors.json'), kp, verdicts) };
+  const out = path.join(__dirname, '..', '..', 'test', 'attest-kernel-verdicts.json');
+  return { out, text: envelope('attest', path.join(__dirname, '..', '..', 'test', 'attest-vectors.json'), kp, verdicts) };
 }
 
 function monitorVerdicts() {
   const { path: kp, mod } = loadKernel('monitoring-attestation.js');
-  const vectors = require('./monitor-vectors.json');
+  const vectors = require('../../test/monitor-vectors.json');
   const verdicts = vectors.vectors.map((v) => {
     const f = v.flags || {};
     const intended = {};
@@ -120,8 +120,8 @@ function monitorVerdicts() {
     const r = mod.verifyMonitoringAttestation(v.token, opts);
     return { name: v.name, valid: r.valid, status: r.status, reason: r.reason === undefined ? null : r.reason };
   });
-  const out = path.join(__dirname, 'monitor-kernel-verdicts.json');
-  return { out, text: envelope('monitor', path.join(__dirname, 'monitor-vectors.json'), kp, verdicts) };
+  const out = path.join(__dirname, '..', '..', 'test', 'monitor-kernel-verdicts.json');
+  return { out, text: envelope('monitor', path.join(__dirname, '..', '..', 'test', 'monitor-vectors.json'), kp, verdicts) };
 }
 
 const FAMILIES = {
@@ -151,7 +151,7 @@ function main() {
     if (check) {
       const have = fs.existsSync(out) ? fs.readFileSync(out, 'utf8') : '';
       if (have !== text) {
-        process.stderr.write(`gen-kernel-verdicts: ${f} recorded verdicts are STALE. regenerate: node test/gen-kernel-verdicts.js --family ${f}\n`);
+        process.stderr.write(`gen-kernel-verdicts: ${f} recorded verdicts are STALE. regenerate: node scripts/vectors/gen-kernel-verdicts.js --family ${f}\n`);
         stale = true;
       } else {
         process.stdout.write(`${f} kernel verdicts up to date\n`);
@@ -168,7 +168,7 @@ function main() {
  * Load a recorded fixture for CI. Throws a shaped error object { code, message } the harnesses print.
  */
 function loadRecorded(family, vectorsAbsPath) {
-  const fixture = path.join(__dirname, `${family}-kernel-verdicts.json`);
+  const fixture = path.join(__dirname, '..', '..', 'test', `${family}-kernel-verdicts.json`);
   if (!fs.existsSync(fixture)) {
     const err = new Error(
       `cross-check-${family}: app kernel not found and no recorded verdicts at ${fixture}; `
@@ -187,7 +187,7 @@ function loadRecorded(family, vectorsAbsPath) {
       + `  recorded for: ${rec.vectors_sha256}\n`
       + `  vectors now : ${nowSha}\n`
       + '  regenerate them together on a machine with the app checkout:\n'
-      + `    node test/gen-kernel-verdicts.js --family ${family}`,
+      + `    node scripts/vectors/gen-kernel-verdicts.js --family ${family}`,
     );
     err.code = 'STALE_VECTORS';
     throw err;

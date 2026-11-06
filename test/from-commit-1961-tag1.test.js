@@ -24,7 +24,9 @@ const { receiptForCommit, TRAILER_KEY, SIDECAR_DIR } = require('../receipt-from-
 
 const CLI = path.join(__dirname, '..', 'cli.js');
 const KEYS = path.join(__dirname, 'fixtures-keys.json');
-const TOKEN = fs.readFileSync(path.join(__dirname, 'fixtures-receipt.txt'), 'utf8').trim();
+// 10t-rv (2026-11-05): test/fixtures-keys.json holds a TEST key (test-fixture-k1), not the real 2026-07-k1;
+// fixtures-receipt-test-k1.txt is the same v2 payload signed by it. The real 07-k1 receipt stays for the pinned-snapshot (revoked) cases.
+const TOKEN = fs.readFileSync(path.join(__dirname, 'fixtures-receipt-test-k1.txt'), 'utf8').trim();
 const OTHER_TOKEN = `${TOKEN.split('.')[0]}.AAAA`;   // same shape, different bytes
 
 const made = [];
@@ -189,7 +191,7 @@ describe('TAG 1 · the CLI', () => {
     // The whole safety argument for allowing a mutable carrier at all.
     const r = repo();
     const sha = commit(r, 'x');
-    const forged = `${Buffer.from(JSON.stringify({ v: 2, kid: '2026-07-k1', fp: 'sha256:0', prev: '', caller: 'me', ts: '2026-01-01T00:00:00Z' })).toString('base64url')}.${Buffer.alloc(64).toString('base64url')}`;
+    const forged = `${Buffer.from(JSON.stringify({ v: 2, kid: 'test-fixture-k1', fp: 'sha256:0', prev: '', caller: 'me', ts: '2026-01-01T00:00:00Z' })).toString('base64url')}.${Buffer.alloc(64).toString('base64url')}`;
     sidecar(r, sha, { receipt: forged });
     const out = runCli(['--from-commit', sha, '--keys', KEYS], r.dir);
     assert.equal(out.code, 1);

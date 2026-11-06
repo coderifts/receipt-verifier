@@ -22,7 +22,9 @@ const path = require('node:path');
 
 const { verifyReceipt, verifyChain, keyringFromDocument } = require('../verify.js');
 
-const TOKEN = fs.readFileSync(path.join(__dirname, 'fixtures-receipt.txt'), 'utf8').trim();
+// 10t-rv (2026-11-05): test/fixtures-keys.json holds a TEST key (test-fixture-k1), not the real 2026-07-k1;
+// fixtures-receipt-test-k1.txt is the same v2 payload signed by it. The real 07-k1 receipt stays for the pinned-snapshot (revoked) cases.
+const TOKEN = fs.readFileSync(path.join(__dirname, 'fixtures-receipt-test-k1.txt'), 'utf8').trim();
 const KEYRING = keyringFromDocument(JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures-keys.json'), 'utf8')), 'fixtures-keys.json');
 const VECTORS = require('./vectors.json');
 const V4 = VECTORS.vectors.find((v) => v.name === 'valid_v4');

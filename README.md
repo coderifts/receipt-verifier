@@ -17,10 +17,11 @@ The exact byte format is frozen in [RECEIPT_FORMAT.md](RECEIPT_FORMAT.md).
 - The receipt is a well-formed `base64url(body).base64url(signature)` token.
 - The `body.kid` names a key in the keyring (the pinned snapshot `keys/coderifts-keys.json` by
   default, `--keys`, or `--key`/`--kid`), and that key's `status` decides what the signature can
-  mean (RECEIPT_FORMAT.md section 7.1): `active` → the receipt can be current; `retired` →
-  `RETIRED_KEY_VALID_AT_ISSUE` when `ts` predates `retired_at`, `KEY_RETIRED_AFTER_SIGNING` at or
-  after it; `revoked` → `REVOKED_KEY` / `REVOKED_KEY_UNDECIDABLE` at every `ts`; a `revoked_at` field
-  → `KEY_REVOKED`; any other status → `UNKNOWN_KEY_STATUS`. Only the first two can be `valid: true`.
+  mean (RECEIPT_FORMAT.md section 7.1, one table in a fixed order): any status it does not know →
+  `UNKNOWN_KEY_STATUS`; `revoked` → `REVOKED_KEY` at every `ts` (with the entry's `compromised_at`);
+  a `revoked_at` field → `KEY_REVOKED`; `retired` → `KEY_RETIRED_AFTER_SIGNING` at or after
+  `retired_at`, `RETIRED_KEY_UNANCHORED` before it (no time anchor is read, so `ts` proves nothing);
+  `active` → the receipt can be current. Only `active` can be `valid: true` today.
   In the pinned snapshot `2026-10-k1` is active and `2026-07-k1` is revoked (since 1.1.8).
 - The raw Ed25519 signature verifies over the exact signed bytes
   (`crchain.v1|kid|fp|prev|caller|ts`; v2 appends `|reg`; v3 appends `|reg|ir`;
@@ -572,8 +573,8 @@ registry at `/.well-known/coderifts-keys.json`; a key believed compromised is ma
 (compromised_at `2026-07-01T00:00:00.000Z`, 1.1.8): every receipt under it is `valid: false`. The CLI default loads the
 **vendored snapshot** of that registry (`keys/coderifts-keys.json`) offline.
 `--refresh-keys` (or `--keys <url>` / `--fetch <url>`) fetches the live
-registry so a receipt signed under a newly-retired kid still resolves as
-`RETIRED_KEY_VALID_AT_ISSUE` when `ts` predates `retired_at`. A single pinned
+registry so a receipt signed under a newly-retired kid still resolves (its kid is found; without a
+time anchor the verdict is `RETIRED_KEY_UNANCHORED`, `valid: false`). A single pinned
 `--key`, or `--fetch` of the legacy `/api/v1/attestation/public-key` body,
 still sees only the active kid — receipts signed under a previous kid then
 fail as `unknown_kid`. `--keys <file>` remains the explicit local registry pin.
@@ -581,21 +582,28 @@ Refresh the vendored pin with the commands in `keys/README.md`.
 
 ## Key lifecycle
 
-`retired_at` is planned rotation: a receipt whose `ts` predates it still
-verifies; `ts >= retired_at` is `KEY_RETIRED_AFTER_SIGNING`. `revoked_at` is
-compromise: every receipt under that key is `KEY_REVOKED`, including those
-signed before the timestamp — revocation cannot retroactively prove a receipt
-was signed by an honest holder, it can only invalidate. Entries without either
-field are unchanged. `status: "revoked"` (with `compromised_at`) is the registry's
-form for a compromised key: `REVOKED_KEY` at or after `compromised_at`,
-`REVOKED_KEY_UNDECIDABLE` before it or without it — both `valid: false`
-(RECEIPT_FORMAT.md section 7.1). The app serves that form from 2026-11-04 (10s).
+The key's entry decides in this order (RECEIPT_FORMAT.md section 7.1); the first row that applies wins.
+Exit codes measured with `cli.js` and `verify.py` (`test/key-status-table-10t-rv.test.js`, 2026-11-05):
+
+| # | entry | `ts` | status | `valid` | exit |
+|---|---|---|---|---|---|
+| 1 | a status the verifier does not know | any | `UNKNOWN_KEY_STATUS` | false | 1 |
+| 2 | `status: "revoked"` | any (`compromised_at` is in the result) | `REVOKED_KEY` | false | 1 |
+| 3 | `status: "retired"` | at or after `retired_at` | `KEY_RETIRED_AFTER_SIGNING` | false | 1 |
+| 4 | `status: "retired"` | before `retired_at`, with an independent time anchor | `RETIRED_KEY_VALID_AT_ISSUE` | true | 0 — **not reachable: no anchor input exists yet** |
+| 5 | `status: "retired"` | before `retired_at`, no anchor | `RETIRED_KEY_UNANCHORED` | false | 1 |
+| 6 | `status: "active"` | — | `VERIFIED_CURRENT` (or another signature verdict) | true | 0 |
+
+A key both revoked and retired is row 2. A `revoked_at` field (the older revocation form) is `KEY_REVOKED`,
+`valid: false`, exit 1, at every `ts`. Before this table (1.1.9): a revoked key before `compromised_at` or
+without it was `REVOKED_KEY_UNDECIDABLE`; revoked + retired after `retired_at` was `KEY_RETIRED_AFTER_SIGNING`;
+row 5 was `RETIRED_KEY_VALID_AT_ISSUE`, `valid: true`, exit 0. The app serves the revoked form from
+2026-11-04 (10s).
 
 The name `KEY_RETIRED_AFTER_SIGNING` reads backwards: it means the key was
 already retired when the receipt says it was signed (`ts >= retired_at`), so
 the signature came after the retirement, and the receipt is refused
-(`valid: false`). The name is kept; a receipt signed before `retired_at` is
-`RETIRED_KEY_VALID_AT_ISSUE` (`valid: true`).
+(`valid: false`). The name is kept.
 
 ### Which key verified it (1.1.5)
 
@@ -644,7 +652,7 @@ the presence of the JSON file as a verifier.
 expected canonical string, and the sha256 of its UTF-8 bytes. They cover key order by UTF-16 code units,
 nested objects and arrays, string escaping and non-ASCII keys, integers, `1e21`, `1e-7`, `-0`, `0.1`,
 booleans and null, empty containers and whitespace-free output. Every expected value was computed with
-this repository's canonicalizer (`verify.js` `canonicalJson`) by `test/gen-rfc8785-vectors.js`; none is
+this repository's canonicalizer (`verify.js` `canonicalJson`) by `scripts/vectors/gen-rfc8785-vectors.js`; none is
 copied from an external source. The file records a cross-check against the second implementation in this
 tree, `verify.py` `canonical_json`: since 1.1.6 it agrees on 16 of 16 (`cross_check`, recomputed by the
 generator on every run). `test/rfc8785-vectors.test.js` checks every vector against `verify.js`, and
@@ -661,9 +669,9 @@ duplicate member name (`duplicate_key`) and a non-finite number (`non_finite`); 
 ## Tests
 
 ```
-node test/gen-vectors.js         # regenerate receipt vectors with a fresh EPHEMERAL key
-node test/gen-grant-vectors.js    # regenerate cr.exec.v1 grant vectors (ephemeral key)
-node test/gen-attest-vectors.js   # regenerate cr.exec.attest.v1 EG-A-* vectors (ephemeral key)
+node scripts/vectors/gen-vectors.js         # regenerate receipt vectors with a fresh EPHEMERAL key
+node scripts/vectors/gen-grant-vectors.js    # regenerate cr.exec.v1 grant vectors (ephemeral key)
+node scripts/vectors/gen-attest-vectors.js   # regenerate cr.exec.attest.v1 EG-A-* vectors (ephemeral key)
 bash test/run.sh                 # every vector through JS and Python (receipts + grants)
 ```
 

@@ -46,7 +46,7 @@ const doc = require('./toolset-vectors.json');
 const pub = require('../verify-toolset.js');
 const {
   build: buildFixture, optsFor, PROBE_BODY, OUT: FIXTURE, VECTORS, appKernelPath, sha256,
-} = require('./gen-toolset-kernel-verdicts.js');
+} = require('../scripts/vectors/gen-toolset-kernel-verdicts.js');
 
 const APP = appKernelPath();
 const HAVE_APP = fs.existsSync(APP);
@@ -77,7 +77,7 @@ if (HAVE_APP) {
   const want = buildFixture();
   const have = fs.existsSync(FIXTURE) ? fs.readFileSync(FIXTURE, 'utf8') : '';
   if (have !== want) {
-    fail('toolset-kernel-verdicts.json is STALE — regenerate: node test/gen-toolset-kernel-verdicts.js');
+    fail('toolset-kernel-verdicts.json is STALE — regenerate: node scripts/vectors/gen-toolset-kernel-verdicts.js');
   } else {
     console.log('ok    recorded-verdicts  fixture matches the live kernel');
   }
@@ -103,7 +103,7 @@ if (HAVE_APP) {
       + `  recorded for: ${rec.vectors_sha256}\n`
       + `  vectors now : ${nowSha}\n`
       + '  regenerate them together on a machine with the app checkout:\n'
-      + '    node test/gen-toolset-vectors.js && node test/gen-toolset-kernel-verdicts.js',
+      + '    node scripts/vectors/gen-toolset-vectors.js && node scripts/vectors/gen-toolset-kernel-verdicts.js',
     );
     process.exit(1);
   }

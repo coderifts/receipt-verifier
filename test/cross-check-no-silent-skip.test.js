@@ -254,7 +254,7 @@ describe('1127 — the RECORDED fallback is held to a harder standard than the r
     });
 
     it('the recorded vectors_sha256 describes the vectors file as it stands', () => {
-      const { sha256 } = require('./gen-toolset-kernel-verdicts.js');
+      const { sha256 } = require('../scripts/vectors/gen-toolset-kernel-verdicts.js');
       const rec = JSON.parse(fs.readFileSync(FIXTURE, 'utf8'));
       assert.equal(rec.vectors_sha256, sha256(fs.readFileSync(VECTORS)));
     });

@@ -12,7 +12,7 @@
  * Every vector is verified by verify-atomic-attestation.js in this same run, so the recorded
  * expectation is what the verifier actually produced.
  *
- * Usage: node test/gen-atomic-attest-vectors.js --out test/atomic-attest-vectors.json
+ * Usage: node scripts/vectors/gen-atomic-attest-vectors.js --out test/atomic-attest-vectors.json
  */
 
 const crypto = require('node:crypto');
@@ -20,7 +20,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { verifyAtomicExecutionAttestation } = require('../verify-atomic-attestation.js');
+const { verifyAtomicExecutionAttestation } = require('../../verify-atomic-attestation.js');
 
 const DEMO = path.join(os.homedir(), 'capability-demo', 'demo', 'src', 'atomic.js');
 if (!fs.existsSync(DEMO)) {

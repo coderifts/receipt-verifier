@@ -15,7 +15,7 @@ const os = require('node:os');
 
 const vectors = require('./attest-vectors.json');
 const { verifyExecutionAttestation } = require('../verify-attest.js');
-const { loadRecorded, FAMILIES } = require('./gen-kernel-verdicts');
+const { loadRecorded, FAMILIES } = require('../scripts/vectors/gen-kernel-verdicts');
 
 const APP = process.env.CODERIFTS_APP_DIR
   ? path.join(process.env.CODERIFTS_APP_DIR, 'src', 'verdict-core', 'execution-attestation.js')
@@ -32,7 +32,7 @@ if (fs.existsSync(APP)) {
   const fix = path.join(__dirname, 'attest-kernel-verdicts.json');
   const have = fs.existsSync(fix) ? fs.readFileSync(fix, 'utf8') : '';
   if (have !== want) {
-    console.log('FAIL  attest-kernel-verdicts.json is STALE — regenerate: node test/gen-kernel-verdicts.js --family attest');
+    console.log('FAIL  attest-kernel-verdicts.json is STALE — regenerate: node scripts/vectors/gen-kernel-verdicts.js --family attest');
     process.exit(1);
   }
 } else {

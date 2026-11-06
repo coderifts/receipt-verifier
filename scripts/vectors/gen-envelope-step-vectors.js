@@ -20,12 +20,12 @@
  * with the envelope given the verdict, and the test drives that rule.
  *
  * Usage:
- *   node test/gen-envelope-step-vectors.js --out test/envelope-step-vectors.json
+ *   node scripts/vectors/gen-envelope-step-vectors.js --out test/envelope-step-vectors.json
  */
 
 const crypto = require('node:crypto');
 const fs = require('node:fs');
-const { verifyReceipt, keyFromPem, canonicalJson, sha256hex } = require('../verify.js');
+const { verifyReceipt, keyFromPem, canonicalJson, sha256hex } = require('../../verify.js');
 
 const KID = 'envstep-k1';
 const SIGNING_PREFIX = 'crchain.v1';

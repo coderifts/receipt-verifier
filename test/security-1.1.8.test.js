@@ -56,10 +56,14 @@ describe('T1 · 2026-07-k1 revoked: no timestamp rehabilitates it', () => {
   // fields, so the rule the snapshot triggers is the one exercised.
   const ring = path.join(WORK, 'ring-revoked.json');
   fs.writeFileSync(ring, JSON.stringify({ keys: [{ ...entry, public_key_pem: receiptPem }] }));
+  // 10t-rv (2026-11-05): the normative order — revoked wins at every signing time (row 2), so the two
+  // cases below changed. MEASURED on 15fbdc4: before compromised_at → REVOKED_KEY_UNDECIDABLE; after
+  // retired_at → KEY_RETIRED_AFTER_SIGNING (retired_at was read before the revoked status). Both stay
+  // valid:false, exit 1; the result now carries compromised_at.
   for (const [what, ts, status] of [
     ['NEGATIVE: the backdated forgery the retired state passed (ts one minute before retired_at)', '2026-10-20T23:59:00.000Z', 'REVOKED_KEY'],
-    ['a receipt dated before compromised_at', '2026-06-30T00:00:00.000Z', 'REVOKED_KEY_UNDECIDABLE'],
-    ['a receipt dated after retired_at', '2026-10-22T00:00:00.000Z', 'KEY_RETIRED_AFTER_SIGNING'],
+    ['a receipt dated before compromised_at', '2026-06-30T00:00:00.000Z', 'REVOKED_KEY'],
+    ['a receipt dated after retired_at (the key is revoked AND retired: revoked wins)', '2026-10-22T00:00:00.000Z', 'REVOKED_KEY'],
   ]) {
     it(`${what} → valid:false, exit 1, ${status}, js and py agree`, () => {
       const tok = receipt(2, ts, '2026-07-k1');
@@ -70,6 +74,8 @@ describe('T1 · 2026-07-k1 revoked: no timestamp rehabilitates it', () => {
       assert.equal(a.json.status, status);
       assert.equal(b.code, 1);
       assert.equal(b.json.status, status);
+      assert.equal(a.json.compromised_at, entry.compromised_at);
+      assert.equal(b.json.compromised_at, entry.compromised_at);
     });
   }
 });

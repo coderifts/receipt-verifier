@@ -18,7 +18,9 @@ const { spawnSync } = require('node:child_process');
 const ROOT = path.join(__dirname, '..');
 const CLI = path.join(ROOT, 'cli.js');
 const { RECEIPT_DOES_NOT_PROVE } = require('../cli.js');
-const TOKEN = fs.readFileSync(path.join(__dirname, 'fixtures-receipt.txt'), 'utf8').trim();
+// 10t-rv (2026-11-05): test/fixtures-keys.json holds a TEST key (test-fixture-k1), not the real 2026-07-k1;
+// fixtures-receipt-test-k1.txt is the same v2 payload signed by it. The real 07-k1 receipt stays for the pinned-snapshot (revoked) cases.
+const TOKEN = fs.readFileSync(path.join(__dirname, 'fixtures-receipt-test-k1.txt'), 'utf8').trim();
 const KEYS = path.join(__dirname, 'fixtures-keys.json');
 const run = (args) => spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8' });
 

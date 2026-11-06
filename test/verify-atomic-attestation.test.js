@@ -38,7 +38,9 @@ describe('atomic seal — the recorded vectors', () => {
 
   it('the vectors were minted by the real producer, and say so', () => {
     assert.match(V.minted_by, /capability-demo demo\/src\/atomic\.js/);
+    // The committed set records where it was generated; the generator lives at scripts/vectors/ since 10t-rv.
     assert.equal(V.generated_by, 'test/gen-atomic-attest-vectors.js');
+    assert.ok(require('node:fs').existsSync(require('node:path').join(__dirname, '..', 'scripts', 'vectors', 'gen-atomic-attest-vectors.js')));
   });
 });
 

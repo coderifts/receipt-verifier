@@ -90,7 +90,8 @@ async function main() {
     }
   }
 
-  // 3. Retired kid via default-fetch (registry) → RETIRED_KEY_VALID_AT_ISSUE, not unknown_kid.
+  // 3. Retired kid via default-fetch (registry): the kid resolves (not unknown_kid). 10t-rv: signed before
+  //    retired_at with no anchor → RETIRED_KEY_UNANCHORED, valid:false, exit 1 (was RETIRED_KEY_VALID_AT_ISSUE, exit 0).
   {
     const server = await serve(vectors.retired.registry);
     const fetchUrl = urlOf(server);
@@ -100,8 +101,8 @@ async function main() {
         keyring: info.keyring,
         expectedKid: null,
       });
-      assert.strictEqual(result.status, 'RETIRED_KEY_VALID_AT_ISSUE', result.reason || result.status);
-      assert.strictEqual(result.valid, true);
+      assert.strictEqual(result.status, 'RETIRED_KEY_UNANCHORED', result.reason || result.status);
+      assert.strictEqual(result.valid, false);
       assert.notStrictEqual(result.reason, 'unknown_kid');
 
       const cli = await runCli([
@@ -109,9 +110,9 @@ async function main() {
         vectors.retired.token_valid_at_issue,
         '--fetch', fetchUrl,
       ]);
-      assert.strictEqual(cli.code, 0, cli.stderr);
+      assert.strictEqual(cli.code, 1, cli.stderr);
       const parsed = JSON.parse(cli.stdout);
-      assert.strictEqual(parsed.status, 'RETIRED_KEY_VALID_AT_ISSUE');
+      assert.strictEqual(parsed.status, 'RETIRED_KEY_UNANCHORED');
       assert.notStrictEqual(parsed.reason, 'unknown_kid');
     } finally {
       await new Promise((cb) => server.close(cb));

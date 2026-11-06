@@ -14,7 +14,7 @@ const os = require('node:os');
 
 const vectors = require('./monitor-vectors.json');
 const { verifyMonitoringAttestation } = require('../verify-monitor.js');
-const { loadRecorded, FAMILIES } = require('./gen-kernel-verdicts');
+const { loadRecorded, FAMILIES } = require('../scripts/vectors/gen-kernel-verdicts');
 
 const APP = process.env.CODERIFTS_APP_DIR
   ? path.join(process.env.CODERIFTS_APP_DIR, 'src', 'verdict-core', 'monitoring-attestation.js')
@@ -39,7 +39,7 @@ if (fs.existsSync(APP)) {
   const fix = path.join(__dirname, 'monitor-kernel-verdicts.json');
   const have = fs.existsSync(fix) ? fs.readFileSync(fix, 'utf8') : '';
   if (have !== want) {
-    console.log('FAIL  monitor-kernel-verdicts.json is STALE — regenerate: node test/gen-kernel-verdicts.js --family monitor');
+    console.log('FAIL  monitor-kernel-verdicts.json is STALE — regenerate: node scripts/vectors/gen-kernel-verdicts.js --family monitor');
     process.exit(1);
   }
 } else {

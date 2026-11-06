@@ -17,8 +17,8 @@
  * covered, not just signature and kid resolution.
  *
  * Usage:
- *   node test/gen-xlang-vectors.js > xlang-vectors.json
- *   node test/gen-xlang-vectors.js --out <path>
+ *   node scripts/vectors/gen-xlang-vectors.js > xlang-vectors.json
+ *   node scripts/vectors/gen-xlang-vectors.js --out <path>
  *
  * This repository does NOT commit xlang-vectors.json (ephemeral key → bytes are a
  * run artifact). Sibling copies live under test/fixtures/ (contract-gate,
@@ -33,9 +33,9 @@
 
 const crypto = require('node:crypto');
 const fs = require('node:fs');
-const { verifyReceipt, keyFromPem } = require('../verify.js');
-const { toDSSE } = require('../to-dsse.js');
-const { registryUnreachableVerdict, discoveryWasMandatory } = require('../cli.js');
+const { verifyReceipt, keyFromPem } = require('../../verify.js');
+const { toDSSE } = require('../../to-dsse.js');
+const { registryUnreachableVerdict, discoveryWasMandatory } = require('../../cli.js');
 
 const SIGNING_PREFIX = 'crchain.v1';
 const KID = 'xlang-k1';

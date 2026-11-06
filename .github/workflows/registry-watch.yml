@@ -1,0 +1,44 @@
+name: registry-watch
+
+# 10t-rv (2026-11-05): the live key registry is watched here, daily, and NOT in the release gate.
+# MEASURED before: test/unknown-key-status.test.js called the live registry inside `node --test test/*.test.js`
+# in release.yml, so a server-side change could stop a correct release (v1.1.8, run 41991437798). Now that test
+# is a declared SKIP unless RV_LIVE_REGISTRY=1, and this workflow sets it.
+#
+# Red when the registry's sha256 differs from keys/coderifts-keys.json.sha256 (today
+# abf16e94c9a317dc9fed5651ae7a0e3c8d3a9bc03834002aebce3b70364c8957), when 2026-07-k1 is not
+# { revoked, compromised_at 2026-07-01T00:00:00.000Z }, or when either verifier does not understand a live status.
+# Actions pinned by commit SHA, as release.yml.
+
+on:
+  schedule:
+    - cron: '23 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: registry-watch
+  cancel-in-progress: true
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: cryptography (verify.py)
+        run: python -m pip install --disable-pip-version-check cryptography
+      - name: the live registry equals the pinned snapshot (sha256, 2026-07-k1 status)
+        run: node scripts/registry-watch.js
+      - name: every live status is one both verifiers understand
+        env:
+          RV_LIVE_REGISTRY: "1"
+          PYTHON: python
+        run: node --test test/unknown-key-status.test.js

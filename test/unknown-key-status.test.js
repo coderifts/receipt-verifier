@@ -38,7 +38,9 @@ function registryWith(status, extra = {}) {
   return p;
 }
 
-const RECEIPT = fs.readFileSync(path.join(__dirname, 'fixtures-receipt.txt'), 'utf8').trim();
+// 10t-rv (2026-11-05): test/fixtures-keys.json holds a TEST key (test-fixture-k1), not the real 2026-07-k1;
+// fixtures-receipt-test-k1.txt is the same v2 payload signed by it. The real 07-k1 receipt stays for the pinned-snapshot (revoked) cases.
+const RECEIPT = fs.readFileSync(path.join(__dirname, 'fixtures-receipt-test-k1.txt'), 'utf8').trim();
 /**
  * Run a verifier and parse its JSON. It exits NON-ZERO on an invalid receipt — which is correct,
  * and which execFileSync surfaces as a throw — so the stdout must be read off the error too. An
@@ -79,10 +81,11 @@ describe('an unrecognised key status fails closed (both languages)', () => {
       assert.equal(out.status, 'VERIFIED_CURRENT');
     });
 
-    it(`${label}: the RETIRED rule is unchanged (still the documented behaviour)`, () => {
+    it(`${label}: a retired key, signed before retired_at, no anchor → RETIRED_KEY_UNANCHORED (RECEIPT_FORMAT §7.1 row 5)`, () => {
+      // 10t-rv (2026-11-05): the normative table. MEASURED on 15fbdc4: RETIRED_KEY_VALID_AT_ISSUE, valid:true.
       const out = run(bin, [script, RECEIPT, '--keys', registryWith('retired', { retired_at: '2099-01-01T00:00:00Z' })]);
-      assert.equal(out.status, 'RETIRED_KEY_VALID_AT_ISSUE',
-        'this round does not change the retirement rule — that is the revocation design, deferred');
+      assert.equal(out.status, 'RETIRED_KEY_UNANCHORED');
+      assert.equal(out.valid, false);
     });
   }
 
@@ -103,13 +106,23 @@ describe('an unrecognised key status fails closed (both languages)', () => {
     // verifier, so their presence is the intended state and their absence would be the regression.
     assert.match(src, /RECEIPT_FORMAT\.md .?7\.1/, 'the implementation must cite the normative rule');
     assert.match(src, /compromised_at/);
-    assert.match(src, /REVOKED_KEY_UNDECIDABLE/,
-      'both revoked outcomes must exist -- UNDECIDABLE is not a softer valid');
+    // 10t-rv (2026-11-05): a revoked key is REVOKED_KEY at every signing time (row 2); UNDECIDABLE is no longer
+    // returned, and the unanchored retired case has its own status (row 5).
+    assert.doesNotMatch(src, /return 'REVOKED_KEY_UNDECIDABLE'/, 'row 2: no timestamp softens a revoked key');
+    assert.match(src, /return issued >= retired \? 'KEY_RETIRED_AFTER_SIGNING' : 'RETIRED_KEY_UNANCHORED'/);
   });
 
-  it('the live registry still publishes only statuses this verifier understands', async () => {
+  // 10t-rv (2026-11-05): out of the release gate. MEASURED before: this was the one test in the suite that called
+  // the network (LIVE_KEYS above); offline it threw at fetch() and failed, and release.yml ran it on every tag,
+  // so a server-side change could stop a correct release. It runs only when RV_LIVE_REGISTRY=1, which
+  // .github/workflows/registry-watch.yml sets daily; otherwise it is a declared SKIP — not run, not passed.
+  // When it runs, a transport failure is a failure, not a silent return.
+  const LIVE = process.env.RV_LIVE_REGISTRY === '1';
+  it('the live registry still publishes only statuses this verifier understands', {
+    skip: LIVE ? false : 'live registry check — set RV_LIVE_REGISTRY=1 (registry-watch.yml runs it daily); NOT RUN, not passed',
+  }, async () => {
     const res = await fetch(LIVE_KEYS, { headers: { Accept: 'application/json' } });
-    if (!res.ok) return; // transport: not a verdict (same policy as the other network gates)
+    assert.ok(res.ok, `GET ${LIVE_KEYS} → HTTP ${res.status}: the registry did not answer`);
     const doc = await res.json();
     // 1.1.8 (10s-d, 2026-11-05): "understands" is asked of the verifiers themselves, not of a hand list.
     // MEASURED: this compared each live status with ['active', 'retired'] while verify.js (deriveStatus

@@ -3,7 +3,7 @@
  * 1079 B — key lifecycle timestamps (retired_at / revoked_at), ADDITIVE.
  *
  * Signing time is payload.ts (receipts have no iat). Vectors are generated into
- * test/vectors.json lifecycle[] by test/gen-vectors.js.
+ * test/vectors.json lifecycle[] by scripts/vectors/gen-vectors.js.
  */
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
@@ -29,7 +29,7 @@ function run(bin, script, token, registry) {
 }
 
 describe('1079 B key lifecycle (js + py)', () => {
-  assert.ok(doc.lifecycle && Array.isArray(doc.lifecycle.vectors), 'lifecycle vectors missing — run node test/gen-vectors.js');
+  assert.ok(doc.lifecycle && Array.isArray(doc.lifecycle.vectors), 'lifecycle vectors missing — run node scripts/vectors/gen-vectors.js');
 
   for (const v of doc.lifecycle.vectors) {
     for (const [label, bin, script] of [['cli.js', 'node', 'cli.js'], ['verify.py', 'python3', 'verify.py']]) {

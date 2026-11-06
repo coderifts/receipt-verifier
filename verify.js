@@ -309,9 +309,34 @@ function deriveStatus(payload, entry, opts) {
   // whose ts predates revoked_at (the attacker chooses ts).
   // retired_at = planned rotation: ts < retired_at stays on the existing path;
   // ts >= retired_at is KEY_RETIRED_AFTER_SIGNING.
+  //
+  // 10t-rv (2026-11-05) — THE NORMATIVE ORDER (RECEIPT_FORMAT.md §7.1), one row each:
+  //   1. a status this verifier does not know      → UNKNOWN_KEY_STATUS (above; fail-closed)
+  //   2. revoked                                    → REVOKED_KEY at every signing time; compromised_at
+  //                                                   is carried in the result, it does not soften it
+  //   3. retired, signed at or after retired_at     → KEY_RETIRED_AFTER_SIGNING
+  //   4. retired, signed before retired_at, with an
+  //      independent time anchor                    → RETIRED_KEY_VALID_AT_ISSUE — NOT REACHABLE: no
+  //                                                   anchor input exists in this verifier (no RFC 3161
+  //                                                   token, no transparency-log inclusion is read)
+  //   5. retired, signed before retired_at, no anchor → RETIRED_KEY_UNANCHORED (valid:false)
+  //   6. active                                     → the signature decides (below)
+  // MEASURED before (d7d30a09 / 15fbdc4): retired_at was read BEFORE the revoked status, so a key both
+  // revoked and retired answered KEY_RETIRED_AFTER_SIGNING for ts >= retired_at; a revoked key with
+  // ts < compromised_at answered REVOKED_KEY_UNDECIDABLE; and a retired key's ts < retired_at answered
+  // RETIRED_KEY_VALID_AT_ISSUE, valid:true — on a timestamp the signer chooses.
+  // revoked_at (1079 B) is the older revocation field: every receipt under the key is KEY_REVOKED.
   if (typeof entry.revoked_at === 'string' && entry.revoked_at.length > 0) {
     return 'KEY_REVOKED';
   }
+  if (entry.status === 'revoked') return 'REVOKED_KEY';
+  if (entry.status === 'retired') {
+    const issued = payload.ts ? Date.parse(payload.ts) : NaN;
+    const retired = typeof entry.retired_at === 'string' && entry.retired_at.length > 0 ? Date.parse(entry.retired_at) : NaN;
+    if (!Number.isFinite(issued) || !Number.isFinite(retired)) return 'INVALID_SIGNATURE'; // no boundary to judge by
+    return issued >= retired ? 'KEY_RETIRED_AFTER_SIGNING' : 'RETIRED_KEY_UNANCHORED';
+  }
+  // An active entry that carries retired_at (a retirement announced ahead): ts at or after it is refused.
   if (typeof entry.retired_at === 'string' && entry.retired_at.length > 0 && payload.ts) {
     const issued = Date.parse(payload.ts);
     const retired = Date.parse(entry.retired_at);
@@ -319,30 +344,9 @@ function deriveStatus(payload, entry, opts) {
       return 'KEY_RETIRED_AFTER_SIGNING';
     }
   }
-  // REVOKED — RECEIPT_FORMAT.md §7.1 (normative). The attacker chooses ts, so no timestamp may
-  // rehabilitate a revoked key's signature: BOTH outcomes are valid:false. UNDECIDABLE is not a
-  // softer valid; it reports that we cannot tell a legitimate pre-compromise receipt from a
-  // backdated forgery. A missing compromised_at means the whole key history is suspect.
-  if (entry.status === 'revoked') {
-    const at = entry.compromised_at;
-    if (typeof at !== 'string' || at.length === 0) return 'REVOKED_KEY_UNDECIDABLE';
-    const boundary = Date.parse(at);
-    const issued = Date.parse(payload.ts);
-    if (!Number.isFinite(boundary) || !Number.isFinite(issued)) return 'REVOKED_KEY_UNDECIDABLE';
-    return issued >= boundary ? 'REVOKED_KEY' : 'REVOKED_KEY_UNDECIDABLE';
-  }
   const now = opts.now != null ? opts.now : Date.now();
   const expired = payload.v === 4 && typeof payload.expires_at === 'string'
     && isExpiredAt(Date.parse(payload.expires_at), now, opts.envelope || { environment: opts.expectedEnvironment });
-  if (entry.status === 'retired') {
-    if (entry.retired_at && payload.ts
-      && Date.parse(payload.ts) < Date.parse(entry.retired_at)) {
-      // 1.1.6: the expiry rule applies after the retired-key rule. Before, this returned first, so an
-      // expired v4 receipt under a retired key verified valid:true (RECEIPT_FORMAT §7).
-      return expired ? 'VERIFIED_EXPIRED' : 'RETIRED_KEY_VALID_AT_ISSUE';
-    }
-    return 'INVALID_SIGNATURE'; // signed by a key already retired at issue -> reject
-  }
   if (expired) return 'VERIFIED_EXPIRED';
   if (opts.envelope) {
     const env = opts.envelope;
@@ -440,12 +444,18 @@ function verifyReceiptInner(token, ctx, opts = {}) {
   if (status === 'KEY_REVOKED') {
     return { valid: false, status, reason: 'KEY_REVOKED', payload };
   }
+  // 10t-rv: the key's compromised_at rides with the verdict (null when the registry gives none).
+  if (status === 'REVOKED_KEY') {
+    return { valid: false, status, compromised_at: typeof entry.compromised_at === 'string' && entry.compromised_at ? entry.compromised_at : null, payload };
+  }
   if (status === 'KEY_RETIRED_AFTER_SIGNING') {
     return { valid: false, status, reason: 'KEY_RETIRED_AFTER_SIGNING', payload };
   }
   if (status === 'INVALID_SIGNATURE') {
     return { valid: false, status, reason: 'retired_key_after_issue', payload };
   }
+  // RETIRED_KEY_VALID_AT_ISSUE stays in the valid set for row 4 of the table, which needs an anchor input
+  // this verifier does not have yet; deriveStatus does not return it today.
   const valid = status === 'VERIFIED_CURRENT' || status === 'RETIRED_KEY_VALID_AT_ISSUE';
   // UNKNOWN_KEY_STATUS is deliberately absent from the valid set — see deriveStatus.
   return { valid, status, payload };

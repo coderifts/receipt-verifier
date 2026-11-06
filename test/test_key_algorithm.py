@@ -27,6 +27,10 @@ with open(os.path.join(HERE, "fixtures-keys.json"), encoding="utf-8") as fh:
     FIXTURE_KEYS = json.load(fh)
 with open(os.path.join(HERE, "fixtures-receipt.txt"), encoding="utf-8") as fh:
     TOKEN = fh.read().strip()
+# 10t-rv (2026-11-05): fixtures-keys.json holds a TEST key (test-fixture-k1); this is its receipt. TOKEN (the real
+# 2026-07-k1 receipt) stays for the pinned-snapshot case.
+with open(os.path.join(HERE, "fixtures-receipt-test-k1.txt"), encoding="utf-8") as fh:
+    FIXTURE_TOKEN = fh.read().strip()
 with open(os.path.join(HERE, "..", "keys", "coderifts-keys.json"), encoding="utf-8") as fh:
     PIN = json.load(fh)
 
@@ -56,18 +60,18 @@ class TestKeyAlgorithm(unittest.TestCase):
 
     def test_A_declared_alg_over_an_ed25519_pem_is_refused(self):
         ctx = ctx_for([dict(k, alg="ML-DSA-65") for k in FIXTURE_KEYS["keys"]])
-        self.assertEqual(_verify_receipt(TOKEN, ctx)["reason"], "unsupported key algorithm: ML-DSA-65")
+        self.assertEqual(_verify_receipt(FIXTURE_TOKEN, ctx)["reason"], "unsupported key algorithm: ML-DSA-65")
 
     def test_C_bad_pem_is_skipped_and_named(self):
         warnings = []
         ctx = ctx_for(FIXTURE_KEYS["keys"] + [{"kid": "pq-1", "public_key_pem": ALG["bad_pem"]}], warnings)
-        self.assertTrue(_verify_receipt(TOKEN, ctx)["valid"])
+        self.assertTrue(_verify_receipt(FIXTURE_TOKEN, ctx)["valid"])
         self.assertEqual(warnings, ["registry entry pq-1: unparseable public_key_pem — skipped"])
 
     def test_D_missing_pem_is_skipped_and_named(self):
         warnings = []
         ctx = ctx_for(FIXTURE_KEYS["keys"] + [{"kid": "pq-1", "public_key_jwk": {"kty": "AKP"}}], warnings)
-        self.assertTrue(_verify_receipt(TOKEN, ctx)["valid"])
+        self.assertTrue(_verify_receipt(FIXTURE_TOKEN, ctx)["valid"])
         self.assertEqual(warnings, ["registry entry pq-1: missing public_key_pem — skipped"])
 
     def test_pinned_snapshot_fixture_is_revoked_key(self):

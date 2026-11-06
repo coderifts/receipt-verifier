@@ -342,9 +342,10 @@ prev(receipt[i])  ==  "sha256:" + sha256hex( entire token string of receipt[i-1]
 7. `body_hash_mismatch` -- (`--envelope`, v4) the envelope's recomputed body hash != `bh`.
 8. `retired_key_after_issue` -- signed by a key already retired at the receipt's `ts`.
 
-`status` (16-status taxonomy) — the verdict a caller branches on. `valid === (status is
-VERIFIED_CURRENT or RETIRED_KEY_VALID_AT_ISSUE)`. **12 live, 4 dormant** (fire only when the
-envelope carries the field AND a `--audience`/`--environment`/… check input is supplied):
+`status` (17-status taxonomy) — the verdict a caller branches on. `valid === (status is
+VERIFIED_CURRENT or RETIRED_KEY_VALID_AT_ISSUE)`. **11 live, 5 dormant, 1 withdrawn** (the four
+envelope statuses fire only when the envelope carries the field AND a `--audience`/`--environment`/…
+check input is supplied; `RETIRED_KEY_VALID_AT_ISSUE` only with a time-anchor input, which does not exist yet):
 
 | status | live? | fires when |
 |--------|-------|------------|
@@ -352,9 +353,10 @@ envelope carries the field AND a `--audience`/`--environment`/… check input is
 | `VERIFIED_EXPIRED` | live | v4 signature authentic but `expires_at + 30s` (`CLOCK_SKEW_LEEWAY_MS`) < now. 0s leeway for destructive operations in production when the intended context declares them; this verifier has `environment` but no destructive / operation_class field, so the 30s default always applies. |
 | `UNKNOWN_KEY` | live | `body.kid` not in the key set |
 | `UNKNOWN_KEY_STATUS` | live | the registry entry carries a `status` this verifier does not understand — fail closed, never valid. See §7.1. |
-| `REVOKED_KEY` | live | signed by a **revoked** key, `ts` at or after `compromised_at`. Signature authentic; the KEY is repudiated. See §7.1. |
-| `REVOKED_KEY_UNDECIDABLE` | live | signed by a **revoked** key, `ts` before `compromised_at`, or the entry carries no `compromised_at`. See §7.1. |
-| `RETIRED_KEY_VALID_AT_ISSUE` | live | signed by a retired key, `ts` < that key's `retired_at` |
+| `REVOKED_KEY` | live | signed by a **revoked** key, at every `ts` (the result carries the entry's `compromised_at`, `null` when absent). Signature authentic; the KEY is repudiated. See §7.1. |
+| `REVOKED_KEY_UNDECIDABLE` | withdrawn | no longer returned since the 10t-rv table (2026-11-05): a revoked key is `REVOKED_KEY` at every `ts`. See §7.1. |
+| `RETIRED_KEY_UNANCHORED` | live | signed by a retired key, `ts` < that key's `retired_at`, and no independent time anchor proves the signing time (`valid: false`). See §7.1. |
+| `RETIRED_KEY_VALID_AT_ISSUE` | dormant | signed by a retired key, `ts` < `retired_at`, **with** an independent time anchor. No anchor input exists yet, so it is not returned. |
 | `INVALID_SIGNATURE` | live | signature/delimiter/body-hash failure, or retired-at-issue |
 | `MALFORMED` | live | structure / JSON failure |
 | `UNSUPPORTED_VERSION` | live | `body.v` > the verifier's max supported version |
@@ -382,25 +384,34 @@ third is defined here: **`revoked`**.
 
 **`retired` is not `revoked`, and conflating them is the bug this section exists to correct.** A
 retired key stopped signing at a known time and nothing bad happened; a receipt whose `ts` predates
-`retired_at` is still good (`RETIRED_KEY_VALID_AT_ISSUE`). A **revoked** key is one we believe an
+`retired_at` was good (`RETIRED_KEY_VALID_AT_ISSUE`) — but only an independent time anchor can show that
+`ts`, so without one it is `RETIRED_KEY_UNANCHORED` (row 5 below). A **revoked** key is one we believe an
 attacker held. The distinction matters because **the attacker chooses `ts`**. Under the retirement
 rule, a thief holding a stolen key backdates the timestamp to just before `retired_at` and the
 verifier returns `RETIRED_KEY_VALID_AT_ISSUE` — valid. **No timestamp may ever rehabilitate a
 revoked key's signature.**
 
-### The rule
+### The rule — one table, in this order (10t-rv, 2026-11-05)
 
-A registry entry MAY carry `compromised_at` (ISO 8601). For `status: "revoked"`:
+A verifier evaluates a signature-valid receipt's key entry top to bottom; the first row that applies decides.
 
-| condition | status | `valid` |
-|---|---|---|
-| `ts` >= `compromised_at` | `REVOKED_KEY` | **false** |
-| `ts` < `compromised_at` | `REVOKED_KEY_UNDECIDABLE` | **false** |
-| entry carries no `compromised_at` | `REVOKED_KEY_UNDECIDABLE` | **false** |
+| # | entry | signing time (`ts`) | status | `valid` | CLI exit |
+|---|---|---|---|---|---|
+| 1 | a `status` the verifier does not understand | any | `UNKNOWN_KEY_STATUS` | **false** | 1 |
+| 2 | `status: "revoked"` (or a `revoked_at` field: `KEY_REVOKED`) | any — `compromised_at` is carried in the result, it does not soften the verdict | `REVOKED_KEY` | **false** | 1 |
+| 3 | `status: "retired"` | at or after `retired_at` | `KEY_RETIRED_AFTER_SIGNING` | **false** | 1 |
+| 4 | `status: "retired"` | before `retired_at`, **and** an independent time anchor (an RFC 3161 token or a transparency-log inclusion) proves it | `RETIRED_KEY_VALID_AT_ISSUE` | true | 0 |
+| 5 | `status: "retired"` | before `retired_at`, no anchor | `RETIRED_KEY_UNANCHORED` | **false** | 1 |
+| 6 | `status: "active"` (or none) | — | the signature decides (`VERIFIED_CURRENT`, …) | | 0 when valid |
 
-**`UNDECIDABLE` is not a softer `valid`.** It reports that we cannot tell a legitimate
-pre-compromise receipt from a backdated forgery — which is the honest answer, and it is still
-`valid: false`. A verifier MUST NOT treat `REVOKED_KEY_UNDECIDABLE` as acceptable evidence.
+A key that is both revoked and retired is row 2 at every `ts`. Row 4 is **not reachable today**: neither
+`verify.js` nor `verify.py` reads an anchor input, so a retired key's signature before `retired_at` is row 5.
+The signer chooses `ts`; without an anchor, `ts < retired_at` proves nothing.
+
+Before this table (measured on 1.1.9, `15fbdc4`): a revoked key with `ts < compromised_at`, or with no
+`compromised_at`, was `REVOKED_KEY_UNDECIDABLE`; a revoked key that also carried `retired_at` was
+`KEY_RETIRED_AFTER_SIGNING` for `ts >= retired_at` (`retired_at` was read first); and row 5 was
+`RETIRED_KEY_VALID_AT_ISSUE`, `valid: true`. Every revoked outcome was and is `valid: false`.
 
 ### Why `compromised_at` is the earliest unruled-out time, not the discovery time
 
@@ -411,8 +422,8 @@ they recovered key material left in a cache and minted fresh ones. Discovery tim
 the wrong boundary by six days, and every forgery inside that window would have verified.
 
 If the earliest unruled-out time is genuinely unknown, the field MUST be omitted rather than
-guessed. Omission means the whole key history is suspect, which is why it maps to
-`REVOKED_KEY_UNDECIDABLE` rather than to a permissive default.
+guessed. Omission means the whole key history is suspect; the verdict is `REVOKED_KEY` either way, and the
+result's `compromised_at` is then `null`.
 
 ### What a revoked verdict does and does not say
 

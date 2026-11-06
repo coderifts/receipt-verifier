@@ -42,10 +42,10 @@ jobs:
           python-version: "3.12"
       - name: cryptography (the JS/Python cross-check in test/run.sh)
         run: python -m pip install --disable-pip-version-check cryptography
-      - name: npm test (test/run.sh)
+      # 10t-rv (2026-11-05): one test source. test/run.sh runs every test/*.test.js and test/test_*.py; the
+      # second step that globbed test/*.test.js here ran 24 files the script did not (v1.1.8 failed on two).
+      - name: npm test (test/run.sh — every test file)
         run: npm test
-      - name: node --test
-        run: node --test test/*.test.js
 
   publish:
     needs: test

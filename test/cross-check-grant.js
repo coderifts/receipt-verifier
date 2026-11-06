@@ -21,7 +21,7 @@ const crypto = require('node:crypto');
 
 const vectors = require('./grant-vectors.json');
 const { verifyExecutionGrant } = require('../verify-grant.js');
-const { loadRecorded } = require('./gen-kernel-verdicts');
+const { loadRecorded } = require('../scripts/vectors/gen-kernel-verdicts');
 
 const APP = process.env.CODERIFTS_APP_DIR
   ? path.join(process.env.CODERIFTS_APP_DIR, 'src', 'verdict-core', 'execution-grant.js')
@@ -37,12 +37,12 @@ if (fs.existsSync(APP)) {
   // eslint-disable-next-line import/no-dynamic-require, global-require
   const app = require(APP);
   kernelVerify = (token, intended) => app.verifyExecutionGrant(token, { publicKey, intended });
-  const { FAMILIES } = require('./gen-kernel-verdicts');
+  const { FAMILIES } = require('../scripts/vectors/gen-kernel-verdicts');
   const want = FAMILIES.grant().text;
   const have = fs.existsSync(path.join(__dirname, 'grant-kernel-verdicts.json'))
     ? fs.readFileSync(path.join(__dirname, 'grant-kernel-verdicts.json'), 'utf8') : '';
   if (have !== want) {
-    console.log('FAIL  grant-kernel-verdicts.json is STALE — regenerate: node test/gen-kernel-verdicts.js --family grant');
+    console.log('FAIL  grant-kernel-verdicts.json is STALE — regenerate: node scripts/vectors/gen-kernel-verdicts.js --family grant');
     process.exit(1);
   }
 } else {

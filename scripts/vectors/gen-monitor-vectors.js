@@ -14,7 +14,7 @@
  * NO PRIVATE KEY IS WRITTEN. The keypair lives in memory for this run; only public PEMs are
  * embedded, in the registries the vectors verify against.
  *
- *   node test/gen-monitor-vectors.js
+ *   node scripts/vectors/gen-monitor-vectors.js
  */
 'use strict';
 
@@ -22,9 +22,9 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { ATTEST_VERSION, ENVELOPE_TAG, signingInput } = require('../verify-monitor.js');
+const { ATTEST_VERSION, ENVELOPE_TAG, signingInput } = require('../../verify-monitor.js');
 
-const OUT = path.join(__dirname, 'monitor-vectors.json');
+const OUT = path.join(__dirname, '..', '..', 'test', 'monitor-vectors.json');
 
 const KID = 'mon-test-k1';
 const RETIRED_KID = 'mon-test-k0';

@@ -62,7 +62,8 @@ def main():
     finally:
         httpd.shutdown()
 
-    # 3. Retired kid via default-fetch → RETIRED_KEY_VALID_AT_ISSUE
+    # 3. Retired kid via default-fetch: the kid resolves. 10t-rv: no anchor -> RETIRED_KEY_UNANCHORED, exit 1
+    #    (was RETIRED_KEY_VALID_AT_ISSUE, exit 0).
     httpd, url = serve(VECTORS["retired"]["registry"])
     try:
         info = verify.fetch_key_document(url)
@@ -70,17 +71,17 @@ def main():
             VECTORS["retired"]["token_valid_at_issue"],
             {"keyring": info["keyring"], "expected_kid": None},
         )
-        assert result["status"] == "RETIRED_KEY_VALID_AT_ISSUE", result
-        assert result["valid"] is True
+        assert result["status"] == "RETIRED_KEY_UNANCHORED", result
+        assert result["valid"] is False
         assert result.get("reason") != "unknown_kid"
         cli = subprocess.run(
             [sys.executable, str(Path(__file__).resolve().parent.parent / "verify.py"),
              VECTORS["retired"]["token_valid_at_issue"], "--fetch", url],
             capture_output=True, text=True, timeout=15,
         )
-        assert cli.returncode == 0, cli.stderr
+        assert cli.returncode == 1, cli.stderr
         parsed = json.loads(cli.stdout)
-        assert parsed["status"] == "RETIRED_KEY_VALID_AT_ISSUE"
+        assert parsed["status"] == "RETIRED_KEY_UNANCHORED"
         assert parsed.get("reason") != "unknown_kid"
     finally:
         httpd.shutdown()

@@ -105,7 +105,8 @@ describe('the CLI end to end', () => {
   });
 
   it('⚠⚠ NEGATIVE CONTROL — the offline default still verifies, unaffected by any registry', () => {
-    const r = runCli([RECEIPT, '--keys', path.join(__dirname, 'fixtures-keys.json')]);
+    // 10t-rv: fixtures-keys.json holds the test key; its receipt is fixtures-receipt-test-k1.txt.
+    const r = runCli([fs.readFileSync(path.join(__dirname, 'fixtures-receipt-test-k1.txt'), 'utf8').trim(), '--keys', path.join(__dirname, 'fixtures-keys.json')]);
     const out = JSON.parse(r.stdout);
     assert.ok(['VERIFIED_CURRENT', 'RETIRED_KEY_VALID_AT_ISSUE', 'VERIFIED_EXPIRED', 'UNKNOWN_KEY'].includes(out.status),
       `offline path produced ${out.status}`);
@@ -120,7 +121,7 @@ describe('the cross-language corpus carries the case', () => {
   it('⚠ the generator emits a discovery block with the case AND its negative control', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xlang-disc-'));
     const out = path.join(dir, 'xlang-vectors.json');
-    run(process.execPath, [path.join(__dirname, 'gen-xlang-vectors.js'), '--out', out],
+    run(process.execPath, [path.join(__dirname, '..', 'scripts', 'vectors', 'gen-xlang-vectors.js'), '--out', out],
       { cwd: path.join(__dirname, '..'), stdio: ['ignore', 'ignore', 'pipe'] });
     const corpus = JSON.parse(fs.readFileSync(out, 'utf8'));
     const byName = Object.fromEntries(corpus.discovery.cases.map((c) => [c.name, c]));
@@ -137,7 +138,7 @@ describe('the cross-language corpus carries the case', () => {
   it('⚠⚠ ADDITIVE — the discovery block is NOT in vectors[], so older consumers are unaffected', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xlang-disc2-'));
     const out = path.join(dir, 'xlang-vectors.json');
-    run(process.execPath, [path.join(__dirname, 'gen-xlang-vectors.js'), '--out', out],
+    run(process.execPath, [path.join(__dirname, '..', 'scripts', 'vectors', 'gen-xlang-vectors.js'), '--out', out],
       { cwd: path.join(__dirname, '..'), stdio: ['ignore', 'ignore', 'pipe'] });
     const corpus = JSON.parse(fs.readFileSync(out, 'utf8'));
     // ⚠ A consumer that loops vectors[] through verifyReceipt must never meet a discovery case:

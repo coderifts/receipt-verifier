@@ -112,7 +112,7 @@ describe('1961/III — does_not_prove is covered by bh', () => {
 
   it('⚠ CONTROL — an envelope carrying does_not_prove verifies', () => {
     const v = byName['DNP-BOUND'];
-    assert.ok(v, 'DNP-BOUND is missing — regenerate test/gen-envelope-step-vectors.js');
+    assert.ok(v, 'DNP-BOUND is missing — regenerate scripts/vectors/gen-envelope-step-vectors.js');
     assert.ok(Array.isArray(v.envelope.does_not_prove) && v.envelope.does_not_prove.length > 0);
     assert.equal(v.js.valid, true);
     assert.equal(v.js.status, 'VERIFIED_CURRENT');

@@ -23,6 +23,15 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
+# 10t-rv (2026-11-05): the committed vectors, as git sees them now. Compared at the end: a run that rewrites
+# one fails (MEASURED: a bare `node --test` ran test/gen-*.js as tests and rewrote nine of them).
+VECTOR_PATHS=(test/vectors.json test/grant-vectors.json test/attest-vectors.json test/monitor-vectors.json
+  test/toolset-vectors.json test/atomic-attest-vectors.json test/envelope-step-vectors.json
+  test/grant-kernel-verdicts.json test/attest-kernel-verdicts.json test/monitor-kernel-verdicts.json
+  test/toolset-kernel-verdicts.json test/vectors)
+vectors_diff() { git diff -- "${VECTOR_PATHS[@]}" 2>/dev/null | shasum -a 256 | cut -c1-64; }
+VECTORS_BEFORE="$(vectors_diff)"
+
 VECTORS="test/vectors.json"
 PEM="$(mktemp -t rv_pub.XXXXXX)"
 CHAIN_FILE="$(mktemp -t rv_chain.XXXXXX)"
@@ -211,15 +220,17 @@ checks=$((checks + 1))
 oj="$(node cli.js "$tok_valid" --keys "$RETIRED_KEYS" 2>/dev/null)"; cj=$?
 op="$("$PYTHON" verify.py "$tok_valid" --keys "$RETIRED_KEYS" 2>/dev/null)"; cp=$?
 [ "$oj" = "$op" ] || { echo "FAIL  retired-valid: JS/PY DIFFER"; echo " js:$oj"; echo " py:$op"; retired_ok=0; }
-[ "$(jsonfield "$oj" status)" = "RETIRED_KEY_VALID_AT_ISSUE" ] || { echo "FAIL  retired-valid: status=$(jsonfield "$oj" status)"; retired_ok=0; }
-[ "$cj" = "0" ] && [ "$cp" = "0" ] || { echo "FAIL  retired-valid: exit (js=$cj py=$cp)"; retired_ok=0; }
+# 10t-rv (2026-11-05): RECEIPT_FORMAT §7.1 row 5 — signed before retired_at, no independent time anchor
+# (none is read) → RETIRED_KEY_UNANCHORED, valid:false, exit 1. Was RETIRED_KEY_VALID_AT_ISSUE, exit 0.
+[ "$(jsonfield "$oj" status)" = "RETIRED_KEY_UNANCHORED" ] || { echo "FAIL  retired-valid: status=$(jsonfield "$oj" status)"; retired_ok=0; }
+[ "$cj" = "1" ] && [ "$cp" = "1" ] || { echo "FAIL  retired-valid: exit (js=$cj py=$cp)"; retired_ok=0; }
 checks=$((checks + 1))
 oj="$(node cli.js "$tok_after" --keys "$RETIRED_KEYS" 2>/dev/null)"; cj=$?
 op="$("$PYTHON" verify.py "$tok_after" --keys "$RETIRED_KEYS" 2>/dev/null)"; cp=$?
 [ "$oj" = "$op" ] || { echo "FAIL  retired-after: JS/PY DIFFER"; echo " js:$oj"; echo " py:$op"; retired_ok=0; }
 [ "$(jsonfield "$oj" status)" = "KEY_RETIRED_AFTER_SIGNING" ] || { echo "FAIL  retired-after: status=$(jsonfield "$oj" status)"; retired_ok=0; }
 [ "$cj" = "1" ] && [ "$cp" = "1" ] || { echo "FAIL  retired-after: exit (js=$cj py=$cp)"; retired_ok=0; }
-if [ "$retired_ok" = "1" ]; then echo "ok    retired  (js==py; valid-at-issue accepted; after-retire rejected)"; else fails=$((fails + 1)); fi
+if [ "$retired_ok" = "1" ]; then echo "ok    retired  (js==py; before retired_at unanchored -> rejected; after-retire rejected)"; else fails=$((fails + 1)); fi
 
 echo
 echo "== 1079 B key lifecycle (retired_at / revoked_at, additive) =="
@@ -228,7 +239,7 @@ trap 'rm -f "$PEM" "$CHAIN_FILE" "$LIVE_PEM" "$KEYS_FILE" "$ENV_FILE" "$ENV_TAMP
 ln="$(node -e "process.stdout.write(String((require('./$VECTORS').lifecycle||{vectors:[]}).vectors.length))")"
 life_ok=1
 if [ "$ln" = "0" ]; then
-  echo "FAIL  lifecycle vectors missing — run: node test/gen-vectors.js"
+  echo "FAIL  lifecycle vectors missing — run: node scripts/vectors/gen-vectors.js"
   life_ok=0
   fails=$((fails + 1))
 else
@@ -363,7 +374,7 @@ trap 'rm -f "$PEM" "$CHAIN_FILE" "$LIVE_PEM" "$KEYS_FILE" "$ENV_FILE" "$ENV_TAMP
 echo
 echo "== cr.exec.v1/v2 grant vectors (verify-grant.js == verify_grant.py) =="
 if [ ! -f "$GRANT_VECTORS" ]; then
-  echo "FAIL  $GRANT_VECTORS missing — run: node test/gen-grant-vectors.js"
+  echo "FAIL  $GRANT_VECTORS missing — run: node scripts/vectors/gen-grant-vectors.js"
   fails=$((fails + 1))
 else
   node -e "process.stdout.write(require('./$GRANT_VECTORS').public_key_pem)" > "$GRANT_PEM"
@@ -526,7 +537,7 @@ trap 'rm -f "$PEM" "$CHAIN_FILE" "$LIVE_PEM" "$KEYS_FILE" "$ENV_FILE" "$ENV_TAMP
 echo
 echo "== cr.exec.attest.v1 vectors (verify-attest.js == verify_attest.py) =="
 if [ ! -f "$ATTEST_VECTORS" ]; then
-  echo "FAIL  $ATTEST_VECTORS missing — run: node test/gen-attest-vectors.js"
+  echo "FAIL  $ATTEST_VECTORS missing — run: node scripts/vectors/gen-attest-vectors.js"
   fails=$((fails + 1))
 else
   an="$(node -e "process.stdout.write(String(require('./$ATTEST_VECTORS').vectors.length))")"
@@ -697,7 +708,7 @@ MON_VECTORS="test/monitor-vectors.json"
 echo
 echo "== cr.monitor.attest.v1 vectors (verify-monitor.js == verify_monitor.py) =="
 if [ ! -f "$MON_VECTORS" ]; then
-  echo "FAIL  $MON_VECTORS missing — run: node test/gen-monitor-vectors.js"
+  echo "FAIL  $MON_VECTORS missing — run: node scripts/vectors/gen-monitor-vectors.js"
   fails=$((fails + 1))
 else
   MON_KEYS="$(mktemp -t rv_mkeys.XXXXXX)"
@@ -806,6 +817,42 @@ for t in test/test_rfc8785_vectors.py test/test_retired_expiry.py; do
     fails=$((fails + 1))
   fi
 done
+
+# 10t-rv (2026-11-05): ONE SOURCE. release.yml runs only `npm test` (this file). MEASURED before: release.yml also
+# ran `node --test test/*.test.js` (38 files) while this script named 14, so 24 ran only in the release job —
+# grant-1.1.7 and unknown-key-status failed v1.1.8 there and nowhere else — and test_arity.py and
+# test_v2_reserved_inert.py ran nowhere. Every test file not run above runs here, with its TAP totals.
+EXPLICIT_JS=" $(grep -oE 'node --test (test/[A-Za-z0-9._-]+\.test\.js)' "$0" | awk '{print $3}' | tr '\n' ' ') $(grep -oE '^for t in test/[^;]+' "$0" | sed 's/^for t in //' | tr '\n' ' ') "
+EXPLICIT_PY=" $(grep -oE '"\$PYTHON" (test/test_[A-Za-z0-9_]+\.py)' "$0" | awk '{print $2}' | tr '\n' ' ') "
+TAP_ALL="$(mktemp -t rv_tap.XXXXXX)"
+echo
+echo "== every other test file (node --test, TAP) =="
+for t in test/*.test.js; do
+  case "$EXPLICIT_JS" in *" $t "*) continue ;; esac
+  checks=$((checks + 1))
+  out="$(PYTHON="$PYTHON" node --test --test-reporter=tap "$t" 2>&1)"; code=$?
+  printf '%s\n' "$out" >> "$TAP_ALL"
+  if [ "$code" = "0" ]; then echo "ok    $(basename "$t")"; else echo "FAIL  $(basename "$t")"; printf '%s\n' "$out" | grep -E '^\s*not ok' | head -5; fails=$((fails + 1)); fi
+done
+for t in test/test_*.py; do
+  case "$EXPLICIT_PY" in *" $t "*) continue ;; esac
+  checks=$((checks + 1))
+  if "$PYTHON" "$t" >/dev/null 2>&1; then echo "ok    $(basename "$t")"; else echo "FAIL  $(basename "$t")"; fails=$((fails + 1)); fi
+done
+sum_tap() { grep -E "^# $1 [0-9]+" "$TAP_ALL" | awk '{s+=$3} END {print s+0}'; }
+echo "node --test totals (the files above): tests=$(sum_tap tests) pass=$(sum_tap pass) fail=$(sum_tap fail) skipped=$(sum_tap skipped) todo=$(sum_tap todo)"
+grep -E '# SKIP' "$TAP_ALL" | sed -E 's/^ *ok [0-9]+ - /  skipped: /' | head -40
+rm -f "$TAP_ALL"
+
+echo
+echo "== the committed vectors are untouched by this run =="
+checks=$((checks + 1))
+if [ "$(vectors_diff)" = "$VECTORS_BEFORE" ]; then
+  echo "ok    vectors unchanged by the run (git diff of ${#VECTOR_PATHS[@]} paths)"
+else
+  echo "FAIL  a test rewrote a committed vector:"; git diff --stat -- "${VECTOR_PATHS[@]}"
+  fails=$((fails + 1))
+fi
 
 echo
 echo "checks=$checks fails=$fails"

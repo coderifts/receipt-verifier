@@ -27,8 +27,8 @@
  * verdicts describe. Regenerate the vectors and this file describes different tokens; the harness
  * refuses it rather than comparing verdicts to the wrong inputs.
  *
- *   node test/gen-toolset-kernel-verdicts.js            # write (requires the app checkout)
- *   node test/gen-toolset-kernel-verdicts.js --check    # exit 1 on drift
+ *   node scripts/vectors/gen-toolset-kernel-verdicts.js            # write (requires the app checkout)
+ *   node scripts/vectors/gen-toolset-kernel-verdicts.js --check    # exit 1 on drift
  */
 
 const crypto = require('node:crypto');
@@ -36,10 +36,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const pub = require('../verify-toolset.js');
+const pub = require('../../verify-toolset.js');
 
-const VECTORS = path.join(__dirname, 'toolset-vectors.json');
-const OUT = path.join(__dirname, 'toolset-kernel-verdicts.json');
+const VECTORS = path.join(__dirname, '..', '..', 'test', 'toolset-vectors.json');
+const OUT = path.join(__dirname, '..', '..', 'test', 'toolset-kernel-verdicts.json');
 
 function appKernelPath() {
   const root = process.env.CODERIFTS_APP_DIR || path.join(os.homedir(), 'coderifts-app');
@@ -113,7 +113,7 @@ function main() {
     if (have !== text) {
       process.stderr.write(
         'gen-toolset-kernel-verdicts: the recorded kernel verdicts are STALE.\n'
-        + '  regenerate: node test/gen-toolset-kernel-verdicts.js\n',
+        + '  regenerate: node scripts/vectors/gen-toolset-kernel-verdicts.js\n',
       );
       process.exit(1);
     }

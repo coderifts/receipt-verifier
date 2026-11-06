@@ -5,11 +5,11 @@
  * run through the second implementation in this tree, verify.py canonical_json, and the result is recorded
  * in the file (cross_check) — agreement is measured, not assumed.
  *
- *   node test/gen-rfc8785-vectors.js
+ *   node scripts/vectors/gen-rfc8785-vectors.js
  */
 const crypto = require('crypto'); const fs = require('fs'); const path = require('path');
 const { spawnSync } = require('child_process');
-const ROOT = path.join(__dirname, '..');
+const ROOT = path.join(__dirname, '..', '..');
 const { canonicalJson } = require(path.join(ROOT, 'verify.js'));
 const cases = [
   ['key order: UTF-16 code units (BMP above the surrogates sorts after an astral key), non-ASCII and digit-like keys',

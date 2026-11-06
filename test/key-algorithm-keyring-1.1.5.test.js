@@ -26,6 +26,9 @@ const PY = path.join(ROOT, 'verify.py');
 const PIN = path.join(ROOT, 'keys', 'coderifts-keys.json');
 const TOKEN = fs.readFileSync(path.join(__dirname, 'fixtures-receipt.txt'), 'utf8').trim();
 const FIXTURE_KEYS = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures-keys.json'), 'utf8'));
+// 10t-rv (2026-11-05): test/fixtures-keys.json holds a TEST key (test-fixture-k1), not the real 2026-07-k1;
+// fixtures-receipt-test-k1.txt is the same v2 payload signed by it. The real 07-k1 receipt stays for the pinned-snapshot (revoked) cases.
+const FIXTURE_TOKEN = fs.readFileSync(path.join(__dirname, 'fixtures-receipt-test-k1.txt'), 'utf8').trim();
 const ALG = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures-key-alg-1.1.5.json'), 'utf8'));
 const { spkiDerFromPem } = require('../verify.js');
 
@@ -85,18 +88,18 @@ describe('1.1.5 · verified_with: kid, key_sha256 (SPKI DER), keyring_source', (
 
   const key = FIXTURE_KEYS.keys[0];
   it('--keys <file> → file', () => {
-    const { v } = both([TOKEN, '--keys', path.join(__dirname, 'fixtures-keys.json')]);
+    const { v } = both([FIXTURE_TOKEN, '--keys', path.join(__dirname, 'fixtures-keys.json')]);
     assert.deepEqual(v.verified_with, { kid: key.kid, key_sha256: derSha(key.public_key_pem), keyring_source: 'file' });
   });
   it('--key <pem> → file', () => {
     const pem = path.join(tmp, 'k.pem');
     fs.writeFileSync(pem, key.public_key_pem);
-    const { v } = both([TOKEN, '--key', pem]);
+    const { v } = both([FIXTURE_TOKEN, '--key', pem]);
     assert.deepEqual(v.verified_with, { kid: key.kid, key_sha256: derSha(key.public_key_pem), keyring_source: 'file' });
   });
   it('--keys <url> → url', async () => {
     const r = await new Promise((resolve) => {
-      const c = require('node:child_process').spawn(process.execPath, [CLI, TOKEN, '--keys', url, '--json']);
+      const c = require('node:child_process').spawn(process.execPath, [CLI, FIXTURE_TOKEN, '--keys', url, '--json']);
       let s = '';
       c.stdout.on('data', (d) => { s += d; });
       c.on('close', (code) => resolve({ s, code }));
@@ -125,14 +128,14 @@ describe('1.1.5 · only Ed25519 verifies a receipt (JS and Python alike)', () =>
   });
   it('A: an Ed25519 PEM labelled alg ML-DSA-65 is refused too (the declared alg is not trusted)', () => {
     const keys = writeKeys('a.json', FIXTURE_KEYS.keys.map((k) => ({ ...k, alg: 'ML-DSA-65' })));
-    const { v } = both([TOKEN, '--keys', keys]);
+    const { v } = both([FIXTURE_TOKEN, '--keys', keys]);
     assert.equal(v.valid, false);
     assert.equal(v.reason, 'unsupported key algorithm: ML-DSA-65');
   });
   it('a declared alg Ed25519 (or EdDSA) is accepted', () => {
     for (const alg of ['Ed25519', 'EdDSA']) {
       const keys = writeKeys(`ok-${alg}.json`, FIXTURE_KEYS.keys.map((k) => ({ ...k, alg })));
-      assert.equal(both([TOKEN, '--keys', keys]).v.valid, true, alg);
+      assert.equal(both([FIXTURE_TOKEN, '--keys', keys]).v.valid, true, alg);
     }
   });
   it('--key with a non-Ed25519 PEM → invalid with the reason, not loaded and accepted', () => {
@@ -147,34 +150,34 @@ describe('1.1.5 · only Ed25519 verifies a receipt (JS and Python alike)', () =>
 describe('1.1.5 · the keyring loads per entry: a bad entry is skipped and named, the rest verify', () => {
   it('C: an unparseable PEM beside the good key → the good key verifies; keyring_warnings names the entry', () => {
     const keys = writeKeys('c.json', [...FIXTURE_KEYS.keys, { kid: 'pq-1', alg: 'ML-DSA-65', status: 'active', public_key_pem: ALG.bad_pem }]);
-    const { v, code } = both([TOKEN, '--keys', keys]);
+    const { v, code } = both([FIXTURE_TOKEN, '--keys', keys]);
     assert.equal(code, 0);
     assert.equal(v.valid, true);
     assert.deepEqual(v.keyring_warnings, ['registry entry pq-1: unparseable public_key_pem — skipped']);
   });
   it('D: an entry with no public_key_pem → skipped and named; the good key verifies', () => {
     const keys = writeKeys('d.json', [...FIXTURE_KEYS.keys, { kid: 'pq-1', alg: 'ML-DSA-65', status: 'active', public_key_jwk: { kty: 'AKP' } }]);
-    const { v, code } = both([TOKEN, '--keys', keys]);
+    const { v, code } = both([FIXTURE_TOKEN, '--keys', keys]);
     assert.equal(code, 0);
     assert.deepEqual(v.keyring_warnings, ['registry entry pq-1: missing public_key_pem — skipped']);
   });
   it('entries with no kid or not an object are named by position', () => {
     const keys = writeKeys('pos.json', [{ public_key_pem: ALG.bad_pem }, 'x', ...FIXTURE_KEYS.keys]);
-    assert.deepEqual(both([TOKEN, '--keys', keys]).v.keyring_warnings, [
+    assert.deepEqual(both([FIXTURE_TOKEN, '--keys', keys]).v.keyring_warnings, [
       'registry entry #0: missing kid — skipped',
       'registry entry #1: not an object — skipped',
     ]);
   });
   it('a keyring with no usable key at all is still an error (exit 2), naming why', () => {
     const keys = writeKeys('none.json', [{ kid: 'pq-1', public_key_pem: ALG.bad_pem }]);
-    const a = js([TOKEN, '--keys', keys]);
-    const b = py([TOKEN, '--keys', keys]);
+    const a = js([FIXTURE_TOKEN, '--keys', keys]);
+    const b = py([FIXTURE_TOKEN, '--keys', keys]);
     assert.equal(a.status, 2);
     assert.equal(b.status, 2);
     assert.match(a.stderr, /no usable keys in registry .*pq-1: unparseable public_key_pem/);
     assert.match(b.stderr, /no usable keys in registry .*pq-1: unparseable public_key_pem/);
   });
   it('a clean keyring prints no keyring_warnings (additive only)', () => {
-    assert.equal('keyring_warnings' in both([TOKEN, '--keys', path.join(__dirname, 'fixtures-keys.json')]).v, false);
+    assert.equal('keyring_warnings' in both([FIXTURE_TOKEN, '--keys', path.join(__dirname, 'fixtures-keys.json')]).v, false);
   });
 });

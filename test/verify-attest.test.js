@@ -219,7 +219,13 @@ describe('vector provenance is honest (1127c)', () => {
     assert.ok(typeof gen === 'string' && gen.length > 0,
       `${file} declares no generated_by — a generated file must say what made it`);
     if (HAND_AUTHORED.test(gen)) return;
-    const abs = path.join(__dirname, '..', gen);
+    // 10t-rv (2026-11-05): the generators moved from test/ to scripts/vectors/ (out of the default
+    // `node --test` pattern, which ran them as tests and rewrote these files). A committed vector set keeps
+    // the path it was generated at; that path resolves when the same generator is now under scripts/vectors/.
+    const moved = /^test\/(gen-[^/]+\.js)$/.exec(gen);
+    const abs = moved && !fs.existsSync(path.join(__dirname, '..', gen))
+      ? path.join(__dirname, '..', 'scripts', 'vectors', moved[1])
+      : path.join(__dirname, '..', gen);
     assert.ok(fs.existsSync(abs),
       `${file}: generated_by names ${gen}, which is neither a path that exists in this repo nor `
       + 'the literal `hand-authored` sentinel');

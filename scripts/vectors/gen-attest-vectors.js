@@ -17,7 +17,7 @@ const {
   signingInput,
   ATTEST_VERSION,
   ENVELOPE_TAG,
-} = require('../verify-attest.js');
+} = require('../../verify-attest.js');
 
 const KID = 'exec-test-k1';
 const { privateKey, publicKey } = crypto.generateKeyPairSync('ed25519');
@@ -41,12 +41,12 @@ const COMMITTED = '2026-06-15T12:00:00Z';
  * ORDERING, load-bearing: vectors.json -> grant-vectors.json -> attest-vectors.json. Each link
  * binds the one above it, so regenerate in that order.
  */
-const GRANT_VECTORS = require('./grant-vectors.json');
+const GRANT_VECTORS = require('../../test/grant-vectors.json');
 const REAL_GRANT = GRANT_VECTORS.vectors.find((v) => v.name === 'EG-VALID');
 if (!REAL_GRANT || typeof REAL_GRANT.token !== 'string') {
   throw new Error(
     'gen-attest-vectors: test/grant-vectors.json has no `EG-VALID` grant to bind. Run '
-    + 'node test/gen-vectors.js && node test/gen-grant-vectors.js first — an attestation bound to '
+    + 'node scripts/vectors/gen-vectors.js && node scripts/vectors/gen-grant-vectors.js first — an attestation bound to '
     + 'a grant that does not exist is the defect this generator was changed to remove (1126).',
   );
 }
@@ -231,7 +231,7 @@ const vectors = [
 ];
 
 const out = {
-  // 1132 — see the note in test/gen-vectors.js. Asserted to resolve in this repository.
+  // 1132 — see the note in scripts/vectors/gen-vectors.js. Asserted to resolve in this repository.
   generated_by: 'test/gen-attest-vectors.js',
   kid: KID,
   public_key_pem: publicPem,
@@ -241,6 +241,6 @@ const out = {
   vectors,
 };
 
-const dest = path.join(__dirname, 'attest-vectors.json');
+const dest = path.join(__dirname, '..', '..', 'test', 'attest-vectors.json');
 fs.writeFileSync(dest, JSON.stringify(out, null, 2) + '\n');
 process.stdout.write(`wrote ${dest} (${vectors.length} EG-A-* vectors)\n`);

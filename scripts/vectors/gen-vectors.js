@@ -312,6 +312,6 @@ const vectors = {
   live: LIVE,
 };
 
-const out = path.join(__dirname, 'vectors.json');
+const out = path.join(__dirname, '..', '..', 'test', 'vectors.json');
 fs.writeFileSync(out, JSON.stringify(vectors, null, 2) + '\n', 'utf8');
 process.stdout.write(`wrote ${out} (${vectors.vectors.length} vectors + ${vectors.chain.tokens.length}-link chain + ${vectors.live.vectors.length} live)\n`);

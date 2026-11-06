@@ -56,45 +56,32 @@ const py = (args) => run(PYTHON, [path.join(ROOT, 'verify.py'), ...args]);
 const TS = NOW - 6 * HOUR;
 const KEYS = () => retiredKeys(TS + HOUR);
 
-describe('retired key: expiry applies after the retired-key rule', () => {
-  it('expired v4 under a retired key → VERIFIED_EXPIRED, valid:false, exit 1 — verify.js and verify.py agree', () => {
-    const token = mint(TS, TS + 4 * HOUR);
-    const keys = KEYS();
-    const a = js([token, '--keys', keys]);
-    const b = py([token, '--keys', keys]);
-    for (const [name, r] of [['js', a], ['py', b]]) {
-      assert.equal(r.json.status, 'VERIFIED_EXPIRED', `${name}: ${r.stdout}${r.stderr}`);
-      assert.equal(r.json.valid, false, name);
-      assert.equal(r.code, 1, name);
-    }
-    assert.equal(a.stdout, b.stdout, 'the two CLIs print the same verdict');
-  });
+// 10t-rv (2026-11-05): RECEIPT_FORMAT §7.1, row 5. A receipt signed before retired_at under a retired key, with
+// no independent time anchor (this verifier reads none), is RETIRED_KEY_UNANCHORED — valid:false, exit 1 —
+// whatever its window: the signer chooses ts, so ts < retired_at proves nothing. MEASURED on 15fbdc4 for the
+// same tokens: VERIFIED_EXPIRED (window closed), RETIRED_KEY_VALID_AT_ISSUE valid:true exit 0 (inside the
+// window or the leeway), and under --as-of inside the window RETIRED_KEY_VALID_AT_ISSUE valid_at_as_of:true.
+describe('retired key, signed before retired_at, no anchor: RETIRED_KEY_UNANCHORED (row 5)', () => {
+  for (const [what, exp] of [
+    ['expired v4 (window closed 2 h ago)', () => TS + 4 * HOUR],
+    ['inside the leeway (expires_at 10 s ago)', () => NOW - 10e3],
+    ['inside the window', () => NOW + HOUR],
+  ]) {
+    it(`${what} → RETIRED_KEY_UNANCHORED, valid:false, exit 1 — verify.js and verify.py agree`, () => {
+      const token = mint(TS, exp());
+      const keys = KEYS();
+      const a = js([token, '--keys', keys]);
+      const b = py([token, '--keys', keys]);
+      for (const [name, r] of [['js', a], ['py', b]]) {
+        assert.equal(r.json.status, 'RETIRED_KEY_UNANCHORED', `${name}: ${r.stdout}${r.stderr}`);
+        assert.equal(r.json.valid, false, name);
+        assert.equal(r.code, 1, name);
+      }
+      assert.equal(a.stdout, b.stdout, 'the two CLIs print the same verdict');
+    });
+  }
 
-  it('inside the leeway (expires_at 10 s ago) it is still RETIRED_KEY_VALID_AT_ISSUE in both', () => {
-    assert.ok(CLOCK_SKEW_LEEWAY_MS > 10e3);
-    const token = mint(TS, NOW - 10e3);
-    const keys = KEYS();
-    for (const r of [js([token, '--keys', keys]), py([token, '--keys', keys])]) {
-      assert.equal(r.json.status, 'RETIRED_KEY_VALID_AT_ISSUE', r.stdout + r.stderr);
-      assert.equal(r.json.valid, true);
-      assert.equal(r.code, 0);
-    }
-  });
-
-  it('inside the window: unchanged, RETIRED_KEY_VALID_AT_ISSUE, valid:true, exit 0 in both', () => {
-    const token = mint(TS, NOW + HOUR);
-    const keys = KEYS();
-    const a = js([token, '--keys', keys]);
-    const b = py([token, '--keys', keys]);
-    for (const r of [a, b]) {
-      assert.equal(r.json.status, 'RETIRED_KEY_VALID_AT_ISSUE', r.stdout + r.stderr);
-      assert.equal(r.json.valid, true);
-      assert.equal(r.code, 0);
-    }
-    assert.equal(a.stdout, b.stdout);
-  });
-
-  it('signed after retired_at is still refused, whatever the window', () => {
+  it('signed after retired_at is still refused, whatever the window (row 3)', () => {
     const token = mint(TS, NOW + HOUR);
     const keys = retiredKeys(TS - HOUR);
     for (const r of [js([token, '--keys', keys]), py([token, '--keys', keys])]) {
@@ -104,24 +91,16 @@ describe('retired key: expiry applies after the retired-key rule', () => {
   });
 });
 
-describe('retired key under --as-of: the same window', () => {
-  it('as-of after the window → VERIFIED_EXPIRED, valid_at_as_of:false, exit 1', () => {
-    const token = mint(TS, TS + 4 * HOUR);
-    const out = js([token, '--keys', KEYS(), '--as-of', iso(TS + 5 * HOUR)]);
-    assert.equal(out.json.mode, 'audit');
-    assert.equal(out.json.status, 'VERIFIED_EXPIRED', out.stdout + out.stderr);
-    assert.equal(out.json.valid, false);
-    assert.equal(out.json.valid_at_as_of, false);
-    assert.equal(out.code, 1);
-  });
-
-  it('as-of inside the window → RETIRED_KEY_VALID_AT_ISSUE, valid_at_as_of:true, expired_now:true, exit 0', () => {
-    const token = mint(TS, TS + 4 * HOUR);
-    const out = js([token, '--keys', KEYS(), '--as-of', iso(TS + 2 * HOUR)]);
-    assert.equal(out.json.status, 'RETIRED_KEY_VALID_AT_ISSUE', out.stdout + out.stderr);
-    assert.equal(out.json.valid, true);
-    assert.equal(out.json.valid_at_as_of, true);
-    assert.equal(out.json.expired_now, true);
-    assert.equal(out.code, 0);
-  });
+describe('retired key under --as-of: no as-of rehabilitates an unanchored signature', () => {
+  for (const [what, at] of [['as-of after the window', () => TS + 5 * HOUR], ['as-of inside the window', () => TS + 2 * HOUR]]) {
+    it(`${what} → RETIRED_KEY_UNANCHORED, valid_at_as_of:false, exit 1`, () => {
+      const token = mint(TS, TS + 4 * HOUR);
+      const out = js([token, '--keys', KEYS(), '--as-of', iso(at())]);
+      assert.equal(out.json.mode, 'audit');
+      assert.equal(out.json.status, 'RETIRED_KEY_UNANCHORED', out.stdout + out.stderr);
+      assert.equal(out.json.valid, false);
+      assert.equal(out.json.valid_at_as_of, false);
+      assert.equal(out.code, 1);
+    });
+  }
 });
