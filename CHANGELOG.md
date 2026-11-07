@@ -3,6 +3,10 @@
 Versions here are the npm package `@coderifts/receipt-verifier`. Entries land before the release
 that carries them; a heading with no tag has not been published.
 
+## Unreleased
+
+- Test only: `test/xlang-corpus-sync.test.js` watches the cross-language corpus copies of contract-gate and python-verifier. gateway-verifier and k8s-admission are frozen at the v1.2.1 core (2026-11-06) and no longer watched; all four copies matched the generator that day (`bash test/run.sh`: checks=139 fails=0).
+
 ## 1.2.1 — 2026-11-06
 
 - The v1.2.0 tag failed the release workflow on the release-check step (the CHANGELOG heading for 1.2.0 was missing) and never reached npm; 1.2.1 carries the same verifier and tests.

@@ -28,12 +28,18 @@ const path = require('node:path');
 const REPO = path.join(__dirname, '..');
 const SIBLINGS = path.join(REPO, '..');
 
-/** Where each copy lives, relative to the sibling-checkout root. */
+/**
+ * Where each copy lives, relative to the sibling-checkout root.
+ *
+ * 2026-11-06 (Peter, fleet cut to measured use): the watched copies are contract-gate (maintained) and python-verifier
+ * (frozen after 0.2.1, but its own tests bind its corpus to this generator, so it stays until decided otherwise).
+ * gateway-verifier and k8s-admission are frozen at the v1.2.1 core and no longer re-vendored; their copies matched
+ * this generator on 2026-11-06 (run.sh checks=139 fails=0) and are not watched from here on, so a later generator
+ * change does not turn this suite red on repositories that will not follow it. Before: four copies.
+ */
 const COPIES = Object.freeze([
   { name: 'python-verifier', file: path.join(SIBLINGS, 'coderifts-python-verifier', 'tests', 'xlang-vectors.json') },
   { name: 'contract-gate', file: path.join(SIBLINGS, 'coderifts-contract-gate', 'test', 'fixtures', 'xlang-vectors.json') },
-  { name: 'gateway-verifier', file: path.join(SIBLINGS, 'coderifts-gateway-verifier', 'test', 'fixtures', 'xlang-vectors.json') },
-  { name: 'k8s-admission', file: path.join(SIBLINGS, 'coderifts-k8s-admission', 'test', 'fixtures', 'xlang-vectors.json') },
 ]);
 
 /** The comparable part of a corpus: ids → key state + expected verdict. Signatures excluded. */
